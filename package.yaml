@@ -35,6 +35,7 @@ dependencies:
 - base >= 4.7 && < 5
 - bytestring >= 0.12 && < 0.14
 - text >= 2.1 && < 2.3
+- vector >= 0.13 && < 0.14
 - filepath >= 1.4 && < 1.6
 - directory >= 1.3 && < 1.4
 
@@ -63,6 +64,7 @@ library:
   - Polars.LazyFrame
   - Polars.Operators
   - Polars.Schema
+  - Polars.Series
   other-modules:
   - Polars.Internal.Bytes
   - Polars.Internal.ColumnDecode
@@ -71,6 +73,7 @@ library:
   - Polars.Internal.Managed
   - Polars.Internal.Raw
   - Polars.Internal.Result
+  - Polars.Internal.Series
   include-dirs:
   - include
   extra-libraries:

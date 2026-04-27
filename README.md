@@ -126,11 +126,15 @@ Run the join example with:
 stack runghc examples/join.hs
 ```
 
-## Typed column extraction
+## Typed column extraction and Series handles
 
 ```haskell
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeApplications #-}
 
+import Control.Monad ((<=<))
+import Data.Int (Int64)
+import qualified Data.Text as T
 import qualified Polars as Pl
 
 main :: IO ()
@@ -139,36 +143,42 @@ main = do
   case result of
     Left err -> print err
     Right df -> do
-      names <- Pl.columnText df "name"
-      ages <- Pl.columnInt64 df "age"
-      scores <- Pl.columnDouble df "score"
-      active <- Pl.columnBool df "active"
+      names <- Pl.column @T.Text df "name"
+      ages <- Pl.column @Int64 df "age"
+      scores <- Pl.column @Double df "score"
+      active <- Pl.column @Bool df "active"
+      ageSeries <- Pl.column @Pl.Series df "age"
       print names
       print ages
       print scores
       print active
+      either print (print <=< Pl.seriesName) ageSeries
 ```
 
-Each extraction returns one value per row and preserves Polars null values as `Nothing`:
+Typed extraction returns one value per row in `Vector (Maybe a)` and preserves Polars null values as `Nothing`:
 
 ```haskell
-Right [Just "Alice", Just "Bob", Just "Carol"]
-Right [Just 34, Nothing, Just 29]
-Right [Just 9.5, Just 8.25, Nothing]
-Right [Just True, Just False, Nothing]
+Right [Just "Alice",Just "Bob",Just "Carol"]
+Right [Just 34,Nothing,Just 29]
+Right [Just 9.5,Just 8.25,Nothing]
+Right [Just True,Just False,Nothing]
 ```
 
-Run the column extraction example with:
+The named helpers remain available as aliases: `columnText`, `columnInt64`, `columnDouble`, and `columnBool`.
+
+Run the column and Series examples with:
 
 ```bash
 stack runghc examples/columns.hs
+stack runghc examples/series.hs
 ```
 
 ## Public modules
 
 - `Polars` re-exports the MVP API.
 - `Polars.DataFrame` provides eager readers, shape/schema queries, head/tail, text rendering, and IPC byte conversion.
-- `Polars.Column` provides typed column extraction for bool, int64, double, and text values with null preservation.
+- `Polars.Column` provides `column @Series` and typed `column @Bool/@Int64/@Double/@Text` extraction with null preservation.
+- `Polars.Series` provides Series metadata, slicing, DataFrame conversion, and typed value readers.
 - `Polars.LazyFrame` provides scan, filter, select, withColumns, sort, limit, and collect.
 - `Polars.GroupBy` provides grouped lazy aggregation through groupBy, groupByStable, and agg.
 - `Polars.Join` provides lazy inner, left, right, and full joins with optional suffix configuration.

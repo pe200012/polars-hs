@@ -1,11 +1,15 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Main (main) where
 
 import Prelude hiding (filter, head)
 
 import qualified Data.ByteString as BS
+import Data.Int (Int64)
 import qualified Data.Text as T
+import qualified Data.Vector as V
+import System.Mem (performGC)
 import Test.Hspec
 
 import qualified Polars as Pl
@@ -137,25 +141,25 @@ main = hspec $ do
             result <- Pl.readCsv valuesCsv
             case result of
                 Left err -> expectationFailure (show err)
-                Right df -> Pl.columnText df "name" `shouldReturn` Right [Just "Alice", Just "Bob", Just "Carol"]
+                Right df -> Pl.columnText df "name" `shouldReturn` Right (V.fromList [Just "Alice", Just "Bob", Just "Carol"])
 
         it "extracts int64 columns with null preservation" $ do
             result <- Pl.readCsv valuesCsv
             case result of
                 Left err -> expectationFailure (show err)
-                Right df -> Pl.columnInt64 df "age" `shouldReturn` Right [Just 34, Nothing, Just 29]
+                Right df -> Pl.columnInt64 df "age" `shouldReturn` Right (V.fromList [Just 34, Nothing, Just 29])
 
         it "extracts double columns with null preservation" $ do
             result <- Pl.readCsv valuesCsv
             case result of
                 Left err -> expectationFailure (show err)
-                Right df -> Pl.columnDouble df "score" `shouldReturn` Right [Just 9.5, Just 8.25, Nothing]
+                Right df -> Pl.columnDouble df "score" `shouldReturn` Right (V.fromList [Just 9.5, Just 8.25, Nothing])
 
         it "extracts bool columns with null preservation" $ do
             result <- Pl.readCsv valuesCsv
             case result of
                 Left err -> expectationFailure (show err)
-                Right df -> Pl.columnBool df "active" `shouldReturn` Right [Just True, Just False, Nothing]
+                Right df -> Pl.columnBool df "active" `shouldReturn` Right (V.fromList [Just True, Just False, Nothing])
 
         it "reports a Polars error for missing columns" $ do
             result <- Pl.readCsv valuesCsv
@@ -192,7 +196,7 @@ main = hspec $ do
                             collected <- Pl.collect lf1
                             case collected of
                                 Left err -> expectationFailure (show err)
-                                Right df -> Pl.columnInt64 df "salary_sum" `shouldReturn` Right [Just 250, Just 200]
+                                Right df -> Pl.columnInt64 df "salary_sum" `shouldReturn` Right (V.fromList [Just 250, Just 200])
 
         it "extracts join result columns with null preservation" $ do
             employeesResult <- Pl.scanCsv employeesCsv
@@ -213,9 +217,85 @@ main = hspec $ do
                             collected <- Pl.collect lf
                             case collected of
                                 Left err -> expectationFailure (show err)
-                                Right df -> Pl.columnText df "name_dept" `shouldReturn` Right [Just "Grace", Just "Grace", Just "Heidi", Nothing]
+                                Right df -> Pl.columnText df "name_dept" `shouldReturn` Right (V.fromList [Just "Grace", Just "Grace", Just "Heidi", Nothing])
                 (Left err, _) -> expectationFailure (show err)
                 (_, Left err) -> expectationFailure (show err)
+
+        it "selects a column as a Series handle and reports metadata" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    seriesResult <- Pl.column @Pl.Series df "age"
+                    case seriesResult of
+                        Left err -> expectationFailure (show err)
+                        Right age -> do
+                            Pl.seriesName age `shouldReturn` Right "age"
+                            Pl.seriesLength age `shouldReturn` Right 3
+                            Pl.seriesNullCount age `shouldReturn` Right 1
+                            Pl.seriesDataType age `shouldReturn` Right Pl.Int64
+                            Pl.seriesInt64 age `shouldReturn` Right (V.fromList [Just 34, Nothing, Just 29])
+
+        it "uses visible type applications for typed column values" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    Pl.column @Int64 df "age" `shouldReturn` Right (V.fromList [Just 34, Nothing, Just 29])
+                    Pl.column @Double df "score" `shouldReturn` Right (V.fromList [Just 9.5, Just 8.25, Nothing])
+                    Pl.column @T.Text df "name" `shouldReturn` Right (V.fromList [Just "Alice", Just "Bob", Just "Carol"])
+                    Pl.column @Bool df "active" `shouldReturn` Right (V.fromList [Just True, Just False, Nothing])
+
+        it "slices Series handles and converts them to DataFrames" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    seriesResult <- Pl.column @Pl.Series df "age"
+                    case seriesResult of
+                        Left err -> expectationFailure (show err)
+                        Right age -> do
+                            headResult <- Pl.seriesHead 2 age
+                            case headResult of
+                                Left err -> expectationFailure (show err)
+                                Right firstTwo -> Pl.seriesInt64 firstTwo `shouldReturn` Right (V.fromList [Just 34, Nothing])
+                            tailResult <- Pl.seriesTail 1 age
+                            case tailResult of
+                                Left err -> expectationFailure (show err)
+                                Right lastOne -> Pl.seriesInt64 lastOne `shouldReturn` Right (V.fromList [Just 29])
+                            frameResult <- Pl.seriesToFrame age
+                            case frameResult of
+                                Left err -> expectationFailure (show err)
+                                Right oneColumn -> Pl.shape oneColumn `shouldReturn` Right (3, 1)
+
+        it "reports InvalidArgument for negative Series slices" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    seriesResult <- Pl.column @Pl.Series df "age"
+                    case seriesResult of
+                        Left err -> expectationFailure (show err)
+                        Right age -> do
+                            headResult <- Pl.seriesHead (-1) age
+                            case headResult of
+                                Right _ -> expectationFailure "expected InvalidArgument for negative Series head count"
+                                Left err -> Pl.polarsErrorCode err `shouldBe` Pl.InvalidArgument
+                            tailResult <- Pl.seriesTail (-1) age
+                            case tailResult of
+                                Right _ -> expectationFailure "expected InvalidArgument for negative Series tail count"
+                                Left err -> Pl.polarsErrorCode err `shouldBe` Pl.InvalidArgument
+
+        it "keeps Series handles usable after DataFrame ownership leaves scope" $ do
+            seriesResult <- do
+                result <- Pl.readCsv valuesCsv
+                case result of
+                    Left err -> pure (Left err)
+                    Right df -> Pl.column @Pl.Series df "age"
+            performGC
+            case seriesResult of
+                Left err -> expectationFailure (show err)
+                Right age -> Pl.seriesInt64 age `shouldReturn` Right (V.fromList [Just 34, Nothing, Just 29])
 
     describe "Polars.Join" $ do
         it "inner joins two lazy CSV scans and applies the default suffix" $ do

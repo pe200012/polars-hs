@@ -380,4 +380,28 @@ print =<< Pl.shape oneColumn
 
 ## Implementation Results
 
-Implementation starts after design approval. Verification results, deviations, and final commit information are recorded during implementation.
+### Completed implementation
+
+- Added Rust `phs_series` handle ownership and finalizer support.
+- Added Series ABI functions for metadata, slicing, one-column DataFrame conversion, and typed value extraction.
+- Added Haskell managed `Series`, `Polars.Series`, and `Polars.Internal.Series` helpers.
+- Updated `Polars.Column` with associated-type `Column` instances for `Series`, `Bool`, `Int64`, `Double`, and `Text`.
+- Changed typed value readers to return boxed `Vector (Maybe a)` values from `Data.Vector`.
+- Kept `columnBool`, `columnInt64`, `columnDouble`, and `columnText` as aliases over `column @xxx`.
+- Added `examples/series.hs` and updated `examples/columns.hs`, README, CHANGELOG, tests, generated header, and generated Cabal file.
+
+### Verification
+
+- `cargo test --manifest-path rust/polars-hs-ffi/Cargo.toml`: 26 passed.
+- `cargo clippy --manifest-path rust/polars-hs-ffi/Cargo.toml -- -D warnings`: passed.
+- `stack test --fast`: 29 examples, 0 failures.
+- `hlint src app test`: no hints.
+- `stack runghc examples/iris.hs`: passed.
+- `stack runghc examples/groupby.hs`: passed.
+- `stack runghc examples/join.hs`: passed.
+- `stack runghc examples/columns.hs`: passed.
+- `stack runghc examples/series.hs`: passed.
+
+### Deviations from design
+
+- Typed readers use `Vector (Maybe a)` following user feedback during planning.

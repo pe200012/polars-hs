@@ -10,12 +10,15 @@ module Polars.Internal.Managed
     ( DataFrame (..)
     , LazyFrame (..)
     , ManagedExpr (..)
+    , Series (..)
     , mkDataFrame
     , mkLazyFrame
     , mkManagedExpr
+    , mkSeries
     , withDataFrame
     , withLazyFrame
     , withManagedExpr
+    , withSeries
     ) where
 
 import Foreign.ForeignPtr (ForeignPtr, newForeignPtr, withForeignPtr)
@@ -25,14 +28,17 @@ import Polars.Internal.Raw
     ( RawDataFrame
     , RawExpr
     , RawLazyFrame
+    , RawSeries
     , phs_dataframe_free_finalizer
     , phs_expr_free_finalizer
     , phs_lazyframe_free_finalizer
+    , phs_series_free_finalizer
     )
 
 newtype DataFrame = DataFrame (ForeignPtr RawDataFrame)
 newtype LazyFrame = LazyFrame (ForeignPtr RawLazyFrame)
 newtype ManagedExpr = ManagedExpr (ForeignPtr RawExpr)
+newtype Series = Series (ForeignPtr RawSeries)
 
 mkDataFrame :: Ptr RawDataFrame -> IO DataFrame
 mkDataFrame ptr = DataFrame <$> newForeignPtr phs_dataframe_free_finalizer ptr
@@ -43,6 +49,9 @@ mkLazyFrame ptr = LazyFrame <$> newForeignPtr phs_lazyframe_free_finalizer ptr
 mkManagedExpr :: Ptr RawExpr -> IO ManagedExpr
 mkManagedExpr ptr = ManagedExpr <$> newForeignPtr phs_expr_free_finalizer ptr
 
+mkSeries :: Ptr RawSeries -> IO Series
+mkSeries ptr = Series <$> newForeignPtr phs_series_free_finalizer ptr
+
 withDataFrame :: DataFrame -> (Ptr RawDataFrame -> IO a) -> IO a
 withDataFrame (DataFrame foreignPtr) = withForeignPtr foreignPtr
 
@@ -51,3 +60,6 @@ withLazyFrame (LazyFrame foreignPtr) = withForeignPtr foreignPtr
 
 withManagedExpr :: ManagedExpr -> (Ptr RawExpr -> IO a) -> IO a
 withManagedExpr (ManagedExpr foreignPtr) = withForeignPtr foreignPtr
+
+withSeries :: Series -> (Ptr RawSeries -> IO a) -> IO a
+withSeries (Series foreignPtr) = withForeignPtr foreignPtr

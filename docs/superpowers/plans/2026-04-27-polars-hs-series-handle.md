@@ -1,6 +1,6 @@
 # Unified Column and Series Handle Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax for tracking, and checked boxes record completed execution.
 
 **Goal:** Add `column @xxx` for Series handles and typed values, backed by an owned Rust `Series` handle.
 
@@ -36,7 +36,7 @@
 **Files:**
 - Modify: `test/Spec.hs`
 
-- [ ] **Step 1: Add language extension and imports**
+- [x] **Step 1: Add language extension and imports**
 
 At the top of `test/Spec.hs`, use:
 
@@ -53,7 +53,7 @@ import qualified Data.Vector as V
 import System.Mem (performGC)
 ```
 
-- [ ] **Step 2: Add Series and unified column specs**
+- [x] **Step 2: Add Series and unified column specs**
 
 Inside `describe "Polars.Column"`, append tests that use these expressions:
 
@@ -109,7 +109,7 @@ case seriesResult of
     Right age -> Pl.seriesInt64 age `shouldReturn` Right (V.fromList [Just 34, Nothing, Just 29])
 ```
 
-- [ ] **Step 3: Run RED test**
+- [x] **Step 3: Run RED test**
 
 Run:
 
@@ -130,7 +130,7 @@ Expected: build fails because `Pl.Series`, `Pl.column`, and `Pl.series*` functio
 - Modify: `rust/polars-hs-ffi/src/lib.rs`
 - Generated: `include/polars_hs.h`
 
-- [ ] **Step 1: Add Series handle ownership**
+- [x] **Step 1: Add Series handle ownership**
 
 Update `handles.rs` imports:
 
@@ -140,7 +140,7 @@ use polars::prelude::{DataFrame, Expr, LazyFrame, Series};
 
 Add `phs_series`, `SeriesHandle`, `series_into_raw`, `series_ref`, and `phs_series_free` following the existing DataFrame/LazyFrame/Expr handle pattern.
 
-- [ ] **Step 2: Add Rust Series module**
+- [x] **Step 2: Add Rust Series module**
 
 Create `rust/polars-hs-ffi/src/series.rs` with:
 
@@ -219,7 +219,7 @@ pub(crate) fn encode_text_series(series: &Series) -> PhsResult<Vec<u8>> {
 }
 ```
 
-- [ ] **Step 3: Add Series ABI functions**
+- [x] **Step 3: Add Series ABI functions**
 
 In `series.rs`, add:
 
@@ -239,7 +239,7 @@ phs_series_values_text
 
 Each function must use `ffi_boundary`, set output pointers to null before work, and return Rust-owned `phs_bytes`, `phs_series`, or `phs_dataframe` handles.
 
-- [ ] **Step 4: Add DataFrame-to-Series ABI**
+- [x] **Step 4: Add DataFrame-to-Series ABI**
 
 In `dataframe.rs`, import Series handle and encoder helpers:
 
@@ -272,7 +272,7 @@ pub unsafe extern "C" fn phs_dataframe_column(
 
 Update `dataframe_column_bytes` to pass `&Series` into the new `encode_*_series` helpers.
 
-- [ ] **Step 5: Wire the Rust module**
+- [x] **Step 5: Wire the Rust module**
 
 In `lib.rs`, add:
 
@@ -280,7 +280,7 @@ In `lib.rs`, add:
 pub mod series;
 ```
 
-- [ ] **Step 6: Run Rust verification**
+- [x] **Step 6: Run Rust verification**
 
 Run:
 
@@ -299,11 +299,11 @@ Expected: all Rust tests pass and `include/polars_hs.h` contains `phs_series` an
 - Modify: `src/Polars/Internal/Managed.hs`
 - Create: `src/Polars/Internal/Series.hs`
 
-- [ ] **Step 1: Add raw Series imports**
+- [x] **Step 1: Add raw Series imports**
 
 Add `RawSeries`, `phs_series_free_finalizer`, `phs_dataframe_column`, and all `phs_series_*` functions to `Polars.Internal.Raw`.
 
-- [ ] **Step 2: Add managed Series**
+- [x] **Step 2: Add managed Series**
 
 In `Polars.Internal.Managed`, add:
 
@@ -314,7 +314,7 @@ mkSeries :: Ptr RawSeries -> IO Series
 withSeries :: Series -> (Ptr RawSeries -> IO a) -> IO a
 ```
 
-- [ ] **Step 3: Add internal Series helpers**
+- [x] **Step 3: Add internal Series helpers**
 
 Create `src/Polars/Internal/Series.hs` with helpers for `seriesOut`, `seriesBytesOut`, `seriesWord64Out`, and `seriesDataFrameOut`. Each helper must set out/error pointers, convert status with `consumeError`, and detect null success pointers with `nullPointerError`.
 
@@ -328,7 +328,7 @@ Create `src/Polars/Internal/Series.hs` with helpers for `seriesOut`, `seriesByte
 - Modify: `src/Polars.hs`
 - Modify: `package.yaml`
 
-- [ ] **Step 1: Create public Series module**
+- [x] **Step 1: Create public Series module**
 
 `Polars.Series` exports:
 
@@ -349,7 +349,7 @@ seriesToFrame
 
 Use `decodeBoolColumn`, `decodeInt64Column`, `decodeDoubleColumn`, and `decodeTextColumn` for value readers.
 
-- [ ] **Step 2: Add associated-type `Column` class**
+- [x] **Step 2: Add associated-type `Column` class**
 
 Update `Polars.Column` with:
 
@@ -362,7 +362,7 @@ Update `Polars.Column` with:
 
 Expose `Column (..)` and define instances for `Series`, `Bool`, `Int64`, `Double`, and `Text`.
 
-- [ ] **Step 3: Keep named compatibility helpers**
+- [x] **Step 3: Keep named compatibility helpers**
 
 Implement:
 
@@ -373,11 +373,11 @@ columnDouble = column @Double
 columnText = column @Text
 ```
 
-- [ ] **Step 4: Re-export modules and package metadata**
+- [x] **Step 4: Re-export modules and package metadata**
 
 Add `Polars.Series` to `Polars` and `package.yaml` exposed modules. Add `Polars.Internal.Series` to `package.yaml` other modules.
 
-- [ ] **Step 5: Run Haskell GREEN test**
+- [x] **Step 5: Run Haskell GREEN test**
 
 Run:
 
@@ -398,15 +398,15 @@ Expected: all Hspec examples pass and generated `polars-hs.cabal` includes the n
 - Create: `examples/series.hs`
 - Modify: `docs/superpowers/specs/2026-04-27-polars-hs-series-handle-design.md`
 
-- [ ] **Step 1: Update examples**
+- [x] **Step 1: Update examples**
 
 Use `TypeApplications` in `examples/columns.hs` and create `examples/series.hs` that reads `column @Pl.Series`, prints metadata, typed values, and the one-column DataFrame shape.
 
-- [ ] **Step 2: Update README and CHANGELOG**
+- [x] **Step 2: Update README and CHANGELOG**
 
 Document `column @Series`, `column @Int64`, and the retained named helpers. Add a CHANGELOG entry for unified column type applications and Series handle API.
 
-- [ ] **Step 3: Run full verification**
+- [x] **Step 3: Run full verification**
 
 Run:
 
@@ -424,11 +424,11 @@ stack runghc examples/series.hs
 
 Expected: Rust tests pass, Clippy exits 0, Hspec has 0 failures, HLint has no hints, and every example runs.
 
-- [ ] **Step 4: Record implementation results**
+- [x] **Step 4: Record implementation results**
 
 Append verification results and deviations to the design log. Mark plan checkboxes complete after execution.
 
-- [ ] **Step 5: Commit and push**
+- [x] **Step 5: Commit and push**
 
 Run:
 

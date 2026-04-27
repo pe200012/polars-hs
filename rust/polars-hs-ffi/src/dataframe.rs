@@ -7,7 +7,8 @@ use polars::prelude::*;
 
 use crate::bytes::{bytes_into_raw, phs_bytes};
 use crate::error::{PhsResult, c_str_to_str, ffi_boundary, phs_error, required_mut};
-use crate::handles::{dataframe_into_raw, dataframe_ref, phs_dataframe};
+use crate::handles::{dataframe_into_raw, dataframe_ref, phs_dataframe, phs_series, series_into_raw};
+use crate::series::{encode_bool_series, encode_f64_series, encode_i64_series, encode_text_series};
 
 unsafe fn c_path(path: *const c_char) -> PhsResult<PathBuf> {
     Ok(PathBuf::from(unsafe { c_str_to_str(path, "path") }?))
@@ -166,8 +167,23 @@ pub unsafe extern "C" fn phs_dataframe_to_text(
     })
 }
 
-const COLUMN_TAG_NULL: u8 = 0;
-const COLUMN_TAG_VALUE: u8 = 1;
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_column(
+    dataframe: *const phs_dataframe,
+    name: *const c_char,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        let name = unsafe { c_str_to_str(name, "name") }?;
+        let series = handle.value.column(name)?.as_materialized_series().clone();
+        *out = series_into_raw(series);
+        Ok(())
+    })
+}
 
 fn dataframe_column_bytes<F>(
     dataframe: *const phs_dataframe,
@@ -177,15 +193,15 @@ fn dataframe_column_bytes<F>(
     encode: F,
 ) -> c_int
 where
-    F: FnOnce(&Column) -> PhsResult<Vec<u8>> + std::panic::UnwindSafe,
+    F: FnOnce(&Series) -> PhsResult<Vec<u8>> + std::panic::UnwindSafe,
 {
     ffi_boundary(err, || {
         let out = unsafe { required_mut(out, "out") }?;
         *out = ptr::null_mut();
         let handle = unsafe { dataframe_ref(dataframe) }?;
         let name = unsafe { c_str_to_str(name, "name") }?;
-        let column = handle.value.column(name)?;
-        *out = bytes_into_raw(encode(column)?);
+        let series = handle.value.column(name)?.as_materialized_series();
+        *out = bytes_into_raw(encode(series)?);
         Ok(())
     })
 }
@@ -197,7 +213,7 @@ pub unsafe extern "C" fn phs_dataframe_column_bool(
     out: *mut *mut phs_bytes,
     err: *mut *mut phs_error,
 ) -> c_int {
-    dataframe_column_bytes(dataframe, name, out, err, encode_bool_column)
+    dataframe_column_bytes(dataframe, name, out, err, encode_bool_series)
 }
 
 #[unsafe(no_mangle)]
@@ -207,7 +223,7 @@ pub unsafe extern "C" fn phs_dataframe_column_i64(
     out: *mut *mut phs_bytes,
     err: *mut *mut phs_error,
 ) -> c_int {
-    dataframe_column_bytes(dataframe, name, out, err, encode_i64_column)
+    dataframe_column_bytes(dataframe, name, out, err, encode_i64_series)
 }
 
 #[unsafe(no_mangle)]
@@ -217,7 +233,7 @@ pub unsafe extern "C" fn phs_dataframe_column_f64(
     out: *mut *mut phs_bytes,
     err: *mut *mut phs_error,
 ) -> c_int {
-    dataframe_column_bytes(dataframe, name, out, err, encode_f64_column)
+    dataframe_column_bytes(dataframe, name, out, err, encode_f64_series)
 }
 
 #[unsafe(no_mangle)]
@@ -227,68 +243,7 @@ pub unsafe extern "C" fn phs_dataframe_column_text(
     out: *mut *mut phs_bytes,
     err: *mut *mut phs_error,
 ) -> c_int {
-    dataframe_column_bytes(dataframe, name, out, err, encode_text_column)
-}
-
-fn encode_bool_column(column: &Column) -> PhsResult<Vec<u8>> {
-    let values = column.bool()?;
-    let mut bytes = Vec::with_capacity(values.len() * 2);
-    for value in values {
-        match value {
-            None => bytes.push(COLUMN_TAG_NULL),
-            Some(value) => {
-                bytes.push(COLUMN_TAG_VALUE);
-                bytes.push(u8::from(value));
-            },
-        }
-    }
-    Ok(bytes)
-}
-
-fn encode_i64_column(column: &Column) -> PhsResult<Vec<u8>> {
-    let values = column.i64()?;
-    let mut bytes = Vec::with_capacity(values.len() * 9);
-    for value in values {
-        match value {
-            None => bytes.push(COLUMN_TAG_NULL),
-            Some(value) => {
-                bytes.push(COLUMN_TAG_VALUE);
-                bytes.extend_from_slice(&value.to_le_bytes());
-            },
-        }
-    }
-    Ok(bytes)
-}
-
-fn encode_f64_column(column: &Column) -> PhsResult<Vec<u8>> {
-    let values = column.f64()?;
-    let mut bytes = Vec::with_capacity(values.len() * 9);
-    for value in values {
-        match value {
-            None => bytes.push(COLUMN_TAG_NULL),
-            Some(value) => {
-                bytes.push(COLUMN_TAG_VALUE);
-                bytes.extend_from_slice(&value.to_le_bytes());
-            },
-        }
-    }
-    Ok(bytes)
-}
-
-fn encode_text_column(column: &Column) -> PhsResult<Vec<u8>> {
-    let values = column.str()?;
-    let mut bytes = Vec::with_capacity(values.len() * 9);
-    for value in values {
-        match value {
-            None => bytes.push(COLUMN_TAG_NULL),
-            Some(value) => {
-                bytes.push(COLUMN_TAG_VALUE);
-                bytes.extend_from_slice(&(value.len() as u64).to_le_bytes());
-                bytes.extend_from_slice(value.as_bytes());
-            },
-        }
-    }
-    Ok(bytes)
+    dataframe_column_bytes(dataframe, name, out, err, encode_text_series)
 }
 
 #[cfg(test)]

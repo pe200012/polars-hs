@@ -30,6 +30,10 @@ typedef struct phs_error {
   uint8_t _private[0];
 } phs_error;
 
+typedef struct phs_series {
+  uint8_t _private[0];
+} phs_series;
+
 typedef struct phs_expr {
   uint8_t _private[0];
 } phs_expr;
@@ -82,6 +86,11 @@ int phs_dataframe_tail(const struct phs_dataframe *dataframe,
 int phs_dataframe_to_text(const struct phs_dataframe *dataframe,
                           struct phs_bytes **out,
                           struct phs_error **err);
+
+int phs_dataframe_column(const struct phs_dataframe *dataframe,
+                         const char *name,
+                         struct phs_series **out,
+                         struct phs_error **err);
 
 int phs_dataframe_column_bool(const struct phs_dataframe *dataframe,
                               const char *name,
@@ -142,6 +151,8 @@ void phs_dataframe_free(struct phs_dataframe *ptr);
 void phs_lazyframe_free(struct phs_lazyframe *ptr);
 
 void phs_expr_free(struct phs_expr *ptr);
+
+void phs_series_free(struct phs_series *ptr);
 
 int phs_dataframe_to_ipc_bytes(const struct phs_dataframe *dataframe,
                                struct phs_bytes **out,
@@ -213,5 +224,47 @@ int phs_lazyframe_join(const struct phs_lazyframe *left,
                        const char *suffix,
                        struct phs_lazyframe **out,
                        struct phs_error **err);
+
+int phs_series_name(const struct phs_series *series,
+                    struct phs_bytes **out,
+                    struct phs_error **err);
+
+int phs_series_dtype(const struct phs_series *series,
+                     struct phs_bytes **out,
+                     struct phs_error **err);
+
+int phs_series_len(const struct phs_series *series, uint64_t *out, struct phs_error **err);
+
+int phs_series_null_count(const struct phs_series *series, uint64_t *out, struct phs_error **err);
+
+int phs_series_head(const struct phs_series *series,
+                    uint64_t n,
+                    struct phs_series **out,
+                    struct phs_error **err);
+
+int phs_series_tail(const struct phs_series *series,
+                    uint64_t n,
+                    struct phs_series **out,
+                    struct phs_error **err);
+
+int phs_series_to_frame(const struct phs_series *series,
+                        struct phs_dataframe **out,
+                        struct phs_error **err);
+
+int phs_series_values_bool(const struct phs_series *series,
+                           struct phs_bytes **out,
+                           struct phs_error **err);
+
+int phs_series_values_i64(const struct phs_series *series,
+                          struct phs_bytes **out,
+                          struct phs_error **err);
+
+int phs_series_values_f64(const struct phs_series *series,
+                          struct phs_bytes **out,
+                          struct phs_error **err);
+
+int phs_series_values_text(const struct phs_series *series,
+                           struct phs_bytes **out,
+                           struct phs_error **err);
 
 #endif  /* POLARS_HS_H */

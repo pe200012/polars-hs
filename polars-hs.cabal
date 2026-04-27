@@ -33,6 +33,7 @@ extra-source-files:
     rust/polars-hs-ffi/src/ipc.rs
     rust/polars-hs-ffi/src/lazyframe.rs
     rust/polars-hs-ffi/src/lib.rs
+    rust/polars-hs-ffi/src/series.rs
     test/data/departments.csv
     test/data/employees.csv
     test/data/people.csv
@@ -63,6 +64,7 @@ library
       Polars.LazyFrame
       Polars.Operators
       Polars.Schema
+      Polars.Series
   other-modules:
       Polars.Internal.Bytes
       Polars.Internal.ColumnDecode
@@ -71,6 +73,7 @@ library
       Polars.Internal.Managed
       Polars.Internal.Raw
       Polars.Internal.Result
+      Polars.Internal.Series
   hs-source-dirs:
       src
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
@@ -87,6 +90,7 @@ library
     , directory ==1.3.*
     , filepath >=1.4 && <1.6
     , text >=2.1 && <2.3
+    , vector ==0.13.*
   default-language: Haskell2010
 
 executable polars-hs-exe
@@ -105,6 +109,7 @@ executable polars-hs-exe
     , filepath >=1.4 && <1.6
     , polars-hs
     , text >=2.1 && <2.3
+    , vector ==0.13.*
   default-language: Haskell2010
 
 test-suite polars-hs-test
@@ -125,4 +130,5 @@ test-suite polars-hs-test
     , hspec ==2.11.*
     , polars-hs
     , text >=2.1 && <2.3
+    , vector ==0.13.*
   default-language: Haskell2010

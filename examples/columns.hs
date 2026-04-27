@@ -1,5 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeApplications #-}
 
+import Data.Int (Int64)
+import qualified Data.Text as T
 import qualified Polars as Pl
 
 main :: IO ()
@@ -8,10 +11,10 @@ main = do
     case result of
         Left err -> print err
         Right df -> do
-            names <- Pl.columnText df "name"
-            ages <- Pl.columnInt64 df "age"
-            scores <- Pl.columnDouble df "score"
-            active <- Pl.columnBool df "active"
+            names <- Pl.column @T.Text df "name"
+            ages <- Pl.column @Int64 df "age"
+            scores <- Pl.column @Double df "score"
+            active <- Pl.column @Bool df "active"
             print names
             print ages
             print scores

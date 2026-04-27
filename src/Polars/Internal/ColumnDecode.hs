@@ -20,28 +20,30 @@ import qualified Data.ByteString as BS
 import Data.Int (Int64)
 import Data.Text (Text)
 import qualified Data.Text.Encoding as TE
+import Data.Vector (Vector)
+import qualified Data.Vector as V
 import Data.Word (Word8, Word64)
 import GHC.Float (castWord64ToDouble)
 
 import Polars.Error (PolarsError (..), PolarsErrorCode (InvalidArgument))
 
-decodeBoolColumn :: BS.ByteString -> Either PolarsError [Maybe Bool]
+decodeBoolColumn :: BS.ByteString -> Either PolarsError (Vector (Maybe Bool))
 decodeBoolColumn = decodeTaggedColumn decodeBoolValue
 
-decodeInt64Column :: BS.ByteString -> Either PolarsError [Maybe Int64]
+decodeInt64Column :: BS.ByteString -> Either PolarsError (Vector (Maybe Int64))
 decodeInt64Column = decodeTaggedColumn decodeInt64Value
 
-decodeDoubleColumn :: BS.ByteString -> Either PolarsError [Maybe Double]
+decodeDoubleColumn :: BS.ByteString -> Either PolarsError (Vector (Maybe Double))
 decodeDoubleColumn = decodeTaggedColumn decodeDoubleValue
 
-decodeTextColumn :: BS.ByteString -> Either PolarsError [Maybe Text]
+decodeTextColumn :: BS.ByteString -> Either PolarsError (Vector (Maybe Text))
 decodeTextColumn = decodeTaggedColumn decodeTextValue
 
-decodeTaggedColumn :: (BS.ByteString -> Either PolarsError (a, BS.ByteString)) -> BS.ByteString -> Either PolarsError [Maybe a]
+decodeTaggedColumn :: (BS.ByteString -> Either PolarsError (a, BS.ByteString)) -> BS.ByteString -> Either PolarsError (Vector (Maybe a))
 decodeTaggedColumn decodeValue = go []
   where
     go acc bytes = case BS.uncons bytes of
-        Nothing -> Right (reverse acc)
+        Nothing -> Right (V.fromList (reverse acc))
         Just (tag, rest)
             | tag == tagNull -> go (Nothing : acc) rest
             | tag == tagValue -> do
