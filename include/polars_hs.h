@@ -83,6 +83,26 @@ int phs_dataframe_to_text(const struct phs_dataframe *dataframe,
                           struct phs_bytes **out,
                           struct phs_error **err);
 
+int phs_dataframe_column_bool(const struct phs_dataframe *dataframe,
+                              const char *name,
+                              struct phs_bytes **out,
+                              struct phs_error **err);
+
+int phs_dataframe_column_i64(const struct phs_dataframe *dataframe,
+                             const char *name,
+                             struct phs_bytes **out,
+                             struct phs_error **err);
+
+int phs_dataframe_column_f64(const struct phs_dataframe *dataframe,
+                             const char *name,
+                             struct phs_bytes **out,
+                             struct phs_error **err);
+
+int phs_dataframe_column_text(const struct phs_dataframe *dataframe,
+                              const char *name,
+                              struct phs_bytes **out,
+                              struct phs_error **err);
+
 int phs_error_code(const struct phs_error *error);
 
 const char *phs_error_message(const struct phs_error *error);

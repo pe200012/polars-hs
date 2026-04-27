@@ -16,6 +16,10 @@ module Polars.Internal.Raw
     , phs_bytes_data
     , phs_bytes_free
     , phs_bytes_len
+    , phs_dataframe_column_bool
+    , phs_dataframe_column_f64
+    , phs_dataframe_column_i64
+    , phs_dataframe_column_text
     , phs_dataframe_free_finalizer
     , phs_dataframe_from_ipc_bytes
     , phs_dataframe_head
@@ -121,6 +125,18 @@ foreign import ccall unsafe "phs_dataframe_tail"
 
 foreign import ccall unsafe "phs_dataframe_to_text"
     phs_dataframe_to_text :: Ptr RawDataFrame -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_dataframe_column_bool"
+    phs_dataframe_column_bool :: Ptr RawDataFrame -> CString -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_dataframe_column_i64"
+    phs_dataframe_column_i64 :: Ptr RawDataFrame -> CString -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_dataframe_column_f64"
+    phs_dataframe_column_f64 :: Ptr RawDataFrame -> CString -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_dataframe_column_text"
+    phs_dataframe_column_text :: Ptr RawDataFrame -> CString -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_expr_col"
     phs_expr_col :: CString -> Ptr (Ptr RawExpr) -> Ptr (Ptr RawError) -> IO CInt

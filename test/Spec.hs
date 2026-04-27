@@ -22,6 +22,9 @@ employeesCsv = "test/data/employees.csv"
 departmentsCsv :: FilePath
 departmentsCsv = "test/data/departments.csv"
 
+valuesCsv :: FilePath
+valuesCsv = "test/data/values.csv"
+
 main :: IO ()
 main = hspec $ do
     describe "Polars.DataFrame" $ do
@@ -128,6 +131,91 @@ main = hspec $ do
                             case collected of
                                 Right _ -> expectationFailure "expected a Polars failure for missing column"
                                 Left err -> Pl.polarsErrorCode err `shouldBe` Pl.PolarsFailure
+
+    describe "Polars.Column" $ do
+        it "extracts text columns with null preservation" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> Pl.columnText df "name" `shouldReturn` Right [Just "Alice", Just "Bob", Just "Carol"]
+
+        it "extracts int64 columns with null preservation" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> Pl.columnInt64 df "age" `shouldReturn` Right [Just 34, Nothing, Just 29]
+
+        it "extracts double columns with null preservation" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> Pl.columnDouble df "score" `shouldReturn` Right [Just 9.5, Just 8.25, Nothing]
+
+        it "extracts bool columns with null preservation" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> Pl.columnBool df "active" `shouldReturn` Right [Just True, Just False, Nothing]
+
+        it "reports a Polars error for missing columns" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    columnResult <- Pl.columnText df "missing"
+                    case columnResult of
+                        Right _ -> expectationFailure "expected a Polars error for a missing column"
+                        Left err -> Pl.polarsErrorCode err `shouldBe` Pl.PolarsFailure
+
+        it "reports a Polars error for column dtype mismatches" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    columnResult <- Pl.columnInt64 df "name"
+                    case columnResult of
+                        Right _ -> expectationFailure "expected a Polars error for a dtype mismatch"
+                        Left err -> Pl.polarsErrorCode err `shouldBe` Pl.PolarsFailure
+
+        it "extracts grouped aggregation result columns" $ do
+            scanResult <- Pl.scanCsv salesCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    groupedResult <-
+                        Pl.agg
+                            [Pl.alias "salary_sum" (Pl.sum_ (Pl.col "salary"))]
+                            (Pl.groupByStable [Pl.col "department"] lf0)
+                    case groupedResult of
+                        Left err -> expectationFailure (show err)
+                        Right lf1 -> do
+                            collected <- Pl.collect lf1
+                            case collected of
+                                Left err -> expectationFailure (show err)
+                                Right df -> Pl.columnInt64 df "salary_sum" `shouldReturn` Right [Just 250, Just 200]
+
+        it "extracts join result columns with null preservation" $ do
+            employeesResult <- Pl.scanCsv employeesCsv
+            departmentsResult <- Pl.scanCsv departmentsCsv
+            case (employeesResult, departmentsResult) of
+                (Right employees, Right departments) -> do
+                    let options =
+                            Pl.defaultJoinOptions
+                                { Pl.joinType = Pl.JoinLeft
+                                , Pl.leftOn = [Pl.col "department"]
+                                , Pl.rightOn = [Pl.col "department"]
+                                , Pl.suffix = Just "_dept"
+                                }
+                    joined <- Pl.joinWith options employees departments
+                    case joined of
+                        Left err -> expectationFailure (show err)
+                        Right lf -> do
+                            collected <- Pl.collect lf
+                            case collected of
+                                Left err -> expectationFailure (show err)
+                                Right df -> Pl.columnText df "name_dept" `shouldReturn` Right [Just "Grace", Just "Grace", Just "Heidi", Nothing]
+                (Left err, _) -> expectationFailure (show err)
+                (_, Left err) -> expectationFailure (show err)
 
     describe "Polars.Join" $ do
         it "inner joins two lazy CSV scans and applies the default suffix" $ do

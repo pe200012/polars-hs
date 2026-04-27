@@ -1,6 +1,6 @@
 # Typed Column Extraction Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax for tracking, and checked boxes record completed execution.
 
 **Goal:** Add typed DataFrame column extraction for Bool, Int64, Double, and Text with null preservation.
 
@@ -33,7 +33,7 @@
 - Create: `test/data/values.csv`
 - Modify: `test/Spec.hs`
 
-- [ ] **Step 1: Create the typed fixture**
+- [x] **Step 1: Create the typed fixture**
 
 Write `test/data/values.csv`:
 
@@ -44,7 +44,7 @@ Bob,,8.25,false
 Carol,29,,
 ```
 
-- [ ] **Step 2: Add the fixture path and column extraction specs**
+- [x] **Step 2: Add the fixture path and column extraction specs**
 
 Add the fixture path after `departmentsCsv` in `test/Spec.hs`:
 
@@ -135,7 +135,7 @@ Add this `describe` block before `describe "Polars.IPC"`:
                 (_, Left err) -> expectationFailure (show err)
 ```
 
-- [ ] **Step 3: Run the focused Haskell test and verify RED**
+- [x] **Step 3: Run the focused Haskell test and verify RED**
 
 Run:
 
@@ -145,7 +145,7 @@ stack test --fast --test-arguments '--match "Polars.Column"'
 
 Expected: build fails because `Pl.columnText`, `Pl.columnInt64`, `Pl.columnDouble`, and `Pl.columnBool` are absent.
 
-- [ ] **Step 4: Commit the RED tests**
+- [x] **Step 4: Commit the RED tests**
 
 Run:
 
@@ -161,7 +161,7 @@ Expected: a new jj commit contains only the failing tests and fixture.
 - Modify: `rust/polars-hs-ffi/src/dataframe.rs`
 - Modify: `include/polars_hs.h` after Cargo runs cbindgen
 
-- [ ] **Step 1: Add encoder helpers to `rust/polars-hs-ffi/src/dataframe.rs`**
+- [x] **Step 1: Add encoder helpers to `rust/polars-hs-ffi/src/dataframe.rs`**
 
 Add these constants and helpers after `c_path`:
 
@@ -248,7 +248,7 @@ where
 }
 ```
 
-- [ ] **Step 2: Add the four exported ABI functions**
+- [x] **Step 2: Add the four exported ABI functions**
 
 Add these functions after `phs_dataframe_to_text`:
 
@@ -302,7 +302,7 @@ pub unsafe extern "C" fn phs_dataframe_column_text(
 }
 ```
 
-- [ ] **Step 3: Add Rust tests to the existing `tests` module**
+- [x] **Step 3: Add Rust tests to the existing `tests` module**
 
 Add these helpers in the `#[cfg(test)] mod tests` module:
 
@@ -427,7 +427,7 @@ Add these tests in the same module:
     }
 ```
 
-- [ ] **Step 4: Run Rust tests and verify GREEN for Rust**
+- [x] **Step 4: Run Rust tests and verify GREEN for Rust**
 
 Run:
 
@@ -437,7 +437,7 @@ cargo test --manifest-path rust/polars-hs-ffi/Cargo.toml
 
 Expected: all Rust tests pass and `include/polars_hs.h` contains the four new `phs_dataframe_column_*` declarations.
 
-- [ ] **Step 5: Commit Rust ABI implementation**
+- [x] **Step 5: Commit Rust ABI implementation**
 
 Run:
 
@@ -457,7 +457,7 @@ Expected: a new jj commit contains Rust implementation, Rust tests, and regenera
 - Modify: `package.yaml`
 - Modify: `polars-hs.cabal` after Stack/Hpack runs
 
-- [ ] **Step 1: Add raw exports and imports**
+- [x] **Step 1: Add raw exports and imports**
 
 Add these names to the export list in `src/Polars/Internal/Raw.hs` near the other DataFrame functions:
 
@@ -484,7 +484,7 @@ foreign import ccall unsafe "phs_dataframe_column_text"
     phs_dataframe_column_text :: Ptr RawDataFrame -> CString -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt
 ```
 
-- [ ] **Step 2: Create `src/Polars/Internal/ColumnDecode.hs`**
+- [x] **Step 2: Create `src/Polars/Internal/ColumnDecode.hs`**
 
 Write the complete module:
 
@@ -590,7 +590,7 @@ decodeError :: Text -> PolarsError
 decodeError = PolarsError InvalidArgument
 ```
 
-- [ ] **Step 3: Create `src/Polars/Column.hs`**
+- [x] **Step 3: Create `src/Polars/Column.hs`**
 
 Write the complete module:
 
@@ -665,7 +665,7 @@ columnBytesOut df name action decode = withDataFrame df $ \ptr ->
                     else Left <$> (consumeError status =<< peek errPtr)
 ```
 
-- [ ] **Step 4: Re-export the public module**
+- [x] **Step 4: Re-export the public module**
 
 Modify `src/Polars.hs` export list and imports:
 
@@ -681,7 +681,7 @@ Add:
 import Polars.Column
 ```
 
-- [ ] **Step 5: Update package metadata**
+- [x] **Step 5: Update package metadata**
 
 In `package.yaml`, add `Polars.Column` to `exposed-modules` and add `Polars.Internal.ColumnDecode` to `other-modules`:
 
@@ -698,7 +698,7 @@ In `package.yaml`, add `Polars.Column` to `exposed-modules` and add `Polars.Inte
   - Polars.Internal.ColumnDecode
 ```
 
-- [ ] **Step 6: Run the focused Haskell test and verify GREEN**
+- [x] **Step 6: Run the focused Haskell test and verify GREEN**
 
 Run:
 
@@ -708,7 +708,7 @@ stack test --fast --test-arguments '--match "Polars.Column"'
 
 Expected: all `Polars.Column` Hspec examples pass, and `polars-hs.cabal` includes the new modules.
 
-- [ ] **Step 7: Commit Haskell implementation**
+- [x] **Step 7: Commit Haskell implementation**
 
 Run:
 
@@ -725,7 +725,7 @@ Expected: a new jj commit contains Haskell API, decoders, package metadata, gene
 - Modify: `README.md`
 - Modify: `CHANGELOG.md`
 
-- [ ] **Step 1: Create `examples/columns.hs`**
+- [x] **Step 1: Create `examples/columns.hs`**
 
 Write:
 
@@ -750,7 +750,7 @@ main = do
             print active
 ```
 
-- [ ] **Step 2: Add README usage section**
+- [x] **Step 2: Add README usage section**
 
 Add this section after the lazy joins section:
 
@@ -777,7 +777,7 @@ case result of
 Supported MVP readers are `columnBool`, `columnInt64`, `columnDouble`, and `columnText`.
 ```
 
-- [ ] **Step 3: Add CHANGELOG entry**
+- [x] **Step 3: Add CHANGELOG entry**
 
 Add under `## Unreleased`:
 
@@ -785,7 +785,7 @@ Add under `## Unreleased`:
 - Add typed DataFrame column extraction via `Polars.Column` with bool, int64, double, and text readers that preserve nulls as `Nothing`.
 ```
 
-- [ ] **Step 4: Run the example**
+- [x] **Step 4: Run the example**
 
 Run:
 
@@ -802,7 +802,7 @@ Right [Just 9.5,Just 8.25,Nothing]
 Right [Just True,Just False,Nothing]
 ```
 
-- [ ] **Step 5: Commit docs and example**
+- [x] **Step 5: Commit docs and example**
 
 Run:
 
@@ -817,7 +817,7 @@ Expected: a new jj commit contains docs and example updates.
 **Files:**
 - Modify: `docs/superpowers/specs/2026-04-27-polars-hs-column-extraction-design.md`
 
-- [ ] **Step 1: Run full verification**
+- [x] **Step 1: Run full verification**
 
 Run:
 
@@ -834,7 +834,7 @@ stack runghc examples/columns.hs
 
 Expected: every command exits with status 0.
 
-- [ ] **Step 2: Append implementation results to the design doc**
+- [x] **Step 2: Append implementation results to the design doc**
 
 Append this block to `docs/superpowers/specs/2026-04-27-polars-hs-column-extraction-design.md` after the verification commands in Step 1 pass with the expected counts:
 
@@ -862,7 +862,7 @@ Append this block to `docs/superpowers/specs/2026-04-27-polars-hs-column-extract
 - No deviations from the approved design.
 ```
 
-- [ ] **Step 3: Commit verification notes**
+- [x] **Step 3: Commit verification notes**
 
 Run:
 
@@ -872,7 +872,7 @@ jj commit -m "docs: record typed column extraction verification"
 
 Expected: a new jj commit contains design implementation results.
 
-- [ ] **Step 4: Move and push `master`**
+- [x] **Step 4: Move and push `master`**
 
 Run:
 

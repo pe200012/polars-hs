@@ -2,7 +2,7 @@
 
 ![CI](https://github.com/pe200012/polars-hs/actions/workflows/ci.yml/badge.svg?branch=master)
 
-`polars-hs` is a Haskell binding to the Rust Polars dataframe engine. The current MVP exposes eager CSV/Parquet readers, lazy CSV/Parquet scans, expression-based lazy filters and projections, grouped aggregations, lazy joins, typed errors, and Arrow IPC byte round-trips.
+`polars-hs` is a Haskell binding to the Rust Polars dataframe engine. The current MVP exposes eager CSV/Parquet readers, lazy CSV/Parquet scans, expression-based lazy filters and projections, grouped aggregations, lazy joins, typed column extraction, typed errors, and Arrow IPC byte round-trips.
 
 The Haskell package uses a small Rust adapter crate in `rust/polars-hs-ffi`. The adapter owns direct calls into Polars and exposes a stable `phs_*` C ABI. Haskell wraps returned handles in `ForeignPtr` finalizers and returns `Either PolarsError a` for recoverable failures.
 
@@ -126,10 +126,49 @@ Run the join example with:
 stack runghc examples/join.hs
 ```
 
+## Typed column extraction
+
+```haskell
+{-# LANGUAGE OverloadedStrings #-}
+
+import qualified Polars as Pl
+
+main :: IO ()
+main = do
+  result <- Pl.readCsv "test/data/values.csv"
+  case result of
+    Left err -> print err
+    Right df -> do
+      names <- Pl.columnText df "name"
+      ages <- Pl.columnInt64 df "age"
+      scores <- Pl.columnDouble df "score"
+      active <- Pl.columnBool df "active"
+      print names
+      print ages
+      print scores
+      print active
+```
+
+Each extraction returns one value per row and preserves Polars null values as `Nothing`:
+
+```haskell
+Right [Just "Alice", Just "Bob", Just "Carol"]
+Right [Just 34, Nothing, Just 29]
+Right [Just 9.5, Just 8.25, Nothing]
+Right [Just True, Just False, Nothing]
+```
+
+Run the column extraction example with:
+
+```bash
+stack runghc examples/columns.hs
+```
+
 ## Public modules
 
 - `Polars` re-exports the MVP API.
 - `Polars.DataFrame` provides eager readers, shape/schema queries, head/tail, text rendering, and IPC byte conversion.
+- `Polars.Column` provides typed column extraction for bool, int64, double, and text values with null preservation.
 - `Polars.LazyFrame` provides scan, filter, select, withColumns, sort, limit, and collect.
 - `Polars.GroupBy` provides grouped lazy aggregation through groupBy, groupByStable, and agg.
 - `Polars.Join` provides lazy inner, left, right, and full joins with optional suffix configuration.

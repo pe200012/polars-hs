@@ -363,4 +363,24 @@ Arrow C Data Interface remains the zero-copy path for larger interoperability wo
 
 ## Implementation Results
 
-Implementation begins after user approval. This section will record verification output, deviations, and final commit information after implementation work starts.
+### Completed implementation
+
+- Added `Polars.Column` with `columnBool`, `columnInt64`, `columnDouble`, and `columnText`.
+- Added Rust ABI functions `phs_dataframe_column_bool`, `phs_dataframe_column_i64`, `phs_dataframe_column_f64`, and `phs_dataframe_column_text`.
+- Added tagged byte encoders in the Rust adapter and pure Haskell decoders in `Polars.Internal.ColumnDecode`.
+- Added `test/data/values.csv`, Hspec coverage, Rust ABI tests, README docs, CHANGELOG notes, and `examples/columns.hs`.
+
+### Verification
+
+- `cargo test --manifest-path rust/polars-hs-ffi/Cargo.toml`: 21 passed.
+- `cargo clippy --manifest-path rust/polars-hs-ffi/Cargo.toml -- -D warnings`: passed.
+- `stack test --fast`: 24 examples, 0 failures.
+- `hlint src app test`: no hints.
+- `stack runghc examples/iris.hs`: passed.
+- `stack runghc examples/groupby.hs`: passed.
+- `stack runghc examples/join.hs`: passed.
+- `stack runghc examples/columns.hs`: passed.
+
+### Deviations from design
+
+- No deviations from the approved design.

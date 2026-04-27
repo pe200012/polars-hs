@@ -37,6 +37,7 @@ extra-source-files:
     test/data/employees.csv
     test/data/people.csv
     test/data/sales.csv
+    test/data/values.csv
 
 source-repository head
   type: git
@@ -52,6 +53,7 @@ custom-setup
 library
   exposed-modules:
       Polars
+      Polars.Column
       Polars.DataFrame
       Polars.Error
       Polars.Expr
@@ -63,6 +65,7 @@ library
       Polars.Schema
   other-modules:
       Polars.Internal.Bytes
+      Polars.Internal.ColumnDecode
       Polars.Internal.CString
       Polars.Internal.Expr
       Polars.Internal.Managed

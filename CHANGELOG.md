@@ -19,5 +19,8 @@ and this project adheres to the
 - Lazy CSV and Parquet scans with filter, select, withColumns, sort, limit, and collect.
 - Arrow IPC byte and file round-trip helpers.
 - Hspec integration tests for eager, lazy, and IPC behavior.
+- Grouped lazy aggregation helpers.
+- Lazy join helpers with join options and suffix handling.
+- Typed DataFrame column extraction for bool, int64, double, and text columns.
 
 ## 0.1.0.0 - YYYY-MM-DD
