@@ -783,7 +783,7 @@ jj bookmark move master --to @-
 - Create: `examples/join.hs`
 - Modify: `README.md`
 
-- [ ] **Step 1: Add join example**
+- [x] **Step 1: Add join example**
 
 Write `examples/join.hs` exactly as follows:
 
@@ -822,7 +822,7 @@ main = do
         (_, Left err) -> print err
 ```
 
-- [ ] **Step 2: Add README join section**
+- [x] **Step 2: Add README join section**
 
 In `README.md`, add this section after the grouped aggregation section:
 
@@ -868,7 +868,7 @@ Update the public module list by adding this bullet after `Polars.GroupBy`:
 - `Polars.Join` provides lazy inner, left, right, and full joins with optional suffix configuration.
 ```
 
-- [ ] **Step 3: Run the join example**
+- [x] **Step 3: Run the join example**
 
 Run:
 
@@ -878,7 +878,7 @@ stack runghc examples/join.hs
 
 Expected result: output includes `Right (4,6)`, `Support`, `Engineering`, and `name_dept`.
 
-- [ ] **Step 4: Commit docs and example**
+- [x] **Step 4: Commit docs and example**
 
 Run:
 

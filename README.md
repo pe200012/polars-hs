@@ -2,7 +2,7 @@
 
 ![CI](https://github.com/pe200012/polars-hs/actions/workflows/ci.yml/badge.svg?branch=master)
 
-`polars-hs` is a Haskell binding to the Rust Polars dataframe engine. The current MVP exposes eager CSV/Parquet readers, lazy CSV/Parquet scans, expression-based lazy filters and projections, grouped aggregations, typed errors, and Arrow IPC byte round-trips.
+`polars-hs` is a Haskell binding to the Rust Polars dataframe engine. The current MVP exposes eager CSV/Parquet readers, lazy CSV/Parquet scans, expression-based lazy filters and projections, grouped aggregations, lazy joins, typed errors, and Arrow IPC byte round-trips.
 
 The Haskell package uses a small Rust adapter crate in `rust/polars-hs-ffi`. The adapter owns direct calls into Polars and exposes a stable `phs_*` C ABI. Haskell wraps returned handles in `ForeignPtr` finalizers and returns `Either PolarsError a` for recoverable failures.
 
@@ -92,12 +92,47 @@ Run the grouped aggregation example with:
 stack runghc examples/groupby.hs
 ```
 
+## Lazy joins
+
+```haskell
+{-# LANGUAGE OverloadedStrings #-}
+
+import qualified Polars as Pl
+
+main :: IO ()
+main = do
+  employeesResult <- Pl.scanCsv "test/data/employees.csv"
+  departmentsResult <- Pl.scanCsv "test/data/departments.csv"
+  case (employeesResult, departmentsResult) of
+    (Right employees, Right departments) -> do
+      let options =
+            Pl.defaultJoinOptions
+              { Pl.joinType = Pl.JoinLeft
+              , Pl.leftOn = [Pl.col "department"]
+              , Pl.rightOn = [Pl.col "department"]
+              , Pl.suffix = Just "_dept"
+              }
+      joined <- Pl.joinWith options employees departments
+      case joined of
+        Left err -> print err
+        Right lf -> Pl.collect lf >>= print
+    (Left err, _) -> print err
+    (_, Left err) -> print err
+```
+
+Run the join example with:
+
+```bash
+stack runghc examples/join.hs
+```
+
 ## Public modules
 
 - `Polars` re-exports the MVP API.
 - `Polars.DataFrame` provides eager readers, shape/schema queries, head/tail, text rendering, and IPC byte conversion.
 - `Polars.LazyFrame` provides scan, filter, select, withColumns, sort, limit, and collect.
 - `Polars.GroupBy` provides grouped lazy aggregation through groupBy, groupByStable, and agg.
+- `Polars.Join` provides lazy inner, left, right, and full joins with optional suffix configuration.
 - `Polars.Expr` and `Polars.Operators` build a pure Haskell expression AST, including aggregation expressions.
 - `Polars.Error` defines `PolarsError` and `PolarsErrorCode`.
 - `Polars.Schema` defines schema field and datatype values.
