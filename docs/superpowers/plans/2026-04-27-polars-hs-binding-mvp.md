@@ -67,7 +67,7 @@ Create and modify these files.
 - Modify: `test/Spec.hs`
 - Create: `test/data/people.csv`
 
-- [ ] **Step 1: Replace `package.yaml` with the MVP package configuration**
+- [x] **Step 1: Replace `package.yaml` with the MVP package configuration**
 
 ```yaml
 name:                polars-hs
@@ -172,7 +172,7 @@ tests:
     - hspec >= 2.11 && < 2.12
 ```
 
-- [ ] **Step 2: Replace `test/Spec.hs` with failing integration tests**
+- [x] **Step 2: Replace `test/Spec.hs` with failing integration tests**
 
 ```haskell
 {-# LANGUAGE OverloadedStrings #-}
@@ -257,7 +257,7 @@ main = hspec $ do
                                 Right df1 -> Pl.shape df1 `shouldReturn` Right (3, 2)
 ```
 
-- [ ] **Step 3: Create the CSV fixture**
+- [x] **Step 3: Create the CSV fixture**
 
 ```csv
 name,age
@@ -268,7 +268,7 @@ Carol,29
 
 Write it to `test/data/people.csv`.
 
-- [ ] **Step 4: Run the failing Haskell test**
+- [x] **Step 4: Run the failing Haskell test**
 
 Run:
 
@@ -278,7 +278,7 @@ stack test --fast
 
 Expected: FAIL. The failure should mention missing modules such as `Polars`, because implementation files have not been created yet.
 
-- [ ] **Step 5: Commit the failing test task**
+- [x] **Step 5: Commit the failing test task**
 
 Run:
 
@@ -303,7 +303,7 @@ Expected in a jj repository: a commit is created. Expected in the current checko
 - Create: `rust/polars-hs-ffi/src/handles.rs`
 - Create: `rust/polars-hs-ffi/src/bytes.rs`
 
-- [ ] **Step 1: Replace `Setup.hs` with a Cargo build hook**
+- [x] **Step 1: Replace `Setup.hs` with a Cargo build hook**
 
 ```haskell
 module Main (main) where
@@ -337,7 +337,7 @@ rustBuildHook packageDescription localBuildInfo hooks flags = do
     buildHook simpleUserHooks packageDescription localBuildInfo hooks flags
 ```
 
-- [ ] **Step 2: Create `rust/polars-hs-ffi/Cargo.toml`**
+- [x] **Step 2: Create `rust/polars-hs-ffi/Cargo.toml`**
 
 ```toml
 [package]
@@ -359,7 +359,7 @@ polars = { version = "0.53.0", default-features = false, features = ["lazy", "cs
 cbindgen = "0.29"
 ```
 
-- [ ] **Step 3: Create `rust/polars-hs-ffi/build.rs`**
+- [x] **Step 3: Create `rust/polars-hs-ffi/build.rs`**
 
 ```rust
 use std::env;
@@ -384,7 +384,7 @@ fn main() {
 }
 ```
 
-- [ ] **Step 4: Create `rust/polars-hs-ffi/cbindgen.toml`**
+- [x] **Step 4: Create `rust/polars-hs-ffi/cbindgen.toml`**
 
 ```toml
 language = "C"
@@ -405,7 +405,7 @@ include = [
 ]
 ```
 
-- [ ] **Step 5: Create `rust/polars-hs-ffi/src/error.rs`**
+- [x] **Step 5: Create `rust/polars-hs-ffi/src/error.rs`**
 
 ```rust
 use std::ffi::{CStr, CString};
@@ -553,7 +553,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 6: Create `rust/polars-hs-ffi/src/handles.rs`**
+- [x] **Step 6: Create `rust/polars-hs-ffi/src/handles.rs`**
 
 ```rust
 use polars::prelude::{DataFrame, Expr, LazyFrame};
@@ -642,7 +642,7 @@ pub unsafe extern "C" fn phs_expr_free(ptr: *mut phs_expr) {
 }
 ```
 
-- [ ] **Step 7: Create `rust/polars-hs-ffi/src/bytes.rs`**
+- [x] **Step 7: Create `rust/polars-hs-ffi/src/bytes.rs`**
 
 ```rust
 use std::os::raw::c_uchar;
@@ -681,7 +681,7 @@ pub unsafe extern "C" fn phs_bytes_free(bytes: *mut phs_bytes) {
 }
 ```
 
-- [ ] **Step 8: Create `rust/polars-hs-ffi/src/lib.rs`**
+- [x] **Step 8: Create `rust/polars-hs-ffi/src/lib.rs`**
 
 ```rust
 pub mod bytes;
@@ -699,7 +699,7 @@ pub extern "C" fn phs_version_minor() -> u32 {
 }
 ```
 
-- [ ] **Step 9: Run Rust foundation tests**
+- [x] **Step 9: Run Rust foundation tests**
 
 Run:
 
@@ -709,7 +709,7 @@ cargo test --manifest-path rust/polars-hs-ffi/Cargo.toml
 
 Expected: PASS. Cargo should create `rust/polars-hs-ffi/Cargo.lock` and `include/polars_hs.h`.
 
-- [ ] **Step 10: Commit the Rust foundation task**
+- [x] **Step 10: Commit the Rust foundation task**
 
 Run:
 

@@ -1,0 +1,16 @@
+language = "C"
+pragma_once = true
+include_guard = "POLARS_HS_H"
+
+[parse]
+parse_deps = false
+
+[export]
+prefix = ""
+include = [
+  "phs_bytes",
+  "phs_dataframe",
+  "phs_error",
+  "phs_expr",
+  "phs_lazyframe"
+]
