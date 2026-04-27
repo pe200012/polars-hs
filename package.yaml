@@ -6,21 +6,29 @@ author:              "pe200012"
 maintainer:          "1326263755@qq.com"
 copyright:           "2026 pe200012"
 
+build-type:          Custom
+
 extra-source-files:
 - README.md
 - CHANGELOG.md
+- test/data/*.csv
 
-# Metadata used when publishing your package
-# synopsis:            Short description of your package
-# category:            Web
+synopsis:            Haskell bindings for the Rust Polars dataframe library
+category:            Data
 
-# To avoid duplicated efforts in documentation and dealing with the
-# complications of embedding Haddock markup inside cabal files, it is
-# common to point users to the README.md file.
 description:         Please see the README on GitHub at <https://github.com/pe200012/polars-hs#readme>
+
+custom-setup:
+  dependencies:
+  - base >= 4.7 && < 5
+  - Cabal
 
 dependencies:
 - base >= 4.7 && < 5
+- bytestring >= 0.12 && < 0.14
+- text >= 2.1 && < 2.3
+- filepath >= 1.4 && < 1.6
+- directory >= 1.3 && < 1.4
 
 ghc-options:
 - -Wall
@@ -35,6 +43,22 @@ ghc-options:
 
 library:
   source-dirs: src
+  exposed-modules:
+  - Polars
+  - Polars.DataFrame
+  - Polars.Error
+  - Polars.Expr
+  - Polars.IPC
+  - Polars.LazyFrame
+  - Polars.Operators
+  - Polars.Schema
+  other-modules:
+  - Polars.Internal.Bytes
+  - Polars.Internal.CString
+  - Polars.Internal.Expr
+  - Polars.Internal.Managed
+  - Polars.Internal.Raw
+  - Polars.Internal.Result
 
 executables:
   polars-hs-exe:
@@ -57,3 +81,4 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - polars-hs
+    - hspec >= 2.11 && < 2.12

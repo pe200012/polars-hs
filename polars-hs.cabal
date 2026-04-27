@@ -6,7 +6,9 @@ cabal-version: 2.2
 
 name:           polars-hs
 version:        0.1.0.0
+synopsis:       Haskell bindings for the Rust Polars dataframe library
 description:    Please see the README on GitHub at <https://github.com/pe200012/polars-hs#readme>
+category:       Data
 homepage:       https://github.com/pe200012/polars-hs#readme
 bug-reports:    https://github.com/pe200012/polars-hs/issues
 author:         pe200012
@@ -14,27 +16,47 @@ maintainer:     1326263755@qq.com
 copyright:      2026 pe200012
 license:        BSD-3-Clause
 license-file:   LICENSE
-build-type:     Simple
+build-type:     Custom
 extra-source-files:
     README.md
     CHANGELOG.md
+    test/data/people.csv
 
 source-repository head
   type: git
   location: https://github.com/pe200012/polars-hs
 
+custom-setup
+  setup-depends:
+      Cabal
+    , base >=4.7 && <5
+
 library
   exposed-modules:
-      Lib
+      Polars
+      Polars.DataFrame
+      Polars.Error
+      Polars.Expr
+      Polars.IPC
+      Polars.LazyFrame
+      Polars.Operators
+      Polars.Schema
   other-modules:
-      Paths_polars_hs
-  autogen-modules:
-      Paths_polars_hs
+      Polars.Internal.Bytes
+      Polars.Internal.CString
+      Polars.Internal.Expr
+      Polars.Internal.Managed
+      Polars.Internal.Raw
+      Polars.Internal.Result
   hs-source-dirs:
       src
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
   build-depends:
       base >=4.7 && <5
+    , bytestring >=0.12 && <0.14
+    , directory ==1.3.*
+    , filepath >=1.4 && <1.6
+    , text >=2.1 && <2.3
   default-language: Haskell2010
 
 executable polars-hs-exe
@@ -48,7 +70,11 @@ executable polars-hs-exe
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
+    , bytestring >=0.12 && <0.14
+    , directory ==1.3.*
+    , filepath >=1.4 && <1.6
     , polars-hs
+    , text >=2.1 && <2.3
   default-language: Haskell2010
 
 test-suite polars-hs-test
@@ -63,5 +89,10 @@ test-suite polars-hs-test
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
+    , bytestring >=0.12 && <0.14
+    , directory ==1.3.*
+    , filepath >=1.4 && <1.6
+    , hspec ==2.11.*
     , polars-hs
+    , text >=2.1 && <2.3
   default-language: Haskell2010
