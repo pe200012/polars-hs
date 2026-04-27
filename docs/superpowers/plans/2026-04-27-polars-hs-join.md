@@ -896,7 +896,7 @@ jj bookmark move master --to @-
 - Modify: `docs/superpowers/specs/2026-04-27-polars-hs-join-design.md`
 - Modify: this plan file
 
-- [ ] **Step 1: Run full verification**
+- [x] **Step 1: Run full verification**
 
 Run:
 
@@ -922,7 +922,7 @@ examples/groupby.hs prints the grouped DataFrame.
 examples/join.hs prints a left join with shape Right (4,6).
 ```
 
-- [ ] **Step 2: Update design implementation results**
+- [x] **Step 2: Update design implementation results**
 
 Replace the `Implementation Results` section in `docs/superpowers/specs/2026-04-27-polars-hs-join-design.md` with:
 
@@ -948,11 +948,11 @@ Fresh verification passed:
 The implementation matched the design: public join options remain Haskell-owned, join keys compile through the existing expression compiler, suffix handling uses a scoped optional CString, and Rust owns Polars `JoinArgs` construction.
 ```
 
-- [ ] **Step 3: Mark plan checkboxes complete**
+- [x] **Step 3: Mark plan checkboxes complete**
 
 Change each completed checkbox in this plan from `[ ]` to `[x]` as work finishes.
 
-- [ ] **Step 4: Commit verification notes**
+- [x] **Step 4: Commit verification notes**
 
 Run:
 
@@ -962,7 +962,7 @@ jj commit -m "docs: record lazy join verification"
 jj bookmark move master --to @-
 ```
 
-- [ ] **Step 5: Push `master`**
+- [x] **Step 5: Push `master`**
 
 Run:
 
