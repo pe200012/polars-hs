@@ -224,6 +224,26 @@ mod tests {
         std::ffi::CString::new(path.to_string_lossy().as_bytes()).unwrap()
     }
 
+    fn employees_fixture_path() -> std::ffi::CString {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("test")
+            .join("data")
+            .join("employees.csv");
+        std::ffi::CString::new(path.to_string_lossy().as_bytes()).unwrap()
+    }
+
+    fn departments_fixture_path() -> std::ffi::CString {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("test")
+            .join("data")
+            .join("departments.csv");
+        std::ffi::CString::new(path.to_string_lossy().as_bytes()).unwrap()
+    }
+
     #[test]
     fn lazy_filter_select_collect_reports_shape() {
         let path = fixture_path();
@@ -346,6 +366,156 @@ mod tests {
             crate::handles::phs_expr_free(salary_expr);
             crate::handles::phs_expr_free(salary_sum_expr);
             crate::handles::phs_lazyframe_free(lf0);
+        }
+    }
+
+    #[test]
+    fn lazy_join_inner_collects_expected_shape() {
+        let employees_path = employees_fixture_path();
+        let departments_path = departments_fixture_path();
+        let mut left = ptr::null_mut();
+        let mut right = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(unsafe { phs_scan_csv(employees_path.as_ptr(), &mut left, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { phs_scan_csv(departments_path.as_ptr(), &mut right, &mut err) }, PHS_OK);
+
+        let department = std::ffi::CString::new("department").unwrap();
+        let mut left_key = ptr::null_mut();
+        let mut right_key = ptr::null_mut();
+        assert_eq!(unsafe { crate::expr::phs_expr_col(department.as_ptr(), &mut left_key, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::expr::phs_expr_col(department.as_ptr(), &mut right_key, &mut err) }, PHS_OK);
+
+        let left_keys = [left_key as *const phs_expr];
+        let right_keys = [right_key as *const phs_expr];
+        let mut joined: *mut phs_lazyframe = ptr::null_mut();
+        assert_eq!(
+            unsafe {
+                phs_lazyframe_join(
+                    left,
+                    right,
+                    left_keys.as_ptr(),
+                    left_keys.len(),
+                    right_keys.as_ptr(),
+                    right_keys.len(),
+                    0,
+                    ptr::null(),
+                    &mut joined,
+                    &mut err,
+                )
+            },
+            PHS_OK
+        );
+
+        let mut df = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_collect(joined, &mut df, &mut err) }, PHS_OK);
+        let mut height = 0;
+        let mut width = 0;
+        assert_eq!(unsafe { crate::dataframe::phs_dataframe_shape(df, &mut height, &mut width, &mut err) }, PHS_OK);
+        assert_eq!((height, width), (3, 6));
+
+        unsafe {
+            crate::handles::phs_expr_free(left_key);
+            crate::handles::phs_expr_free(right_key);
+            crate::handles::phs_lazyframe_free(left);
+            crate::handles::phs_lazyframe_free(right);
+            crate::handles::phs_lazyframe_free(joined);
+            crate::handles::phs_dataframe_free(df);
+        }
+    }
+
+    #[test]
+    fn lazy_join_rejects_mismatched_key_lengths() {
+        let employees_path = employees_fixture_path();
+        let departments_path = departments_fixture_path();
+        let mut left = ptr::null_mut();
+        let mut right = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(unsafe { phs_scan_csv(employees_path.as_ptr(), &mut left, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { phs_scan_csv(departments_path.as_ptr(), &mut right, &mut err) }, PHS_OK);
+
+        let department = std::ffi::CString::new("department").unwrap();
+        let name = std::ffi::CString::new("name").unwrap();
+        let mut left_department = ptr::null_mut();
+        let mut left_name = ptr::null_mut();
+        let mut right_department = ptr::null_mut();
+        assert_eq!(unsafe { crate::expr::phs_expr_col(department.as_ptr(), &mut left_department, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::expr::phs_expr_col(name.as_ptr(), &mut left_name, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::expr::phs_expr_col(department.as_ptr(), &mut right_department, &mut err) }, PHS_OK);
+
+        let left_keys = [left_department as *const phs_expr, left_name as *const phs_expr];
+        let right_keys = [right_department as *const phs_expr];
+        let mut joined: *mut phs_lazyframe = ptr::null_mut();
+        let status = unsafe {
+            phs_lazyframe_join(
+                left,
+                right,
+                left_keys.as_ptr(),
+                left_keys.len(),
+                right_keys.as_ptr(),
+                right_keys.len(),
+                0,
+                ptr::null(),
+                &mut joined,
+                &mut err,
+            )
+        };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        assert!(joined.is_null());
+        assert!(!err.is_null());
+
+        unsafe {
+            crate::error::phs_error_free(err);
+            crate::handles::phs_expr_free(left_department);
+            crate::handles::phs_expr_free(left_name);
+            crate::handles::phs_expr_free(right_department);
+            crate::handles::phs_lazyframe_free(left);
+            crate::handles::phs_lazyframe_free(right);
+        }
+    }
+
+    #[test]
+    fn lazy_join_rejects_unknown_join_type() {
+        let employees_path = employees_fixture_path();
+        let departments_path = departments_fixture_path();
+        let mut left = ptr::null_mut();
+        let mut right = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(unsafe { phs_scan_csv(employees_path.as_ptr(), &mut left, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { phs_scan_csv(departments_path.as_ptr(), &mut right, &mut err) }, PHS_OK);
+
+        let department = std::ffi::CString::new("department").unwrap();
+        let mut left_key = ptr::null_mut();
+        let mut right_key = ptr::null_mut();
+        assert_eq!(unsafe { crate::expr::phs_expr_col(department.as_ptr(), &mut left_key, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::expr::phs_expr_col(department.as_ptr(), &mut right_key, &mut err) }, PHS_OK);
+
+        let left_keys = [left_key as *const phs_expr];
+        let right_keys = [right_key as *const phs_expr];
+        let mut joined: *mut phs_lazyframe = ptr::null_mut();
+        let status = unsafe {
+            phs_lazyframe_join(
+                left,
+                right,
+                left_keys.as_ptr(),
+                left_keys.len(),
+                right_keys.as_ptr(),
+                right_keys.len(),
+                99,
+                ptr::null(),
+                &mut joined,
+                &mut err,
+            )
+        };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        assert!(joined.is_null());
+        assert!(!err.is_null());
+
+        unsafe {
+            crate::error::phs_error_free(err);
+            crate::handles::phs_expr_free(left_key);
+            crate::handles::phs_expr_free(right_key);
+            crate::handles::phs_lazyframe_free(left);
+            crate::handles::phs_lazyframe_free(right);
         }
     }
 }

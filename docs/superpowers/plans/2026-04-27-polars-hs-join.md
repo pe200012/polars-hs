@@ -239,7 +239,7 @@ jj bookmark move master --to @-
 **Files:**
 - Modify: `rust/polars-hs-ffi/src/lazyframe.rs`
 
-- [ ] **Step 1: Add Rust fixture helpers**
+- [x] **Step 1: Add Rust fixture helpers**
 
 In the `#[cfg(test)] mod tests` block in `rust/polars-hs-ffi/src/lazyframe.rs`, add these helpers below `sales_fixture_path`:
 
@@ -265,7 +265,7 @@ In the `#[cfg(test)] mod tests` block in `rust/polars-hs-ffi/src/lazyframe.rs`, 
     }
 ```
 
-- [ ] **Step 2: Add Rust join tests**
+- [x] **Step 2: Add Rust join tests**
 
 Add these tests below `lazy_group_by_agg_rejects_null_key_array_with_positive_length`:
 
@@ -421,7 +421,7 @@ Add these tests below `lazy_group_by_agg_rejects_null_key_array_with_positive_le
     }
 ```
 
-- [ ] **Step 3: Run Rust tests and confirm the expected failure**
+- [x] **Step 3: Run Rust tests and confirm the expected failure**
 
 Run:
 
@@ -431,7 +431,7 @@ cargo test --manifest-path rust/polars-hs-ffi/Cargo.toml lazyframe::tests::lazy_
 
 Expected result: build fails because `phs_lazyframe_join` is missing.
 
-- [ ] **Step 4: Commit Rust failing tests**
+- [x] **Step 4: Commit Rust failing tests**
 
 Run:
 
