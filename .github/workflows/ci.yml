@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache Cargo and Rust target
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust/polars-hs-ffi
+
+      - name: Set up Haskell
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: "9.12.2"
+          enable-stack: true
+          stack-version: "3.9.3"
+          stack-setup-ghc: true
+
+      - name: Cache Stack
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.stack
+            .stack-work
+          key: stack-${{ runner.os }}-${{ hashFiles('stack.yaml', 'stack.yaml.lock', 'package.yaml', 'polars-hs.cabal') }}
+          restore-keys: |
+            stack-${{ runner.os }}-
+
+      - name: Set up HLint
+        uses: haskell-actions/hlint-setup@v2
+        with:
+          version: "3.10"
+
+      - name: Run Rust tests
+        run: cargo test --manifest-path rust/polars-hs-ffi/Cargo.toml
+
+      - name: Run Rust Clippy
+        run: cargo clippy --manifest-path rust/polars-hs-ffi/Cargo.toml -- -D warnings
+
+      - name: Run Haskell tests
+        run: stack test --fast
+
+      - name: Run HLint
+        run: hlint src app test
+
+      - name: Run example
+        run: stack runghc examples/iris.hs
