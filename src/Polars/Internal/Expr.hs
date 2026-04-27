@@ -21,12 +21,13 @@ import Foreign.Ptr (Ptr, nullPtr)
 import Foreign.Storable (peek, poke)
 
 import Polars.Error (PolarsError)
-import Polars.Expr (BinaryOperator (..), Expr (..))
+import Polars.Expr (AggFunction (..), BinaryOperator (..), Expr (..))
 import Polars.Internal.CString (withTextCString)
 import Polars.Internal.Managed (ManagedExpr, mkManagedExpr, withManagedExpr)
 import Polars.Internal.Raw
     ( RawError
     , RawExpr
+    , phs_expr_agg
     , phs_expr_alias
     , phs_expr_binary
     , phs_expr_col
@@ -56,6 +57,11 @@ compileExpr = \case
         case compiled of
             Left err -> pure (Left err)
             Right managed -> withManagedExpr managed $ \ptr -> exprOut (phs_expr_not ptr)
+    Aggregate function expr -> do
+        compiled <- compileExpr expr
+        case compiled of
+            Left err -> pure (Left err)
+            Right managed -> withManagedExpr managed $ \ptr -> exprOut (phs_expr_agg (aggregationCode function) ptr)
     BinaryExpr op left right -> do
         leftCompiled <- compileExpr left
         case leftCompiled of
@@ -113,3 +119,13 @@ operatorCode Add = 8
 operatorCode Subtract = 9
 operatorCode Multiply = 10
 operatorCode Divide = 11
+
+aggregationCode :: AggFunction -> CInt
+aggregationCode AggSum = 0
+aggregationCode AggMean = 1
+aggregationCode AggMin = 2
+aggregationCode AggMax = 3
+aggregationCode AggCount = 4
+aggregationCode AggLen = 5
+aggregationCode AggFirst = 6
+aggregationCode AggLast = 7

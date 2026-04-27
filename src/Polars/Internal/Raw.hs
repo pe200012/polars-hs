@@ -29,6 +29,7 @@ module Polars.Internal.Raw
     , phs_error_code
     , phs_error_free
     , phs_error_message
+    , phs_expr_agg
     , phs_expr_alias
     , phs_expr_binary
     , phs_expr_col
@@ -41,6 +42,7 @@ module Polars.Internal.Raw
     , phs_lazyframe_collect
     , phs_lazyframe_filter
     , phs_lazyframe_free_finalizer
+    , phs_lazyframe_group_by_agg
     , phs_lazyframe_limit
     , phs_lazyframe_select
     , phs_lazyframe_sort
@@ -143,6 +145,9 @@ foreign import ccall unsafe "phs_expr_not"
 foreign import ccall unsafe "phs_expr_binary"
     phs_expr_binary :: CInt -> Ptr RawExpr -> Ptr RawExpr -> Ptr (Ptr RawExpr) -> Ptr (Ptr RawError) -> IO CInt
 
+foreign import ccall unsafe "phs_expr_agg"
+    phs_expr_agg :: CInt -> Ptr RawExpr -> Ptr (Ptr RawExpr) -> Ptr (Ptr RawError) -> IO CInt
+
 foreign import ccall unsafe "phs_scan_csv"
     phs_scan_csv :: CString -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
 
@@ -166,6 +171,9 @@ foreign import ccall unsafe "phs_lazyframe_sort"
 
 foreign import ccall unsafe "phs_lazyframe_limit"
     phs_lazyframe_limit :: Ptr RawLazyFrame -> Word64 -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_lazyframe_group_by_agg"
+    phs_lazyframe_group_by_agg :: Ptr RawLazyFrame -> Ptr (Ptr RawExpr) -> CSize -> Ptr (Ptr RawExpr) -> CSize -> CBool -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_dataframe_to_ipc_bytes"
     phs_dataframe_to_ipc_bytes :: Ptr RawDataFrame -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt

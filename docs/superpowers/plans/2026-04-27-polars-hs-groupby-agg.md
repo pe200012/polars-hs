@@ -126,7 +126,7 @@ stack test --fast
 
 Expected result: build fails because `Pl.agg`, `Pl.groupByStable`, `Pl.groupBy`, `Pl.sum_`, `Pl.mean_`, and `Pl.count_` are missing.
 
-- [ ] **Step 4: Commit the failing test**
+- [x] **Step 4: Commit the failing test**
 
 Run:
 
@@ -424,7 +424,7 @@ jj bookmark move master --to @-
 - Modify: `src/Polars/Internal/Expr.hs`
 - Modify: `src/Polars/Internal/Raw.hs`
 
-- [ ] **Step 1: Extend the public expression AST**
+- [x] **Step 1: Extend the public expression AST**
 
 In `src/Polars/Expr.hs`, export `AggFunction (..)` plus the aggregation constructors. The module export list becomes:
 
@@ -501,7 +501,7 @@ last_ :: Expr -> Expr
 last_ = Aggregate AggLast
 ```
 
-- [ ] **Step 2: Add raw FFI imports**
+- [x] **Step 2: Add raw FFI imports**
 
 In `src/Polars/Internal/Raw.hs`, ensure the `Foreign.C.Types` import includes `CBool`, then add these imports beside the existing expression and LazyFrame imports:
 
@@ -513,7 +513,7 @@ foreign import ccall unsafe "phs_lazyframe_group_by_agg"
     phs_lazyframe_group_by_agg :: Ptr RawLazyFrame -> Ptr (Ptr RawExpr) -> CSize -> Ptr (Ptr RawExpr) -> CSize -> CBool -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
 ```
 
-- [ ] **Step 3: Compile aggregation expressions**
+- [x] **Step 3: Compile aggregation expressions**
 
 In `src/Polars/Internal/Expr.hs`, import `AggFunction (..)` from `Polars.Expr` and import `phs_expr_agg` from `Polars.Internal.Raw`.
 
@@ -541,7 +541,7 @@ aggregationCode AggFirst = 6
 aggregationCode AggLast = 7
 ```
 
-- [ ] **Step 4: Run HLint on touched Haskell modules**
+- [x] **Step 4: Run HLint on touched Haskell modules**
 
 Run:
 
@@ -551,7 +551,7 @@ hlint src/Polars/Expr.hs src/Polars/Internal/Expr.hs src/Polars/Internal/Raw.hs
 
 Expected result: no hints for these modules.
 
-- [ ] **Step 5: Commit expression and raw FFI layers**
+- [x] **Step 5: Commit expression and raw FFI layers**
 
 Run:
 
