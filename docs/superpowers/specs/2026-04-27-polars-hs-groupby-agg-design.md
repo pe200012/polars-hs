@@ -271,4 +271,19 @@ Names such as `sum_` and `max_` make unqualified imports practical and still rea
 
 ## Implementation Results
 
-Implementation begins after user approval. This section will record verification output, deviations, and final commit information after implementation work starts.
+Implementation completed with the planned pure `GroupBy` descriptor and single grouped aggregation FFI call. Public aggregation expressions compile through `phs_expr_agg`, and grouped aggregation crosses the Rust boundary through `phs_lazyframe_group_by_agg`.
+
+### Verification
+
+Fresh verification passed:
+
+- `cargo test --manifest-path rust/polars-hs-ffi/Cargo.toml`: 13 Rust tests passed.
+- `cargo clippy --manifest-path rust/polars-hs-ffi/Cargo.toml -- -D warnings`: passed.
+- `stack test --fast`: 9 Hspec examples passed.
+- `hlint src app test`: no hints.
+- `stack runghc examples/iris.hs`: printed the existing one-row DataFrame.
+- `stack runghc examples/groupby.hs`: printed a two-row grouped DataFrame with Engineering and Sales totals.
+
+### Deviations
+
+The implementation matched the design. `GroupBy` remains a Haskell descriptor, aggregation expression constructors use the planned underscore names, and the Rust C ABI owns Polars-specific grouped aggregation behavior.

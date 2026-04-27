@@ -711,7 +711,7 @@ jj bookmark move master --to @-
 - Modify: `docs/superpowers/specs/2026-04-27-polars-hs-groupby-agg-design.md`
 - Modify: `docs/superpowers/plans/2026-04-27-polars-hs-groupby-agg.md`
 
-- [ ] **Step 1: Add a grouped aggregation example**
+- [x] **Step 1: Add a grouped aggregation example**
 
 Write `examples/groupby.hs` exactly as follows:
 
@@ -747,7 +747,7 @@ main = do
                             either print TIO.putStrLn textResult
 ```
 
-- [ ] **Step 2: Add README usage text**
+- [x] **Step 2: Add README usage text**
 
 In `README.md`, add this section after the lazy query example:
 
@@ -778,7 +778,7 @@ main = do
 ```
 ````
 
-- [ ] **Step 3: Run the example**
+- [x] **Step 3: Run the example**
 
 Run:
 
@@ -788,7 +788,7 @@ stack runghc examples/groupby.hs
 
 Expected result: output includes `Right (2,4)`, `Engineering`, `Sales`, `250`, and `200`.
 
-- [ ] **Step 4: Run full verification**
+- [x] **Step 4: Run full verification**
 
 Run:
 
@@ -812,7 +812,7 @@ examples/iris.hs prints the existing one-row DataFrame.
 examples/groupby.hs prints a two-row grouped DataFrame.
 ```
 
-- [ ] **Step 5: Update design implementation results**
+- [x] **Step 5: Update design implementation results**
 
 Append this section to `docs/superpowers/specs/2026-04-27-polars-hs-groupby-agg-design.md` after the existing Implementation Results paragraph:
 
@@ -833,11 +833,11 @@ Implementation completed with the planned pure `GroupBy` descriptor and single g
 The implementation matched the design: public `GroupBy` remains a Haskell descriptor, aggregation expressions compile through `phs_expr_agg`, and grouped aggregation crosses FFI through `phs_lazyframe_group_by_agg`.
 ```
 
-- [ ] **Step 6: Mark this plan task complete**
+- [x] **Step 6: Mark this plan task complete**
 
 In this file, change Task 6 checkboxes from `[ ]` to `[x]` as each step completes.
 
-- [ ] **Step 7: Commit docs, examples, and verification notes**
+- [x] **Step 7: Commit docs, examples, and verification notes**
 
 Run:
 
@@ -847,7 +847,7 @@ jj commit -m "docs: add groupby aggregation usage"
 jj bookmark move master --to @-
 ```
 
-- [ ] **Step 8: Push `master`**
+- [x] **Step 8: Push `master`**
 
 Run:
 
