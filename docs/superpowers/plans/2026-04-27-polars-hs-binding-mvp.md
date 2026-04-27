@@ -728,7 +728,7 @@ Expected in a jj repository: a commit is created. Expected in the current checko
 - Modify: `rust/polars-hs-ffi/src/dataframe.rs`
 - Modify: `rust/polars-hs-ffi/src/ipc.rs`
 
-- [ ] **Step 1: Update `rust/polars-hs-ffi/src/lib.rs` for eager DataFrame and IPC modules**
+- [x] **Step 1: Update `rust/polars-hs-ffi/src/lib.rs` for eager DataFrame and IPC modules**
 
 ```rust
 pub mod bytes;
@@ -748,7 +748,7 @@ pub extern "C" fn phs_version_minor() -> u32 {
 }
 ```
 
-- [ ] **Step 2: Replace `rust/polars-hs-ffi/src/dataframe.rs`**
+- [x] **Step 2: Replace `rust/polars-hs-ffi/src/dataframe.rs`**
 
 ```rust
 use std::fs::File;
@@ -973,7 +973,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 3: Replace `rust/polars-hs-ffi/src/ipc.rs`**
+- [x] **Step 3: Replace `rust/polars-hs-ffi/src/ipc.rs`**
 
 ```rust
 use std::fs::File;
@@ -1120,7 +1120,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 4: Run Rust tests**
+- [x] **Step 4: Run Rust tests**
 
 Run:
 
@@ -1130,7 +1130,7 @@ cargo test --manifest-path rust/polars-hs-ffi/Cargo.toml
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit the Rust eager dataframe task**
+- [x] **Step 5: Commit the Rust eager dataframe task**
 
 Run:
 
