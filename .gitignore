@@ -1,0 +1,5 @@
+.stack-work/
+.serena/
+.worktrees/
+rust/polars-hs-ffi/target/
+*~
