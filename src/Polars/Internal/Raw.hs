@@ -43,6 +43,7 @@ module Polars.Internal.Raw
     , phs_lazyframe_filter
     , phs_lazyframe_free_finalizer
     , phs_lazyframe_group_by_agg
+    , phs_lazyframe_join
     , phs_lazyframe_limit
     , phs_lazyframe_select
     , phs_lazyframe_sort
@@ -174,6 +175,9 @@ foreign import ccall unsafe "phs_lazyframe_limit"
 
 foreign import ccall unsafe "phs_lazyframe_group_by_agg"
     phs_lazyframe_group_by_agg :: Ptr RawLazyFrame -> Ptr (Ptr RawExpr) -> CSize -> Ptr (Ptr RawExpr) -> CSize -> CBool -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_lazyframe_join"
+    phs_lazyframe_join :: Ptr RawLazyFrame -> Ptr RawLazyFrame -> Ptr (Ptr RawExpr) -> CSize -> Ptr (Ptr RawExpr) -> CSize -> CInt -> CString -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_dataframe_to_ipc_bytes"
     phs_dataframe_to_ipc_bytes :: Ptr RawDataFrame -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt

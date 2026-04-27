@@ -559,7 +559,7 @@ jj bookmark move master --to @-
 - Modify: `package.yaml`
 - Generated: `polars-hs.cabal`
 
-- [ ] **Step 1: Add raw FFI import**
+- [x] **Step 1: Add raw FFI import**
 
 In `src/Polars/Internal/Raw.hs`, add `phs_lazyframe_join` to the export list beside other LazyFrame imports:
 
@@ -574,7 +574,7 @@ foreign import ccall unsafe "phs_lazyframe_join"
     phs_lazyframe_join :: Ptr RawLazyFrame -> Ptr RawLazyFrame -> Ptr (Ptr RawExpr) -> CSize -> Ptr (Ptr RawExpr) -> CSize -> CInt -> CString -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
 ```
 
-- [ ] **Step 2: Create `Polars.Join`**
+- [x] **Step 2: Create `Polars.Join`**
 
 Write `src/Polars/Join.hs` exactly as follows:
 
@@ -723,7 +723,7 @@ lazyFrameOut action =
                 else Left <$> (consumeError status =<< peek errPtr)
 ```
 
-- [ ] **Step 3: Re-export `Polars.Join`**
+- [x] **Step 3: Re-export `Polars.Join`**
 
 In `src/Polars.hs`, add this line to the export list:
 
@@ -737,7 +737,7 @@ Add this import:
 import Polars.Join
 ```
 
-- [ ] **Step 4: Expose the module in `package.yaml`**
+- [x] **Step 4: Expose the module in `package.yaml`**
 
 Add this line to `library.exposed-modules`:
 
@@ -745,7 +745,7 @@ Add this line to `library.exposed-modules`:
   - Polars.Join
 ```
 
-- [ ] **Step 5: Run Haskell tests**
+- [x] **Step 5: Run Haskell tests**
 
 Run:
 
@@ -755,7 +755,7 @@ stack test --fast
 
 Expected result: 16 Hspec examples pass.
 
-- [ ] **Step 6: Run HLint**
+- [x] **Step 6: Run HLint**
 
 Run:
 
@@ -765,7 +765,7 @@ hlint src app test
 
 Expected result: HLint reports no hints.
 
-- [ ] **Step 7: Commit Haskell join API**
+- [x] **Step 7: Commit Haskell join API**
 
 Run:
 

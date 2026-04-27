@@ -58,6 +58,7 @@ library:
   - Polars.Expr
   - Polars.GroupBy
   - Polars.IPC
+  - Polars.Join
   - Polars.LazyFrame
   - Polars.Operators
   - Polars.Schema
