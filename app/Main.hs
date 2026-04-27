@@ -1,6 +1,10 @@
 module Main (main) where
 
-import Lib
+import qualified Polars as Pl
 
 main :: IO ()
-main = someFunc
+main = do
+    result <- Pl.readCsv "test/data/people.csv"
+    case result of
+        Left err -> print err
+        Right df -> print =<< Pl.shape df

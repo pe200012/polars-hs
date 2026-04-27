@@ -20,6 +20,19 @@ build-type:     Custom
 extra-source-files:
     README.md
     CHANGELOG.md
+    include/polars_hs.h
+    rust/polars-hs-ffi/Cargo.toml
+    rust/polars-hs-ffi/Cargo.lock
+    rust/polars-hs-ffi/build.rs
+    rust/polars-hs-ffi/cbindgen.toml
+    rust/polars-hs-ffi/src/bytes.rs
+    rust/polars-hs-ffi/src/dataframe.rs
+    rust/polars-hs-ffi/src/error.rs
+    rust/polars-hs-ffi/src/expr.rs
+    rust/polars-hs-ffi/src/handles.rs
+    rust/polars-hs-ffi/src/ipc.rs
+    rust/polars-hs-ffi/src/lazyframe.rs
+    rust/polars-hs-ffi/src/lib.rs
     test/data/people.csv
 
 source-repository head
@@ -30,6 +43,8 @@ custom-setup
   setup-depends:
       Cabal
     , base >=4.7 && <5
+    , directory ==1.3.*
+    , filepath >=1.4 && <1.6
 
 library
   exposed-modules:
@@ -51,6 +66,13 @@ library
   hs-source-dirs:
       src
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
+  include-dirs:
+      include
+  extra-libraries:
+      polars_hs_ffi
+      pthread
+      dl
+      m
   build-depends:
       base >=4.7 && <5
     , bytestring >=0.12 && <0.14

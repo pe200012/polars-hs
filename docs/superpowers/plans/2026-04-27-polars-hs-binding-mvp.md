@@ -1631,7 +1631,7 @@ Expected in a jj repository: a commit is created. Expected in the current checko
 - Create: `src/Polars/Internal/Bytes.hs`
 - Create: `src/Polars/Internal/Expr.hs`
 
-- [ ] **Step 1: Create `src/Polars/Internal/Raw.hs`**
+- [x] **Step 1: Create `src/Polars/Internal/Raw.hs`**
 
 ```haskell
 {-# LANGUAGE ForeignFunctionInterface #-}
@@ -1816,7 +1816,7 @@ foreign import ccall safe "phs_expr_not"
     phs_expr_not :: Ptr RawExpr -> Ptr (Ptr RawExpr) -> Ptr (Ptr RawError) -> IO CInt
 ```
 
-- [ ] **Step 2: Create `src/Polars/Internal/Result.hs`**
+- [x] **Step 2: Create `src/Polars/Internal/Result.hs`**
 
 ```haskell
 {- |
@@ -1861,7 +1861,7 @@ consumeError status errPtr
         pure $ PolarsError (decodeErrorCode code) message
 ```
 
-- [ ] **Step 3: Create `src/Polars/Internal/Managed.hs`**
+- [x] **Step 3: Create `src/Polars/Internal/Managed.hs`**
 
 ```haskell
 {- |
@@ -1921,7 +1921,7 @@ withManagedExpr :: ManagedExpr -> (Ptr RawExpr -> IO a) -> IO a
 withManagedExpr (ManagedExpr fp) = withForeignPtr fp
 ```
 
-- [ ] **Step 4: Create `src/Polars/Internal/CString.hs`**
+- [x] **Step 4: Create `src/Polars/Internal/CString.hs`**
 
 ```haskell
 {- |
@@ -1947,7 +1947,7 @@ withFilePathCString path action =
     BS.useAsCString (TE.encodeUtf8 (T.pack path)) action
 ```
 
-- [ ] **Step 5: Create `src/Polars/Internal/Bytes.hs`**
+- [x] **Step 5: Create `src/Polars/Internal/Bytes.hs`**
 
 ```haskell
 {- |
@@ -1976,7 +1976,7 @@ copyAndFreeBytes ptr
         pure (Right bytes)
 ```
 
-- [ ] **Step 6: Create `src/Polars/Internal/Expr.hs`**
+- [x] **Step 6: Create `src/Polars/Internal/Expr.hs`**
 
 ```haskell
 {- |
@@ -2102,7 +2102,7 @@ withTextArray values action =
     go (value : rest) acc = withTextCString value $ \cValue -> go rest (cValue : acc)
 ```
 
-- [ ] **Step 7: Run Haskell build to verify expected public-module failures remain**
+- [x] **Step 7: Run Haskell build to verify expected public-module failures remain**
 
 Run:
 
@@ -2112,7 +2112,7 @@ stack build --fast
 
 Expected: FAIL mentioning missing public modules such as `Polars.DataFrame`, because Task 6 creates them.
 
-- [ ] **Step 8: Commit the Haskell internal task**
+- [x] **Step 8: Commit the Haskell internal task**
 
 Run:
 
@@ -2138,7 +2138,7 @@ Expected in a jj repository: a commit is created. Expected in the current checko
 - Create: `src/Polars.hs`
 - Modify: `app/Main.hs`
 
-- [ ] **Step 1: Create `src/Polars/Error.hs`**
+- [x] **Step 1: Create `src/Polars/Error.hs`**
 
 ```haskell
 {- |
@@ -2167,7 +2167,7 @@ data PolarsError = PolarsError
     deriving (Eq, Show)
 ```
 
-- [ ] **Step 2: Create `src/Polars/Schema.hs`**
+- [x] **Step 2: Create `src/Polars/Schema.hs`**
 
 ```haskell
 {-# LANGUAGE OverloadedStrings #-}
@@ -2265,7 +2265,7 @@ parseDataType text =
         other -> UnknownType other
 ```
 
-- [ ] **Step 3: Create `src/Polars/Expr.hs`**
+- [x] **Step 3: Create `src/Polars/Expr.hs`**
 
 ```haskell
 {- |
@@ -2335,7 +2335,7 @@ not_ :: Expr -> Expr
 not_ = Not
 ```
 
-- [ ] **Step 4: Create `src/Polars/Operators.hs`**
+- [x] **Step 4: Create `src/Polars/Operators.hs`**
 
 ```haskell
 {- |
@@ -2380,7 +2380,7 @@ infixl 7 *., /.
 (/.) = Binary Divide
 ```
 
-- [ ] **Step 5: Create `src/Polars/DataFrame.hs`**
+- [x] **Step 5: Create `src/Polars/DataFrame.hs`**
 
 ```haskell
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -2520,7 +2520,7 @@ dataframeBytes df call =
                     else peek errPtr >>= consumeError status >>= pure . Left
 ```
 
-- [ ] **Step 6: Create `src/Polars/LazyFrame.hs`**
+- [x] **Step 6: Create `src/Polars/LazyFrame.hs`**
 
 ```haskell
 {- |
@@ -2625,7 +2625,7 @@ lazyFrameOut call =
                 else peek errPtr >>= consumeError status >>= pure . Left
 ```
 
-- [ ] **Step 7: Create `src/Polars/IPC.hs`**
+- [x] **Step 7: Create `src/Polars/IPC.hs`**
 
 ```haskell
 {- |
@@ -2674,7 +2674,7 @@ readIpcFile path =
                     else peek errPtr >>= consumeError status >>= pure . Left
 ```
 
-- [ ] **Step 8: Create `src/Polars.hs`**
+- [x] **Step 8: Create `src/Polars.hs`**
 
 ```haskell
 {- |
@@ -2700,7 +2700,7 @@ import Polars.Operators
 import Polars.Schema
 ```
 
-- [ ] **Step 9: Replace `app/Main.hs` with a tiny smoke executable**
+- [x] **Step 9: Replace `app/Main.hs` with a tiny smoke executable**
 
 ```haskell
 module Main (main) where
@@ -2715,7 +2715,7 @@ main = do
         Right df -> print =<< Pl.shape df
 ```
 
-- [ ] **Step 10: Remove the scaffold module `src/Lib.hs`**
+- [x] **Step 10: Remove the scaffold module `src/Lib.hs`**
 
 Run:
 
@@ -2725,7 +2725,7 @@ rm -f src/Lib.hs
 
 Expected: `src/Lib.hs` is removed because the library now exposes `Polars` modules.
 
-- [ ] **Step 11: Run Haskell tests**
+- [x] **Step 11: Run Haskell tests**
 
 Run:
 
@@ -2735,7 +2735,7 @@ stack test --fast
 
 Expected: PASS. The build hook should compile the Rust adapter before GHC links the test executable.
 
-- [ ] **Step 12: Commit the public Haskell API task**
+- [x] **Step 12: Commit the public Haskell API task**
 
 Run:
 
