@@ -1,6 +1,4 @@
 {-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 {- |
 Module      : Polars.Error
 Description : Typed errors returned by the Polars Haskell binding.

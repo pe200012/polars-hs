@@ -2755,7 +2755,7 @@ Expected in a jj repository: a commit is created. Expected in the current checko
 - Modify: `README.md`
 - Modify: `CHANGELOG.md`
 
-- [ ] **Step 1: Create `examples/iris.hs`**
+- [x] **Step 1: Create `examples/iris.hs`**
 
 ```haskell
 {-# LANGUAGE OverloadedStrings #-}
@@ -2787,7 +2787,7 @@ main = do
                                     either print putStrLn rendered
 ```
 
-- [ ] **Step 2: Replace `README.md` with the MVP quickstart**
+- [x] **Step 2: Replace `README.md` with the MVP quickstart**
 
 ```markdown
 # polars-hs
@@ -2845,7 +2845,7 @@ hlint src app test
 The package uses a Rust adapter crate that exposes a small `phs_*` C ABI. Haskell wraps Rust-owned DataFrame and LazyFrame handles in `ForeignPtr` finalizers and returns `Either PolarsError a` for recoverable failures. Expressions are a pure Haskell AST and are compiled into temporary Rust expression handles at FFI call sites.
 ```
 
-- [ ] **Step 3: Update `CHANGELOG.md`**
+- [x] **Step 3: Update `CHANGELOG.md`**
 
 ```markdown
 # Changelog for `polars-hs`
@@ -2871,7 +2871,7 @@ and this project adheres to the
 ## 0.1.0.0 - YYYY-MM-DD
 ```
 
-- [ ] **Step 4: Run all verification commands**
+- [x] **Step 4: Run all verification commands**
 
 Run:
 
@@ -2884,7 +2884,7 @@ hlint src app test
 
 Expected: all commands PASS.
 
-- [ ] **Step 5: Commit docs and verification task**
+- [x] **Step 5: Commit docs and verification task**
 
 Run:
 

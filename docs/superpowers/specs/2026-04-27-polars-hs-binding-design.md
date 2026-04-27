@@ -535,3 +535,5 @@ The MVP is accepted when all criteria pass:
 Design document created for review on 2026-04-27. Implementation work starts after this design is reviewed and an implementation plan is approved.
 
 After review, the expression representation was refined from public `ForeignPtr RawExpr` handles to a pure Haskell `Expr` AST. This keeps public constructors and operators pure while compiling temporary Rust expression handles at FFI call sites.
+
+Implementation completed in the current jj repository after the user requested `jj git init` and explicitly skipped worktree creation. The implementation uses static Rust linking by setting the Rust crate type to `staticlib`; this avoids runtime `LD_LIBRARY_PATH` requirements for Stack tests. Verification passed: Rust unit tests 9/9, `cargo clippy -- -D warnings`, Haskell tests 6/6, HLint with no hints, and `stack runghc examples/iris.hs`.

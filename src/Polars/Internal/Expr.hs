@@ -50,7 +50,7 @@ compileExpr = \case
         case compiled of
             Left err -> pure (Left err)
             Right managed -> withManagedExpr managed $ \ptr ->
-                withTextCString name $ \cName -> exprOut (\out err -> phs_expr_alias ptr cName out err)
+                withTextCString name $ \cName -> exprOut (phs_expr_alias ptr cName)
     Not expr -> do
         compiled <- compileExpr expr
         case compiled of
@@ -67,7 +67,7 @@ compileExpr = \case
                     Right rightManaged ->
                         withManagedExpr leftManaged $ \leftPtr ->
                             withManagedExpr rightManaged $ \rightPtr ->
-                                exprOut (\out err -> phs_expr_binary (operatorCode op) leftPtr rightPtr out err)
+                                exprOut (phs_expr_binary (operatorCode op) leftPtr rightPtr)
 
 withCompiledExprs :: [Expr] -> (Ptr (Ptr RawExpr) -> CSize -> IO (Either PolarsError a)) -> IO (Either PolarsError a)
 withCompiledExprs exprs action = do

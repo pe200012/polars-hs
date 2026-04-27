@@ -68,15 +68,15 @@ filter predicate lf = do
 
 select :: [Expr] -> LazyFrame -> IO (Either PolarsError LazyFrame)
 select exprs lf = withLazyFrame lf $ \lfPtr ->
-    withCompiledExprs exprs $ \exprArray len -> lazyFrameOut (\out err -> phs_lazyframe_select lfPtr exprArray len out err)
+    withCompiledExprs exprs $ \exprArray len -> lazyFrameOut (phs_lazyframe_select lfPtr exprArray len)
 
 withColumns :: [Expr] -> LazyFrame -> IO (Either PolarsError LazyFrame)
 withColumns exprs lf = withLazyFrame lf $ \lfPtr ->
-    withCompiledExprs exprs $ \exprArray len -> lazyFrameOut (\out err -> phs_lazyframe_with_columns lfPtr exprArray len out err)
+    withCompiledExprs exprs $ \exprArray len -> lazyFrameOut (phs_lazyframe_with_columns lfPtr exprArray len)
 
 sort :: [Text] -> LazyFrame -> IO (Either PolarsError LazyFrame)
 sort names lf = withLazyFrame lf $ \lfPtr -> withCStringList names $ \nameArray len ->
-    lazyFrameOut (\out err -> phs_lazyframe_sort lfPtr nameArray len out err)
+    lazyFrameOut (phs_lazyframe_sort lfPtr nameArray len)
 
 limit :: Word -> LazyFrame -> IO (Either PolarsError LazyFrame)
 limit n lf = withLazyFrame lf $ \lfPtr -> lazyFrameOut (phs_lazyframe_limit lfPtr (fromIntegral n))

@@ -92,7 +92,7 @@ tail n df
     | otherwise = withDataFrame df $ \ptr -> dataframeOut (phs_dataframe_tail ptr (fromIntegral n))
 
 toText :: DataFrame -> IO (Either PolarsError Text)
-toText df = bytesOut df phs_dataframe_to_text (TE.decodeUtf8)
+toText df = bytesOut df phs_dataframe_to_text TE.decodeUtf8
 
 dataframeOut :: (Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt) -> IO (Either PolarsError DataFrame)
 dataframeOut action =

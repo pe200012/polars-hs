@@ -17,7 +17,7 @@ import qualified Data.Text.Encoding as TE
 import Foreign.C.String (CString)
 
 withTextCString :: Text -> (CString -> IO a) -> IO a
-withTextCString text action = BS.useAsCString (TE.encodeUtf8 text) action
+withTextCString text = BS.useAsCString (TE.encodeUtf8 text)
 
 withFilePathCString :: FilePath -> (CString -> IO a) -> IO a
-withFilePathCString path action = BS.useAsCString (TE.encodeUtf8 (T.pack path)) action
+withFilePathCString path = BS.useAsCString (TE.encodeUtf8 (T.pack path))
