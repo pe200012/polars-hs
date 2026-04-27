@@ -53,6 +53,7 @@ library
       Polars.DataFrame
       Polars.Error
       Polars.Expr
+      Polars.GroupBy
       Polars.IPC
       Polars.LazyFrame
       Polars.Operators

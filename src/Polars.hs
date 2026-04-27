@@ -10,6 +10,7 @@ module Polars
     ( module Polars.DataFrame
     , module Polars.Error
     , module Polars.Expr
+    , module Polars.GroupBy
     , module Polars.IPC
     , module Polars.LazyFrame
     , module Polars.Operators
@@ -19,6 +20,7 @@ module Polars
 import Polars.DataFrame
 import Polars.Error
 import Polars.Expr
+import Polars.GroupBy
 import Polars.IPC
 import Polars.LazyFrame
 import Polars.Operators
