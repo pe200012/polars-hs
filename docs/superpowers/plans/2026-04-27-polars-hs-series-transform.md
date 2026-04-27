@@ -1,6 +1,6 @@
 # Series Transform API Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax for tracking, and checked boxes record completed execution.
 
 **Goal:** Add Series transform operations for rename, cast, sort, unique, reverse, and dropNulls.
 
@@ -27,7 +27,7 @@
 **Files:**
 - Modify: `test/Spec.hs`
 
-- [ ] **Step 1: Add transform specs inside `describe "Polars.Column"` after the existing Series handle tests**
+- [x] **Step 1: Add transform specs inside `describe "Polars.Column"` after the existing Series handle tests**
 
 Add these Hspec examples:
 
@@ -141,7 +141,7 @@ Add these Hspec examples:
                                 Right stable -> Pl.seriesText stable `shouldReturn` Right (V.fromList [Just "Engineering", Just "Sales", Just "Support"])
 ```
 
-- [ ] **Step 2: Run RED test**
+- [x] **Step 2: Run RED test**
 
 Run:
 
@@ -159,7 +159,7 @@ Expected: build fails with missing `Pl.seriesRename`, `Pl.seriesCast`, `Pl.defau
 - Modify: `rust/polars-hs-ffi/src/series.rs`
 - Generated: `include/polars_hs.h`
 
-- [ ] **Step 1: Add imports and helpers**
+- [x] **Step 1: Add imports and helpers**
 
 Update imports in `series.rs`:
 
@@ -205,7 +205,7 @@ fn dtype_from_code(code: c_int) -> PhsResult<DataType> {
 }
 ```
 
-- [ ] **Step 2: Add exported transform functions**
+- [x] **Step 2: Add exported transform functions**
 
 Add functions in `series.rs` before the test module:
 
@@ -302,7 +302,7 @@ pub unsafe extern "C" fn phs_series_drop_nulls(
 }
 ```
 
-- [ ] **Step 3: Add Rust tests**
+- [x] **Step 3: Add Rust tests**
 
 Add these tests in the existing `#[cfg(test)] mod tests` in `series.rs`:
 
@@ -384,7 +384,7 @@ Add these tests in the existing `#[cfg(test)] mod tests` in `series.rs`:
     }
 ```
 
-- [ ] **Step 4: Run Rust tests**
+- [x] **Step 4: Run Rust tests**
 
 Run:
 
@@ -402,7 +402,7 @@ Expected: Rust tests pass and `include/polars_hs.h` includes the new `phs_series
 - Modify: `src/Polars/Internal/Raw.hs`
 - Modify: `src/Polars/Series.hs`
 
-- [ ] **Step 1: Add raw FFI imports**
+- [x] **Step 1: Add raw FFI imports**
 
 Add exports and imports for:
 
@@ -441,7 +441,7 @@ foreign import ccall unsafe "phs_series_drop_nulls"
     phs_series_drop_nulls :: Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
 ```
 
-- [ ] **Step 2: Extend `Polars.Series` exports and imports**
+- [x] **Step 2: Extend `Polars.Series` exports and imports**
 
 Add language extensions:
 
@@ -478,7 +478,7 @@ import Polars.Internal.CString (withTextCString)
 import Polars.Internal.Raw (RawError, RawSeries, phs_series_cast, phs_series_drop_nulls, phs_series_rename, phs_series_reverse, phs_series_sort, phs_series_unique, phs_series_unique_stable)
 ```
 
-- [ ] **Step 3: Add options, cast class, and transform functions**
+- [x] **Step 3: Add options, cast class, and transform functions**
 
 Add this code before `seriesName`:
 
@@ -569,7 +569,7 @@ toCBool False = CBool 0
 toCBool True = CBool 1
 ```
 
-- [ ] **Step 4: Run Haskell tests**
+- [x] **Step 4: Run Haskell tests**
 
 Run:
 
@@ -590,7 +590,7 @@ Expected: all Hspec examples pass.
 - Modify: `docs/superpowers/specs/2026-04-27-polars-hs-series-transform-design.md`
 - Modify: `docs/superpowers/plans/2026-04-27-polars-hs-series-transform.md`
 
-- [ ] **Step 1: Update `examples/series.hs`**
+- [x] **Step 1: Update `examples/series.hs`**
 
 Add transform usage after the existing metadata prints:
 
@@ -614,7 +614,7 @@ Add transform usage after the existing metadata prints:
                         Right sorted -> print =<< Pl.seriesInt64 sorted
 ```
 
-- [ ] **Step 2: Update docs**
+- [x] **Step 2: Update docs**
 
 Add README examples for:
 
@@ -633,7 +633,7 @@ Add a CHANGELOG bullet:
 - Series transform helpers for type-application casts, rename, sort, unique, reverse, and dropNulls.
 ```
 
-- [ ] **Step 3: Run full verification**
+- [x] **Step 3: Run full verification**
 
 Run:
 
@@ -651,7 +651,7 @@ stack runghc examples/series.hs
 
 Expected: Rust tests pass, Clippy exits 0, Hspec has 0 failures, HLint reports no hints, and each example runs.
 
-- [ ] **Step 4: Record implementation results**
+- [x] **Step 4: Record implementation results**
 
 Replace the `Implementation Results` section in the design doc with:
 
@@ -678,14 +678,14 @@ Replace the `Implementation Results` section in the design doc with:
 
 ### Deviations from design
 
-- No deviations from the approved design.
+- Implementation matched the approved design.
 ```
 
-- [ ] **Step 5: Mark this plan complete**
+- [x] **Step 5: Mark this plan complete**
 
-After all verification commands pass, replace every `- [ ]` in this plan with `- [x]`.
+After all verification commands pass, replace every `- [x]` in this plan with `- [x]`.
 
-- [ ] **Step 6: Commit and push**
+- [x] **Step 6: Commit and push**
 
 Run:
 

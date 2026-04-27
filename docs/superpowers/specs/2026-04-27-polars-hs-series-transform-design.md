@@ -331,4 +331,24 @@ print =<< Pl.seriesText stable
 
 ## Implementation Results
 
-Implementation starts after design approval. Verification results, deviations, and final commit information are recorded during implementation.
+### Completed implementation
+
+- Added Series transforms for type-application cast, rename, sort, unique, stable unique, reverse, and dropNulls.
+- Added Rust ABI functions and cbindgen header declarations.
+- Added Haskell FFI imports, public `Polars.Series` API, Hspec coverage, example usage, README docs, and CHANGELOG entry.
+
+### Verification
+
+- `cargo test --manifest-path rust/polars-hs-ffi/Cargo.toml`: 29 passed.
+- `cargo clippy --manifest-path rust/polars-hs-ffi/Cargo.toml -- -D warnings`: passed.
+- `stack test --fast`: 35 examples, 0 failures.
+- `hlint src app test`: no hints.
+- `stack runghc examples/iris.hs`: passed.
+- `stack runghc examples/groupby.hs`: passed.
+- `stack runghc examples/join.hs`: passed.
+- `stack runghc examples/columns.hs`: passed.
+- `stack runghc examples/series.hs`: passed.
+
+### Deviations from design
+
+- Implementation matched the approved design.

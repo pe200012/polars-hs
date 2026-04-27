@@ -23,5 +23,6 @@ and this project adheres to the
 - Lazy join helpers with join options and suffix handling.
 - Typed DataFrame column extraction for bool, int64, double, and text columns.
 - Unified `column @xxx` API with Series handles and `Vector (Maybe a)` typed value readers.
+- Series transform helpers for type-application casts, rename, sort, unique, reverse, and dropNulls.
 
 ## 0.1.0.0 - YYYY-MM-DD

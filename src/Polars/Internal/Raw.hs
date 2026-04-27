@@ -59,14 +59,21 @@ module Polars.Internal.Raw
     , phs_read_parquet
     , phs_scan_csv
     , phs_scan_parquet
+    , phs_series_cast
+    , phs_series_drop_nulls
     , phs_series_dtype
     , phs_series_free_finalizer
     , phs_series_head
     , phs_series_len
     , phs_series_name
+    , phs_series_rename
+    , phs_series_reverse
     , phs_series_null_count
+    , phs_series_sort
     , phs_series_tail
     , phs_series_to_frame
+    , phs_series_unique
+    , phs_series_unique_stable
     , phs_series_values_bool
     , phs_series_values_f64
     , phs_series_values_i64
@@ -233,6 +240,27 @@ foreign import ccall unsafe "phs_series_name"
 
 foreign import ccall unsafe "phs_series_dtype"
     phs_series_dtype :: Ptr RawSeries -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_rename"
+    phs_series_rename :: Ptr RawSeries -> CString -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_cast"
+    phs_series_cast :: Ptr RawSeries -> CInt -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_sort"
+    phs_series_sort :: Ptr RawSeries -> CBool -> CBool -> CBool -> CBool -> CBool -> Word64 -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_unique"
+    phs_series_unique :: Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_unique_stable"
+    phs_series_unique_stable :: Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_reverse"
+    phs_series_reverse :: Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_drop_nulls"
+    phs_series_drop_nulls :: Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_series_len"
     phs_series_len :: Ptr RawSeries -> Ptr Word64 -> Ptr (Ptr RawError) -> IO CInt

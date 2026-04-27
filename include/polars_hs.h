@@ -251,6 +251,42 @@ int phs_series_to_frame(const struct phs_series *series,
                         struct phs_dataframe **out,
                         struct phs_error **err);
 
+int phs_series_rename(const struct phs_series *series,
+                      const char *name,
+                      struct phs_series **out,
+                      struct phs_error **err);
+
+int phs_series_cast(const struct phs_series *series,
+                    int dtype_code,
+                    struct phs_series **out,
+                    struct phs_error **err);
+
+int phs_series_sort(const struct phs_series *series,
+                    bool descending,
+                    bool nulls_last,
+                    bool multithreaded,
+                    bool maintain_order,
+                    bool has_limit,
+                    uint64_t limit,
+                    struct phs_series **out,
+                    struct phs_error **err);
+
+int phs_series_unique(const struct phs_series *series,
+                      struct phs_series **out,
+                      struct phs_error **err);
+
+int phs_series_unique_stable(const struct phs_series *series,
+                             struct phs_series **out,
+                             struct phs_error **err);
+
+int phs_series_reverse(const struct phs_series *series,
+                       struct phs_series **out,
+                       struct phs_error **err);
+
+int phs_series_drop_nulls(const struct phs_series *series,
+                          struct phs_series **out,
+                          struct phs_error **err);
+
 int phs_series_values_bool(const struct phs_series *series,
                            struct phs_bytes **out,
                            struct phs_error **err);

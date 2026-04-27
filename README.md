@@ -166,6 +166,32 @@ Right [Just True,Just False,Nothing]
 
 The named helpers remain available as aliases: `columnText`, `columnInt64`, `columnDouble`, and `columnBool`.
 
+## Series transforms
+
+```haskell
+{-# LANGUAGE TypeApplications #-}
+
+Right age <- Pl.column @Pl.Series df "age"
+Right ageDouble <- Pl.seriesCast @Double age
+Right renamed <- Pl.seriesRename "age_years" ageDouble
+
+let sortOptions =
+      Pl.defaultSeriesSortOptions
+        { Pl.seriesSortDescending = True
+        , Pl.seriesSortNullsLast = True
+        }
+Right sorted <- Pl.seriesSort sortOptions age
+Right reversed <- Pl.seriesReverse age
+Right dense <- Pl.seriesDropNulls age
+```
+
+`seriesUnique` and `seriesUniqueStable` return fresh Series handles for distinct values:
+
+```haskell
+Right department <- Pl.column @Pl.Series employees "department"
+Right stableDepartments <- Pl.seriesUniqueStable department
+```
+
 Run the column and Series examples with:
 
 ```bash
@@ -178,7 +204,7 @@ stack runghc examples/series.hs
 - `Polars` re-exports the MVP API.
 - `Polars.DataFrame` provides eager readers, shape/schema queries, head/tail, text rendering, and IPC byte conversion.
 - `Polars.Column` provides `column @Series` and typed `column @Bool/@Int64/@Double/@Text` extraction with null preservation.
-- `Polars.Series` provides Series metadata, slicing, DataFrame conversion, and typed value readers.
+- `Polars.Series` provides Series metadata, slicing, DataFrame conversion, typed value readers, and transforms.
 - `Polars.LazyFrame` provides scan, filter, select, withColumns, sort, limit, and collect.
 - `Polars.GroupBy` provides grouped lazy aggregation through groupBy, groupByStable, and agg.
 - `Polars.Join` provides lazy inner, left, right, and full joins with optional suffix configuration.

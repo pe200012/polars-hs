@@ -20,6 +20,23 @@ main = do
                     print =<< Pl.seriesNullCount age
                     print =<< Pl.seriesInt64 age
                     print =<< Pl.column @Int64 df "age"
+                    castResult <- Pl.seriesCast @Double age
+                    case castResult of
+                        Left err -> print err
+                        Right ageDouble -> print =<< Pl.seriesDouble ageDouble
+                    renamedResult <- Pl.seriesRename "age_years" age
+                    case renamedResult of
+                        Left err -> print err
+                        Right renamed -> print =<< Pl.seriesName renamed
+                    let sortOptions =
+                            Pl.defaultSeriesSortOptions
+                                { Pl.seriesSortDescending = True
+                                , Pl.seriesSortNullsLast = True
+                                }
+                    sortedResult <- Pl.seriesSort sortOptions age
+                    case sortedResult of
+                        Left err -> print err
+                        Right sorted -> print =<< Pl.seriesInt64 sorted
                     frameResult <- Pl.seriesToFrame age
                     case frameResult of
                         Left err -> print err

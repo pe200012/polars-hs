@@ -297,6 +297,114 @@ main = hspec $ do
                 Left err -> expectationFailure (show err)
                 Right age -> Pl.seriesInt64 age `shouldReturn` Right (V.fromList [Just 34, Nothing, Just 29])
 
+        it "renames Series handles and preserves values" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    seriesResult <- Pl.column @Pl.Series df "age"
+                    case seriesResult of
+                        Left err -> expectationFailure (show err)
+                        Right age -> do
+                            renamedResult <- Pl.seriesRename "age_years" age
+                            case renamedResult of
+                                Left err -> expectationFailure (show err)
+                                Right renamed -> do
+                                    Pl.seriesName renamed `shouldReturn` Right "age_years"
+                                    Pl.seriesInt64 renamed `shouldReturn` Right (V.fromList [Just 34, Nothing, Just 29])
+
+        it "casts Series handles with visible type applications" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    seriesResult <- Pl.column @Pl.Series df "age"
+                    case seriesResult of
+                        Left err -> expectationFailure (show err)
+                        Right age -> do
+                            doubleResult <- Pl.seriesCast @Double age
+                            case doubleResult of
+                                Left err -> expectationFailure (show err)
+                                Right doubleAge -> do
+                                    Pl.seriesDataType doubleAge `shouldReturn` Right Pl.Float64
+                                    Pl.seriesDouble doubleAge `shouldReturn` Right (V.fromList [Just 34.0, Nothing, Just 29.0])
+                            textResult <- Pl.seriesCast @T.Text age
+                            case textResult of
+                                Left err -> expectationFailure (show err)
+                                Right textAge -> Pl.seriesText textAge `shouldReturn` Right (V.fromList [Just "34", Nothing, Just "29"])
+
+        it "sorts Series handles with explicit options" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    seriesResult <- Pl.column @Pl.Series df "age"
+                    case seriesResult of
+                        Left err -> expectationFailure (show err)
+                        Right age -> do
+                            let options =
+                                    Pl.defaultSeriesSortOptions
+                                        { Pl.seriesSortDescending = True
+                                        , Pl.seriesSortNullsLast = True
+                                        }
+                            sortedResult <- Pl.seriesSort options age
+                            case sortedResult of
+                                Left err -> expectationFailure (show err)
+                                Right sorted -> Pl.seriesInt64 sorted `shouldReturn` Right (V.fromList [Just 34, Just 29, Nothing])
+
+        it "reports InvalidArgument for negative Series sort limits" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    seriesResult <- Pl.column @Pl.Series df "age"
+                    case seriesResult of
+                        Left err -> expectationFailure (show err)
+                        Right age -> do
+                            let options = Pl.defaultSeriesSortOptions { Pl.seriesSortLimit = Just (-1) }
+                            sortedResult <- Pl.seriesSort options age
+                            case sortedResult of
+                                Right _ -> expectationFailure "expected InvalidArgument for negative Series sort limit"
+                                Left err -> Pl.polarsErrorCode err `shouldBe` Pl.InvalidArgument
+
+        it "uniques, reverses, and drops nulls from Series handles" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    activeResult <- Pl.column @Pl.Series df "active"
+                    ageResult <- Pl.column @Pl.Series df "age"
+                    case (activeResult, ageResult) of
+                        (Right active, Right age) -> do
+                            uniqueActive <- Pl.seriesUnique active
+                            case uniqueActive of
+                                Left err -> expectationFailure (show err)
+                                Right uniqueSeries -> Pl.seriesLength uniqueSeries `shouldReturn` Right 3
+                            reverseAge <- Pl.seriesReverse age
+                            case reverseAge of
+                                Left err -> expectationFailure (show err)
+                                Right reversed -> Pl.seriesInt64 reversed `shouldReturn` Right (V.fromList [Just 29, Nothing, Just 34])
+                            denseAge <- Pl.seriesDropNulls age
+                            case denseAge of
+                                Left err -> expectationFailure (show err)
+                                Right dense -> Pl.seriesInt64 dense `shouldReturn` Right (V.fromList [Just 34, Just 29])
+                        (Left err, _) -> expectationFailure (show err)
+                        (_, Left err) -> expectationFailure (show err)
+
+        it "keeps stable unique order for text Series" $ do
+            result <- Pl.readCsv employeesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    departmentResult <- Pl.column @Pl.Series df "department"
+                    case departmentResult of
+                        Left err -> expectationFailure (show err)
+                        Right department -> do
+                            uniqueResult <- Pl.seriesUniqueStable department
+                            case uniqueResult of
+                                Left err -> expectationFailure (show err)
+                                Right stable -> Pl.seriesText stable `shouldReturn` Right (V.fromList [Just "Engineering", Just "Sales", Just "Support"])
+
     describe "Polars.Join" $ do
         it "inner joins two lazy CSV scans and applies the default suffix" $ do
             employeesResult <- Pl.scanCsv employeesCsv

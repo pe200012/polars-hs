@@ -1,3 +1,6 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 {- |
@@ -10,24 +13,36 @@ and typed value extraction with null preservation.
 -}
 module Polars.Series
     ( Series
+    , SeriesCast (..)
+    , SeriesSortOptions (..)
+    , defaultSeriesSortOptions
     , seriesBool
     , seriesDataType
     , seriesDouble
+    , seriesDropNulls
     , seriesHead
     , seriesInt64
     , seriesLength
     , seriesName
+    , seriesRename
+    , seriesReverse
+    , seriesSort
     , seriesNullCount
     , seriesTail
     , seriesText
     , seriesToFrame
+    , seriesUnique
+    , seriesUniqueStable
     ) where
 
 import qualified Data.ByteString as BS
 import Data.Int (Int64)
 import Data.Text (Text)
 import qualified Data.Text.Encoding as TE
+import Data.Word (Word64)
 import Data.Vector (Vector)
+import Foreign.C.Types (CBool (..), CInt)
+import Foreign.Ptr (Ptr)
 
 import Polars.DataFrame (DataFrame)
 import Polars.Error (PolarsError (..), PolarsErrorCode (InvalidArgument))
@@ -37,16 +52,26 @@ import Polars.Internal.ColumnDecode
     , decodeInt64Column
     , decodeTextColumn
     )
+import Polars.Internal.CString (withTextCString)
 import Polars.Internal.Managed (Series, withSeries)
 import Polars.Internal.Series (seriesBytesOut, seriesDataFrameOut, seriesOut, seriesWord64Out)
 import Polars.Internal.Raw
-    ( phs_series_dtype
+    ( RawError
+    , RawSeries
+    , phs_series_cast
+    , phs_series_drop_nulls
+    , phs_series_dtype
     , phs_series_head
     , phs_series_len
     , phs_series_name
+    , phs_series_rename
+    , phs_series_reverse
+    , phs_series_sort
     , phs_series_null_count
     , phs_series_tail
     , phs_series_to_frame
+    , phs_series_unique
+    , phs_series_unique_stable
     , phs_series_values_bool
     , phs_series_values_f64
     , phs_series_values_i64
@@ -54,6 +79,40 @@ import Polars.Internal.Raw
     )
 import Polars.Internal.Result (nullPointerError)
 import Polars.Schema (DataType, parseDataType)
+
+data SeriesSortOptions = SeriesSortOptions
+    { seriesSortDescending :: !Bool
+    , seriesSortNullsLast :: !Bool
+    , seriesSortMultithreaded :: !Bool
+    , seriesSortMaintainOrder :: !Bool
+    , seriesSortLimit :: !(Maybe Int)
+    }
+    deriving stock (Eq, Show)
+
+defaultSeriesSortOptions :: SeriesSortOptions
+defaultSeriesSortOptions =
+    SeriesSortOptions
+        { seriesSortDescending = False
+        , seriesSortNullsLast = False
+        , seriesSortMultithreaded = True
+        , seriesSortMaintainOrder = False
+        , seriesSortLimit = Nothing
+        }
+
+class SeriesCast a where
+    seriesCast :: Series -> IO (Either PolarsError Series)
+
+instance SeriesCast Bool where
+    seriesCast = seriesCastWithCode 0
+
+instance SeriesCast Int64 where
+    seriesCast = seriesCastWithCode 1
+
+instance SeriesCast Double where
+    seriesCast = seriesCastWithCode 2
+
+instance SeriesCast Text where
+    seriesCast = seriesCastWithCode 3
 
 seriesName :: Series -> IO (Either PolarsError Text)
 seriesName series = seriesBytesOut series phs_series_name decodeUtf8Bytes
@@ -80,6 +139,37 @@ seriesTail n series
 seriesToFrame :: Series -> IO (Either PolarsError DataFrame)
 seriesToFrame series = seriesDataFrameOut series phs_series_to_frame
 
+seriesRename :: Text -> Series -> IO (Either PolarsError Series)
+seriesRename name series = withSeries series $ \ptr ->
+    withTextCString name $ \cName -> seriesOut (phs_series_rename ptr cName)
+
+seriesSort :: SeriesSortOptions -> Series -> IO (Either PolarsError Series)
+seriesSort options series = case sortLimitWord64 (seriesSortLimit options) of
+    Left err -> pure (Left err)
+    Right (hasLimit, limitValue) -> withSeries series $ \ptr ->
+        seriesOut
+            ( phs_series_sort
+                ptr
+                (toCBool (seriesSortDescending options))
+                (toCBool (seriesSortNullsLast options))
+                (toCBool (seriesSortMultithreaded options))
+                (toCBool (seriesSortMaintainOrder options))
+                (toCBool hasLimit)
+                limitValue
+            )
+
+seriesUnique :: Series -> IO (Either PolarsError Series)
+seriesUnique series = seriesUnaryOut series phs_series_unique
+
+seriesUniqueStable :: Series -> IO (Either PolarsError Series)
+seriesUniqueStable series = seriesUnaryOut series phs_series_unique_stable
+
+seriesReverse :: Series -> IO (Either PolarsError Series)
+seriesReverse series = seriesUnaryOut series phs_series_reverse
+
+seriesDropNulls :: Series -> IO (Either PolarsError Series)
+seriesDropNulls series = seriesUnaryOut series phs_series_drop_nulls
+
 seriesBool :: Series -> IO (Either PolarsError (Vector (Maybe Bool)))
 seriesBool series = seriesBytesOut series phs_series_values_bool decodeBoolColumn
 
@@ -91,6 +181,22 @@ seriesDouble series = seriesBytesOut series phs_series_values_f64 decodeDoubleCo
 
 seriesText :: Series -> IO (Either PolarsError (Vector (Maybe Text)))
 seriesText series = seriesBytesOut series phs_series_values_text decodeTextColumn
+
+seriesCastWithCode :: CInt -> Series -> IO (Either PolarsError Series)
+seriesCastWithCode code series = withSeries series $ \ptr -> seriesOut (phs_series_cast ptr code)
+
+seriesUnaryOut :: Series -> (Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt) -> IO (Either PolarsError Series)
+seriesUnaryOut series action = withSeries series $ \ptr -> seriesOut (action ptr)
+
+sortLimitWord64 :: Maybe Int -> Either PolarsError (Bool, Word64)
+sortLimitWord64 Nothing = Right (False, 0)
+sortLimitWord64 (Just value)
+    | value < 0 = Left (nullPointerError "series sort limit")
+    | otherwise = Right (True, fromIntegral value)
+
+toCBool :: Bool -> CBool
+toCBool False = CBool 0
+toCBool True = CBool 1
 
 decodeUtf8Bytes :: BS.ByteString -> Either PolarsError Text
 decodeUtf8Bytes bytes = case TE.decodeUtf8' bytes of

@@ -1,10 +1,10 @@
-use std::os::raw::c_int;
+use std::os::raw::{c_char, c_int};
 use std::ptr;
 
 use polars::prelude::*;
 
 use crate::bytes::{bytes_into_raw, phs_bytes};
-use crate::error::{PhsResult, ffi_boundary, phs_error, required_mut};
+use crate::error::{PhsError, PhsResult, c_str_to_str, ffi_boundary, phs_error, required_mut};
 use crate::handles::{dataframe_into_raw, phs_dataframe, phs_series, series_into_raw, series_ref};
 
 const COLUMN_TAG_NULL: u8 = 0;
@@ -87,6 +87,34 @@ where
         *out = bytes_into_raw(encode(&handle.value)?);
         Ok(())
     })
+}
+
+fn series_transform<F>(
+    series: *const phs_series,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+    transform: F,
+) -> c_int
+where
+    F: FnOnce(&Series) -> PhsResult<Series> + std::panic::UnwindSafe,
+{
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { series_ref(series) }?;
+        *out = series_into_raw(transform(&handle.value)?);
+        Ok(())
+    })
+}
+
+fn dtype_from_code(code: c_int) -> PhsResult<DataType> {
+    match code {
+        0 => Ok(DataType::Boolean),
+        1 => Ok(DataType::Int64),
+        2 => Ok(DataType::Float64),
+        3 => Ok(DataType::String),
+        value => Err(PhsError::invalid_argument(format!("unknown series cast dtype code {value}"))),
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -192,6 +220,97 @@ pub unsafe extern "C" fn phs_series_to_frame(
         *out = dataframe_into_raw(handle.value.clone().into_frame());
         Ok(())
     })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_rename(
+    series: *const phs_series,
+    name: *const c_char,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { series_ref(series) }?;
+        let name = unsafe { c_str_to_str(name, "name") }?;
+        *out = series_into_raw(handle.value.clone().with_name(name.into()));
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_cast(
+    series: *const phs_series,
+    dtype_code: c_int,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| {
+        let dtype = dtype_from_code(dtype_code)?;
+        Ok(value.cast(&dtype)?)
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_sort(
+    series: *const phs_series,
+    descending: bool,
+    nulls_last: bool,
+    multithreaded: bool,
+    maintain_order: bool,
+    has_limit: bool,
+    limit: u64,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| {
+        let mut options = SortOptions::default()
+            .with_order_descending(descending)
+            .with_nulls_last(nulls_last)
+            .with_multithreaded(multithreaded)
+            .with_maintain_order(maintain_order);
+        if has_limit {
+            options.limit = Some(limit as IdxSize);
+        }
+        Ok(value.sort(options)?)
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_unique(
+    series: *const phs_series,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| Ok(value.unique()?))
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_unique_stable(
+    series: *const phs_series,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| Ok(value.unique_stable()?))
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_reverse(
+    series: *const phs_series,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| Ok(value.reverse()))
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_drop_nulls(
+    series: *const phs_series,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| Ok(value.drop_nulls()))
 }
 
 #[unsafe(no_mangle)]
@@ -345,6 +464,82 @@ mod tests {
         assert_eq!(unsafe { crate::handles::dataframe_ref(dataframe_out) }.unwrap().value.shape(), (3, 1));
         unsafe {
             phs_dataframe_free(dataframe_out);
+            phs_series_free(series);
+        }
+    }
+
+    #[test]
+    fn series_rename_cast_sort_reverse_and_drop_nulls_work() {
+        let series = read_age_series();
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let name = std::ffi::CString::new("age_years").unwrap();
+        let status = unsafe { phs_series_rename(series, name.as_ptr(), &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { series_ref(out) }.unwrap().value.name().as_str(), "age_years");
+        unsafe { phs_series_free(out) };
+
+        let status = unsafe { phs_series_cast(series, 2, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { series_ref(out) }.unwrap().value.dtype(), &DataType::Float64);
+        unsafe { phs_series_free(out) };
+
+        let status = unsafe { phs_series_sort(series, true, true, true, false, false, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { series_ref(out) }.unwrap().value.len(), 3);
+        unsafe { phs_series_free(out) };
+
+        let status = unsafe { phs_series_reverse(series, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { series_ref(out) }.unwrap().value.len(), 3);
+        unsafe { phs_series_free(out) };
+
+        let status = unsafe { phs_series_drop_nulls(series, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { series_ref(out) }.unwrap().value.len(), 2);
+        unsafe {
+            phs_series_free(out);
+            phs_series_free(series);
+        }
+    }
+
+    #[test]
+    fn series_unique_and_unique_stable_work() {
+        let dataframe = read_values_dataframe();
+        let name = std::ffi::CString::new("active").unwrap();
+        let mut series = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        let status = unsafe { phs_dataframe_column(dataframe, name.as_ptr(), &mut series, &mut err) };
+        assert_eq!(status, PHS_OK);
+
+        let mut out = ptr::null_mut();
+        let status = unsafe { phs_series_unique(series, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { series_ref(out) }.unwrap().value.len(), 3);
+        unsafe { phs_series_free(out) };
+
+        let status = unsafe { phs_series_unique_stable(series, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { series_ref(out) }.unwrap().value.len(), 3);
+        unsafe {
+            phs_series_free(out);
+            phs_series_free(series);
+            phs_dataframe_free(dataframe);
+        }
+    }
+
+    #[test]
+    fn series_cast_rejects_unknown_dtype_code() {
+        let series = read_age_series();
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        let status = unsafe { phs_series_cast(series, 99, &mut out, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        assert!(out.is_null());
+        assert!(!err.is_null());
+        unsafe {
+            phs_error_free(err);
             phs_series_free(series);
         }
     }
