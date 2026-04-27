@@ -33,6 +33,8 @@ extra-source-files:
     rust/polars-hs-ffi/src/ipc.rs
     rust/polars-hs-ffi/src/lazyframe.rs
     rust/polars-hs-ffi/src/lib.rs
+    test/data/departments.csv
+    test/data/employees.csv
     test/data/people.csv
     test/data/sales.csv
 

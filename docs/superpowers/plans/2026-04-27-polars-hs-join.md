@@ -36,7 +36,7 @@
 - Create: `test/data/departments.csv`
 - Modify: `test/Spec.hs`
 
-- [ ] **Step 1: Create employees fixture**
+- [x] **Step 1: Create employees fixture**
 
 Write `test/data/employees.csv` exactly as follows:
 
@@ -48,7 +48,7 @@ id,name,department,salary
 4,Eve,Support,80
 ```
 
-- [ ] **Step 2: Create departments fixture**
+- [x] **Step 2: Create departments fixture**
 
 Write `test/data/departments.csv` exactly as follows:
 
@@ -59,7 +59,7 @@ Sales,Heidi,700
 Finance,Ivan,500
 ```
 
-- [ ] **Step 3: Add fixture paths to `test/Spec.hs`**
+- [x] **Step 3: Add fixture paths to `test/Spec.hs`**
 
 Add these constants below `salesCsv`:
 
@@ -71,7 +71,7 @@ departmentsCsv :: FilePath
 departmentsCsv = "test/data/departments.csv"
 ```
 
-- [ ] **Step 4: Add Haskell join tests**
+- [x] **Step 4: Add Haskell join tests**
 
 Add this `describe` block between the `Polars.GroupBy` and `Polars.IPC` sections:
 
@@ -212,7 +212,7 @@ Add this `describe` block between the `Polars.GroupBy` and `Polars.IPC` sections
                 (_, Left err) -> expectationFailure (show err)
 ```
 
-- [ ] **Step 5: Run the Haskell tests and confirm the expected failure**
+- [x] **Step 5: Run the Haskell tests and confirm the expected failure**
 
 Run:
 
@@ -222,7 +222,7 @@ stack test --fast
 
 Expected result: build fails because `Pl.innerJoin`, `Pl.leftJoin`, `Pl.rightJoin`, `Pl.fullJoin`, `Pl.joinWith`, `Pl.defaultJoinOptions`, `Pl.joinType`, `Pl.leftOn`, `Pl.rightOn`, `Pl.suffix`, and `Pl.JoinLeft` are missing.
 
-- [ ] **Step 6: Commit the failing tests**
+- [x] **Step 6: Commit the failing tests**
 
 Run:
 
