@@ -337,8 +337,84 @@ fn phs_version_major_generated() -> u32 {
 
 This output conflicts with the repository's Hpack/Stack package layout. Treat it as a separate experiment rather than a mainline migration path.
 
+## Spike result: Well-Typed hs-bindgen CLI
+
+After the initial investigation, a side spike was run in `/tmp` using both `release-0.1-alpha2` and the current `main` branch of `well-typed/hs-bindgen`.
+
+Environment:
+
+```text
+ghc 9.12.2
+cabal-install 3.10.3.0
+clang 22.1.3
+llvm-config 22.1.3
+```
+
+The `release-0.1-alpha2` setup used this source package configuration:
+
+```cabal
+source-repository-package
+  type: git
+  location: https://github.com/well-typed/hs-bindgen
+  tag: release-0.1-alpha2
+  subdir: c-expr-dsl c-expr-runtime hs-bindgen hs-bindgen-runtime
+
+source-repository-package
+  type: git
+  location: https://github.com/well-typed/libclang
+  tag: release-0.1-alpha
+```
+
+The CLI built successfully. Running `preprocess` against a minimal header failed:
+
+```c
+struct phs_error;
+int phs_error_code(const struct phs_error *error);
+```
+
+Command shape:
+
+```bash
+cabal v2-run hs-bindgen:hs-bindgen-cli -- preprocess \
+  --overwrite-files \
+  --create-output-dirs \
+  --unique-id io.github.pe200012.simple2 \
+  --hs-output-dir generated-simple2 \
+  --module Simple2.Generated \
+  --select-all \
+  -I . \
+  simple2.h
+```
+
+Failure:
+
+```text
+Uncaught exception: CallFailed "\"\" is not a part of this translation unit"
+...
+clang_tokenize, called at src-internal/HsBindgen/Frontend/ProcessIncludes.hs
+Please report this at https://github.com/well-typed/hs-bindgen/issues
+```
+
+The same failure occurred with the current `main` branch and with the project header:
+
+```bash
+cabal v2-run hs-bindgen:hs-bindgen-cli -- preprocess \
+  --overwrite-files \
+  --create-output-dirs \
+  --unique-id io.github.pe200012.polars-hs.raw \
+  --hs-output-dir /tmp/polars-hsbindgen-generated \
+  --module Polars.Internal.Raw.Generated \
+  --select-all \
+  -I /mnt/data/Document/Development/CodeCollection/Haskell/polars-hs/include \
+  /mnt/data/Document/Development/CodeCollection/Haskell/polars-hs/include/polars_hs.h
+```
+
+Result: no generated module was produced. The failure happens before Polars-specific declarations are processed, so the blocker appears to be a tool/libclang integration issue in this environment.
+
 ## Decision
 
-Recommended next step: run a Well-Typed `hs-bindgen-cli preprocess` spike against `include/polars_hs.h` in a side branch or temporary directory. The success criterion is a generated module that compiles behind the existing safe wrappers for one small FFI group.
+Recommended next step: keep the current hand-written `Polars.Internal.Raw` module for mainline work. Track Well-Typed `hs-bindgen` as a future raw-binding generator once the CLI can preprocess a minimal header on this environment.
 
-The Rust macro `hs-bindgen` and `cargo-cabal` are useful for examples and small Rust-first libraries. The current `polars-hs` ABI shape relies on pointer-to-pointer output parameters and explicit finalizers, so the Well-Typed header-driven generator fits the project better.
+If we want to help upstream, create a small issue for Well-Typed `hs-bindgen` with the minimal header, the command above, GHC/Cabal/clang versions, and the `CallFailed "\"\" is not a part of this translation unit"` trace.
+
+The Rust macro `hs-bindgen` and `cargo-cabal` are useful for examples and small Rust-first libraries. The current `polars-hs` ABI shape relies on pointer-to-pointer output parameters and explicit finalizers, so the Rust macro route has a narrow role in this repository.
