@@ -16,6 +16,7 @@ module Polars.Series
     , SeriesCast (..)
     , SeriesSortOptions (..)
     , defaultSeriesSortOptions
+    , seriesAppend
     , seriesBool
     , seriesDataType
     , seriesDouble
@@ -26,6 +27,7 @@ module Polars.Series
     , seriesName
     , seriesRename
     , seriesReverse
+    , seriesShift
     , seriesSort
     , seriesNullCount
     , seriesTail
@@ -58,6 +60,7 @@ import Polars.Internal.Series (seriesBytesOut, seriesDataFrameOut, seriesOut, se
 import Polars.Internal.Raw
     ( RawError
     , RawSeries
+    , phs_series_append
     , phs_series_cast
     , phs_series_drop_nulls
     , phs_series_dtype
@@ -66,6 +69,7 @@ import Polars.Internal.Raw
     , phs_series_name
     , phs_series_rename
     , phs_series_reverse
+    , phs_series_shift
     , phs_series_sort
     , phs_series_null_count
     , phs_series_tail
@@ -169,6 +173,16 @@ seriesReverse series = seriesUnaryOut series phs_series_reverse
 
 seriesDropNulls :: Series -> IO (Either PolarsError Series)
 seriesDropNulls series = seriesUnaryOut series phs_series_drop_nulls
+
+seriesShift :: Int -> Series -> IO (Either PolarsError Series)
+seriesShift periods series = withSeries series $ \ptr ->
+    seriesOut (phs_series_shift ptr (fromIntegral periods))
+
+seriesAppend :: Series -> Series -> IO (Either PolarsError Series)
+seriesAppend left right =
+    withSeries left $ \leftPtr ->
+        withSeries right $ \rightPtr ->
+            seriesOut (phs_series_append leftPtr rightPtr)
 
 seriesBool :: Series -> IO (Either PolarsError (Vector (Maybe Bool)))
 seriesBool series = seriesBytesOut series phs_series_values_bool decodeBoolColumn

@@ -59,6 +59,7 @@ module Polars.Internal.Raw
     , phs_read_parquet
     , phs_scan_csv
     , phs_scan_parquet
+    , phs_series_append
     , phs_series_cast
     , phs_series_drop_nulls
     , phs_series_dtype
@@ -69,6 +70,7 @@ module Polars.Internal.Raw
     , phs_series_rename
     , phs_series_reverse
     , phs_series_null_count
+    , phs_series_shift
     , phs_series_sort
     , phs_series_tail
     , phs_series_to_frame
@@ -246,6 +248,12 @@ foreign import ccall unsafe "phs_series_rename"
 
 foreign import ccall unsafe "phs_series_cast"
     phs_series_cast :: Ptr RawSeries -> CInt -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_shift"
+    phs_series_shift :: Ptr RawSeries -> CLLong -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_append"
+    phs_series_append :: Ptr RawSeries -> Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_series_sort"
     phs_series_sort :: Ptr RawSeries -> CBool -> CBool -> CBool -> CBool -> CBool -> Word64 -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt

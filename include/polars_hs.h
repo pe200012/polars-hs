@@ -287,6 +287,16 @@ int phs_series_drop_nulls(const struct phs_series *series,
                           struct phs_series **out,
                           struct phs_error **err);
 
+int phs_series_shift(const struct phs_series *series,
+                     int64_t periods,
+                     struct phs_series **out,
+                     struct phs_error **err);
+
+int phs_series_append(const struct phs_series *left,
+                      const struct phs_series *right,
+                      struct phs_series **out,
+                      struct phs_error **err);
+
 int phs_series_values_bool(const struct phs_series *series,
                            struct phs_bytes **out,
                            struct phs_error **err);

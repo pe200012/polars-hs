@@ -181,6 +181,9 @@ let sortOptions =
         , Pl.seriesSortNullsLast = True
         }
 Right sorted <- Pl.seriesSort sortOptions age
+Right shifted <- Pl.seriesShift 1 age
+Right firstAge <- Pl.seriesHead 1 age
+Right appended <- Pl.seriesAppend age firstAge
 Right reversed <- Pl.seriesReverse age
 Right dense <- Pl.seriesDropNulls age
 ```

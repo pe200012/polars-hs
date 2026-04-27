@@ -37,6 +37,18 @@ main = do
                     case sortedResult of
                         Left err -> print err
                         Right sorted -> print =<< Pl.seriesInt64 sorted
+                    shiftedResult <- Pl.seriesShift 1 age
+                    case shiftedResult of
+                        Left err -> print err
+                        Right shifted -> print =<< Pl.seriesInt64 shifted
+                    headResult <- Pl.seriesHead 1 age
+                    case headResult of
+                        Left err -> print err
+                        Right firstAge -> do
+                            appendedResult <- Pl.seriesAppend age firstAge
+                            case appendedResult of
+                                Left err -> print err
+                                Right appended -> print =<< Pl.seriesInt64 appended
                     frameResult <- Pl.seriesToFrame age
                     case frameResult of
                         Left err -> print err

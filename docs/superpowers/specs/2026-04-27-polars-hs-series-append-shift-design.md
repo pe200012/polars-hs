@@ -257,4 +257,26 @@ print =<< Pl.seriesDouble combined
 
 ## Implementation Results
 
-Implementation starts after design approval. Verification results, deviations, and final commit information are recorded during implementation.
+### Completed implementation
+
+- Added `seriesShift` and `seriesAppend` to `Polars.Series`.
+- Added Rust ABI functions `phs_series_shift` and `phs_series_append` plus cbindgen header declarations.
+- Added Hspec coverage for shift direction, append ordering, left-name preservation, explicit compatible casts, dtype conflict errors, and input handle reuse.
+- Added Rust ABI tests for shift, append success, and append dtype conflict.
+- Updated README, CHANGELOG, `examples/series.hs`, and the implementation plan.
+
+### Verification
+
+- `cargo test --manifest-path rust/polars-hs-ffi/Cargo.toml`: 32 passed.
+- `cargo clippy --manifest-path rust/polars-hs-ffi/Cargo.toml -- -D warnings`: passed.
+- `stack test --fast`: 39 examples, 0 failures.
+- `hlint src app test`: no hints.
+- `stack runghc examples/iris.hs`: passed.
+- `stack runghc examples/groupby.hs`: passed.
+- `stack runghc examples/join.hs`: passed.
+- `stack runghc examples/columns.hs`: passed.
+- `stack runghc examples/series.hs`: passed.
+
+### Deviations from design
+
+- Implementation matched the approved design.

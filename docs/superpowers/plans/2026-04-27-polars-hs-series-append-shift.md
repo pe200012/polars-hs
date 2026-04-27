@@ -1,6 +1,6 @@
 # Series Append and Shift API Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax for tracking, and checked boxes record completed execution.
 
 **Goal:** Add `seriesShift` and `seriesAppend` over owned Series handles.
 
@@ -27,7 +27,7 @@
 **Files:**
 - Modify: `test/Spec.hs`
 
-- [ ] **Step 1: Add shift and append Hspec examples**
+- [x] **Step 1: Add shift and append Hspec examples**
 
 Inside `describe "Polars.Column"`, after the Series transform tests, add:
 
@@ -109,7 +109,7 @@ Inside `describe "Polars.Column"`, after the Series transform tests, add:
                         (_, Left err) -> expectationFailure (show err)
 ```
 
-- [ ] **Step 2: Run RED test**
+- [x] **Step 2: Run RED test**
 
 Run:
 
@@ -127,7 +127,7 @@ Expected: build fails with missing `Pl.seriesShift` and `Pl.seriesAppend`.
 - Modify: `rust/polars-hs-ffi/src/series.rs`
 - Generated: `include/polars_hs.h`
 
-- [ ] **Step 1: Add exported ABI functions**
+- [x] **Step 1: Add exported ABI functions**
 
 Add these functions before the test module in `series.rs`:
 
@@ -162,7 +162,7 @@ pub unsafe extern "C" fn phs_series_append(
 }
 ```
 
-- [ ] **Step 2: Add Rust tests**
+- [x] **Step 2: Add Rust tests**
 
 Add these tests in the existing `#[cfg(test)] mod tests` in `series.rs`:
 
@@ -231,7 +231,7 @@ Add these tests in the existing `#[cfg(test)] mod tests` in `series.rs`:
     }
 ```
 
-- [ ] **Step 3: Run Rust tests**
+- [x] **Step 3: Run Rust tests**
 
 Run:
 
@@ -249,7 +249,7 @@ Expected: Rust tests pass and `include/polars_hs.h` contains `phs_series_shift` 
 - Modify: `src/Polars/Internal/Raw.hs`
 - Modify: `src/Polars/Series.hs`
 
-- [ ] **Step 1: Add raw imports**
+- [x] **Step 1: Add raw imports**
 
 Add exports and imports for `phs_series_shift` and `phs_series_append`.
 
@@ -263,7 +263,7 @@ foreign import ccall unsafe "phs_series_append"
     phs_series_append :: Ptr RawSeries -> Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
 ```
 
-- [ ] **Step 2: Update `Polars.Series` exports and imports**
+- [x] **Step 2: Update `Polars.Series` exports and imports**
 
 Add exports:
 
@@ -285,7 +285,7 @@ phs_series_append
 phs_series_shift
 ```
 
-- [ ] **Step 3: Add public functions**
+- [x] **Step 3: Add public functions**
 
 Add implementations after `seriesDropNulls`:
 
@@ -301,7 +301,7 @@ seriesAppend left right =
             seriesOut (phs_series_append leftPtr rightPtr)
 ```
 
-- [ ] **Step 4: Run Haskell tests**
+- [x] **Step 4: Run Haskell tests**
 
 Run:
 
@@ -322,7 +322,7 @@ Expected: all Hspec examples pass.
 - Modify: `docs/superpowers/specs/2026-04-27-polars-hs-series-append-shift-design.md`
 - Modify: `docs/superpowers/plans/2026-04-27-polars-hs-series-append-shift.md`
 
-- [ ] **Step 1: Update example**
+- [x] **Step 1: Update example**
 
 Add to `examples/series.hs` after sorting:
 
@@ -341,7 +341,7 @@ Add to `examples/series.hs` after sorting:
                                 Right appended -> print =<< Pl.seriesInt64 appended
 ```
 
-- [ ] **Step 2: Update README and CHANGELOG**
+- [x] **Step 2: Update README and CHANGELOG**
 
 Add README examples:
 
@@ -356,7 +356,7 @@ Add CHANGELOG bullet:
 - Series append and shift helpers for owned Series handles.
 ```
 
-- [ ] **Step 3: Run full verification**
+- [x] **Step 3: Run full verification**
 
 Run:
 
@@ -374,15 +374,15 @@ stack runghc examples/series.hs
 
 Expected: Rust tests pass, Clippy exits 0, Hspec has 0 failures, HLint reports no hints, and each example runs.
 
-- [ ] **Step 4: Record implementation results**
+- [x] **Step 4: Record implementation results**
 
 Replace the `Implementation Results` section in the design doc with verification results and implementation notes.
 
-- [ ] **Step 5: Mark this plan complete**
+- [x] **Step 5: Mark this plan complete**
 
-After verification passes, replace every `- [ ]` in this plan with `- [x]`.
+After verification passes, replace every `- [x]` in this plan with `- [x]`.
 
-- [ ] **Step 6: Commit and push**
+- [x] **Step 6: Commit and push**
 
 Run:
 

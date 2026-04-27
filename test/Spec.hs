@@ -405,6 +405,82 @@ main = hspec $ do
                                 Left err -> expectationFailure (show err)
                                 Right stable -> Pl.seriesText stable `shouldReturn` Right (V.fromList [Just "Engineering", Just "Sales", Just "Support"])
 
+        it "shifts Series handles in both directions" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    seriesResult <- Pl.column @Pl.Series df "age"
+                    case seriesResult of
+                        Left err -> expectationFailure (show err)
+                        Right age -> do
+                            shiftedForward <- Pl.seriesShift 1 age
+                            case shiftedForward of
+                                Left err -> expectationFailure (show err)
+                                Right shifted -> Pl.seriesInt64 shifted `shouldReturn` Right (V.fromList [Nothing, Just 34, Nothing])
+                            shiftedBackward <- Pl.seriesShift (-1) age
+                            case shiftedBackward of
+                                Left err -> expectationFailure (show err)
+                                Right shifted -> Pl.seriesInt64 shifted `shouldReturn` Right (V.fromList [Nothing, Just 29, Nothing])
+                            Pl.seriesInt64 age `shouldReturn` Right (V.fromList [Just 34, Nothing, Just 29])
+
+        it "appends Series handles left-to-right and keeps the left name" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    seriesResult <- Pl.column @Pl.Series df "age"
+                    case seriesResult of
+                        Left err -> expectationFailure (show err)
+                        Right age -> do
+                            headResult <- Pl.seriesHead 1 age
+                            case headResult of
+                                Left err -> expectationFailure (show err)
+                                Right firstAge -> do
+                                    appendedResult <- Pl.seriesAppend age firstAge
+                                    case appendedResult of
+                                        Left err -> expectationFailure (show err)
+                                        Right appended -> do
+                                            Pl.seriesName appended `shouldReturn` Right "age"
+                                            Pl.seriesInt64 appended `shouldReturn` Right (V.fromList [Just 34, Nothing, Just 29, Just 34])
+                                            Pl.seriesInt64 age `shouldReturn` Right (V.fromList [Just 34, Nothing, Just 29])
+
+        it "appends Series handles after explicit compatible casts" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    ageResult <- Pl.column @Pl.Series df "age"
+                    scoreResult <- Pl.column @Pl.Series df "score"
+                    case (ageResult, scoreResult) of
+                        (Right age, Right score) -> do
+                            castAge <- Pl.seriesCast @Double age
+                            case castAge of
+                                Left err -> expectationFailure (show err)
+                                Right ageDouble -> do
+                                    appendedResult <- Pl.seriesAppend ageDouble score
+                                    case appendedResult of
+                                        Left err -> expectationFailure (show err)
+                                        Right appended -> Pl.seriesDouble appended `shouldReturn` Right (V.fromList [Just 34.0, Nothing, Just 29.0, Just 9.5, Just 8.25, Nothing])
+                        (Left err, _) -> expectationFailure (show err)
+                        (_, Left err) -> expectationFailure (show err)
+
+        it "reports a Polars error for incompatible Series append dtypes" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    ageResult <- Pl.column @Pl.Series df "age"
+                    nameResult <- Pl.column @Pl.Series df "name"
+                    case (ageResult, nameResult) of
+                        (Right age, Right nameSeries) -> do
+                            appendedResult <- Pl.seriesAppend age nameSeries
+                            case appendedResult of
+                                Right _ -> expectationFailure "expected a Polars error for incompatible append dtypes"
+                                Left err -> Pl.polarsErrorCode err `shouldBe` Pl.PolarsFailure
+                        (Left err, _) -> expectationFailure (show err)
+                        (_, Left err) -> expectationFailure (show err)
+
     describe "Polars.Join" $ do
         it "inner joins two lazy CSV scans and applies the default suffix" $ do
             employeesResult <- Pl.scanCsv employeesCsv

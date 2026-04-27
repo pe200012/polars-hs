@@ -314,6 +314,35 @@ pub unsafe extern "C" fn phs_series_drop_nulls(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_shift(
+    series: *const phs_series,
+    periods: i64,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| Ok(value.shift(periods)))
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_append(
+    left: *const phs_series,
+    right: *const phs_series,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let left = unsafe { series_ref(left) }?;
+        let right = unsafe { series_ref(right) }?;
+        let mut output = left.value.clone();
+        output.append(&right.value)?;
+        *out = series_into_raw(output);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_series_values_bool(
     series: *const phs_series,
     out: *mut *mut phs_bytes,
@@ -541,6 +570,69 @@ mod tests {
         unsafe {
             phs_error_free(err);
             phs_series_free(series);
+        }
+    }
+
+    #[test]
+    fn series_shift_returns_owned_handle() {
+        let series = read_age_series();
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        let status = unsafe { phs_series_shift(series, 1, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { series_ref(out) }.unwrap().value.len(), 3);
+        assert_eq!(unsafe { series_ref(series) }.unwrap().value.len(), 3);
+        unsafe {
+            phs_series_free(out);
+            phs_series_free(series);
+        }
+    }
+
+    #[test]
+    fn series_append_keeps_left_name_and_combines_lengths() {
+        let series = read_age_series();
+        let mut head = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        let status = unsafe { phs_series_head(series, 1, &mut head, &mut err) };
+        assert_eq!(status, PHS_OK);
+
+        let mut out = ptr::null_mut();
+        let status = unsafe { phs_series_append(series, head, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let appended = unsafe { series_ref(out) }.unwrap();
+        assert_eq!(appended.value.name().as_str(), "age");
+        assert_eq!(appended.value.len(), 4);
+        assert_eq!(unsafe { series_ref(series) }.unwrap().value.len(), 3);
+        unsafe {
+            phs_series_free(out);
+            phs_series_free(head);
+            phs_series_free(series);
+        }
+    }
+
+    #[test]
+    fn series_append_reports_dtype_conflict() {
+        let dataframe = read_values_dataframe();
+        let age_name = std::ffi::CString::new("age").unwrap();
+        let text_name = std::ffi::CString::new("name").unwrap();
+        let mut age = ptr::null_mut();
+        let mut text = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        let status = unsafe { phs_dataframe_column(dataframe, age_name.as_ptr(), &mut age, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let status = unsafe { phs_dataframe_column(dataframe, text_name.as_ptr(), &mut text, &mut err) };
+        assert_eq!(status, PHS_OK);
+
+        let mut out = ptr::null_mut();
+        let status = unsafe { phs_series_append(age, text, &mut out, &mut err) };
+        assert_eq!(status, crate::error::PHS_POLARS_ERROR);
+        assert!(out.is_null());
+        assert!(!err.is_null());
+        unsafe {
+            phs_error_free(err);
+            phs_series_free(age);
+            phs_series_free(text);
+            phs_dataframe_free(dataframe);
         }
     }
 
