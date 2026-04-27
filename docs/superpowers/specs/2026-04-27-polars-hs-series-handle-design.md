@@ -5,10 +5,10 @@
 Phase 4 added named typed DataFrame column extraction through `Polars.Column`:
 
 ```haskell
-columnBool   :: DataFrame -> Text -> IO (Either PolarsError [Maybe Bool])
-columnInt64  :: DataFrame -> Text -> IO (Either PolarsError [Maybe Int64])
-columnDouble :: DataFrame -> Text -> IO (Either PolarsError [Maybe Double])
-columnText   :: DataFrame -> Text -> IO (Either PolarsError [Maybe Text])
+columnBool   :: DataFrame -> Text -> IO (Either PolarsError (Vector (Maybe Bool)))
+columnInt64  :: DataFrame -> Text -> IO (Either PolarsError (Vector (Maybe Int64)))
+columnDouble :: DataFrame -> Text -> IO (Either PolarsError (Vector (Maybe Double)))
+columnText   :: DataFrame -> Text -> IO (Either PolarsError (Vector (Maybe Text)))
 ```
 
 The next API step introduces Series as an owned Haskell value and improves typed extraction ergonomics with visible type applications:
@@ -17,8 +17,8 @@ The next API step introduces Series as an owned Haskell value and improves typed
 {-# LANGUAGE TypeApplications #-}
 
 column @Series df "age"    :: IO (Either PolarsError Series)
-column @Int64  df "age"    :: IO (Either PolarsError [Maybe Int64])
-column @Text   df "name"   :: IO (Either PolarsError [Maybe Text])
+column @Int64  df "age"    :: IO (Either PolarsError (Vector (Maybe Int64)))
+column @Text   df "name"   :: IO (Either PolarsError (Vector (Maybe Text)))
 ```
 
 Polars Rust 0.53 uses `Series(pub Arc<dyn SeriesTrait>)`. A `DataFrame::column(name)` returns a `Column`, and `Column::as_materialized_series()` gives a `&Series`. Cloning that `Series` gives an owned Arc-backed value suitable for an opaque FFI handle.
@@ -30,7 +30,7 @@ Users need one column selection concept with two use cases:
 - take a named DataFrame column as a reusable Series handle;
 - read a named DataFrame column as typed Haskell values.
 
-Named functions remain useful for discoverability, while `column @xxx` gives the concise Haskell style users expect from a typed binding.
+Named functions remain useful for discoverability, while `column @xxx` gives the concise Haskell style users expect from a typed binding. Typed value readers return boxed `Data.Vector.Vector` values so column-sized payloads use an array-oriented Haskell container.
 
 The implementation must preserve the safe-handle architecture: Haskell sees opaque handles, Rust owns Polars objects, and recoverable failures return `Either PolarsError a`.
 
@@ -51,10 +51,10 @@ seriesHead      :: Int -> Series -> IO (Either PolarsError Series)
 seriesTail      :: Int -> Series -> IO (Either PolarsError Series)
 seriesToFrame   :: Series -> IO (Either PolarsError DataFrame)
 
-seriesBool   :: Series -> IO (Either PolarsError [Maybe Bool])
-seriesInt64  :: Series -> IO (Either PolarsError [Maybe Int64])
-seriesDouble :: Series -> IO (Either PolarsError [Maybe Double])
-seriesText   :: Series -> IO (Either PolarsError [Maybe Text])
+seriesBool   :: Series -> IO (Either PolarsError (Vector (Maybe Bool)))
+seriesInt64  :: Series -> IO (Either PolarsError (Vector (Maybe Int64)))
+seriesDouble :: Series -> IO (Either PolarsError (Vector (Maybe Double)))
+seriesText   :: Series -> IO (Either PolarsError (Vector (Maybe Text)))
 ```
 
 ### Q2. Should `column @xxx` become the main column extraction API?
@@ -72,16 +72,16 @@ instance Column Series where
     type ColumnResult Series = Series
 
 instance Column Bool where
-    type ColumnResult Bool = [Maybe Bool]
+    type ColumnResult Bool = Vector (Maybe Bool)
 
 instance Column Int64 where
-    type ColumnResult Int64 = [Maybe Int64]
+    type ColumnResult Int64 = Vector (Maybe Int64)
 
 instance Column Double where
-    type ColumnResult Double = [Maybe Double]
+    type ColumnResult Double = Vector (Maybe Double)
 
 instance Column Text where
-    type ColumnResult Text = [Maybe Text]
+    type ColumnResult Text = Vector (Maybe Text)
 ```
 
 ### Q3. What happens to `columnBool`, `columnInt64`, `columnDouble`, and `columnText`?
@@ -89,15 +89,19 @@ instance Column Text where
 Answer: They remain stable convenience aliases backed by `column @xxx`.
 
 ```haskell
-columnBool   :: DataFrame -> Text -> IO (Either PolarsError [Maybe Bool])
-columnInt64  :: DataFrame -> Text -> IO (Either PolarsError [Maybe Int64])
-columnDouble :: DataFrame -> Text -> IO (Either PolarsError [Maybe Double])
-columnText   :: DataFrame -> Text -> IO (Either PolarsError [Maybe Text])
+columnBool   :: DataFrame -> Text -> IO (Either PolarsError (Vector (Maybe Bool)))
+columnInt64  :: DataFrame -> Text -> IO (Either PolarsError (Vector (Maybe Int64)))
+columnDouble :: DataFrame -> Text -> IO (Either PolarsError (Vector (Maybe Double)))
+columnText   :: DataFrame -> Text -> IO (Either PolarsError (Vector (Maybe Text)))
 ```
 
 ### Q4. Should Series transform operations enter this phase?
 
 Answer: This phase covers read-oriented operations and shape-preserving slices. Transform operations such as `cast`, `rename`, `sort`, and `unique` get a separate design because they introduce DataType-to-Rust mapping and broader behavior choices.
+
+### Q5. Should typed value readers return lists or vectors?
+
+Answer: They return boxed `Vector (Maybe a)` values from `Data.Vector`. This gives a uniform public result type for primitive values and `Text`, preserves Polars nulls as `Nothing`, and keeps room for specialized nullable primitive buffers in a later phase.
 
 ## Design
 
@@ -167,21 +171,21 @@ ages <- columnInt64 df "age"
 
 ### Typeclass behavior
 
-`ColumnResult` encodes the output family for each type parameter:
+`ColumnResult` encodes the output family for each type parameter. `Vector` means `Data.Vector.Vector`.
 
 | Type application | Result payload |
 | --- | --- |
 | `column @Series` | `Series` |
-| `column @Bool` | `[Maybe Bool]` |
-| `column @Int64` | `[Maybe Int64]` |
-| `column @Double` | `[Maybe Double]` |
-| `column @Text` | `[Maybe Text]` |
+| `column @Bool` | `Vector (Maybe Bool)` |
+| `column @Int64` | `Vector (Maybe Int64)` |
+| `column @Double` | `Vector (Maybe Double)` |
+| `column @Text` | `Vector (Maybe Text)` |
 
 `column @Series` performs one Rust FFI call to create a `phs_series`. Typed instances call `column @Series` and then the matching `series*` reader:
 
 ```haskell
 instance Column Int64 where
-    type ColumnResult Int64 = [Maybe Int64]
+    type ColumnResult Int64 = Vector (Maybe Int64)
     column df name = column @Series df name >>= either (pure . Left) seriesInt64
 ```
 
@@ -363,6 +367,7 @@ print =<< Pl.shape oneColumn
 
 - Requires `TypeApplications` in user code for the concise `column @xxx` style.
 - Uses `TypeFamilies` and `AllowAmbiguousTypes` inside `Polars.Column`.
+- Adds a dependency on the `vector` package for typed value readers.
 - Adds one more opaque handle type and finalizer path.
 - Clones a Polars `Series` handle when taking a column from a DataFrame.
 
