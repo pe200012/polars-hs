@@ -143,7 +143,7 @@ jj bookmark move master --to @-
 **Files:**
 - Modify: `rust/polars-hs-ffi/src/expr.rs`
 
-- [ ] **Step 1: Add Rust tests for aggregation expressions**
+- [x] **Step 1: Add Rust tests for aggregation expressions**
 
 In the `#[cfg(test)] mod tests` block in `rust/polars-hs-ffi/src/expr.rs`, add these tests:
 
@@ -183,7 +183,7 @@ In the `#[cfg(test)] mod tests` block in `rust/polars-hs-ffi/src/expr.rs`, add t
     }
 ```
 
-- [ ] **Step 2: Run the Rust test and confirm the expected failure**
+- [x] **Step 2: Run the Rust test and confirm the expected failure**
 
 Run:
 
@@ -193,7 +193,7 @@ cargo test --manifest-path rust/polars-hs-ffi/Cargo.toml expr::tests::builds_agg
 
 Expected result: build fails because `phs_expr_agg` is missing.
 
-- [ ] **Step 3: Implement `phs_expr_agg`**
+- [x] **Step 3: Implement `phs_expr_agg`**
 
 In `rust/polars-hs-ffi/src/expr.rs`, add this function after `phs_expr_binary`:
 
@@ -226,7 +226,7 @@ pub unsafe extern "C" fn phs_expr_agg(
 }
 ```
 
-- [ ] **Step 4: Run Rust expression tests**
+- [x] **Step 4: Run Rust expression tests**
 
 Run:
 
@@ -236,7 +236,7 @@ cargo test --manifest-path rust/polars-hs-ffi/Cargo.toml expr::tests
 
 Expected result: all `expr::tests` pass.
 
-- [ ] **Step 5: Commit Rust expression FFI**
+- [x] **Step 5: Commit Rust expression FFI**
 
 Run:
 

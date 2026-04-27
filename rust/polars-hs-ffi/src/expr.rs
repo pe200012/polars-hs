@@ -143,6 +143,33 @@ pub unsafe extern "C" fn phs_expr_binary(
     })
 }
 
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_expr_agg(
+    op: c_int,
+    expr: *const phs_expr,
+    out: *mut *mut phs_expr,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let expr = unsafe { expr_ref(expr) }?.value.clone();
+        let agg = match op {
+            0 => expr.sum(),
+            1 => expr.mean(),
+            2 => expr.min(),
+            3 => expr.max(),
+            4 => expr.count(),
+            5 => expr.len(),
+            6 => expr.first(),
+            7 => expr.last(),
+            _ => return Err(PhsError::invalid_argument(format!("unknown aggregation operator code {op}"))),
+        };
+        *out = expr_into_raw(agg);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -153,7 +180,7 @@ mod tests {
         let name = std::ffi::CString::new("age").unwrap();
         let mut col_expr = ptr::null_mut();
         let mut lit_expr = ptr::null_mut();
-        let mut out = ptr::null_mut();
+        let mut out: *mut phs_expr = ptr::null_mut();
         let mut err = ptr::null_mut();
         assert_eq!(unsafe { phs_expr_col(name.as_ptr(), &mut col_expr, &mut err) }, PHS_OK);
         assert_eq!(unsafe { phs_expr_lit_int(35, &mut lit_expr, &mut err) }, PHS_OK);
@@ -163,6 +190,39 @@ mod tests {
             crate::handles::phs_expr_free(col_expr);
             crate::handles::phs_expr_free(lit_expr);
             crate::handles::phs_expr_free(out);
+        }
+    }
+
+    #[test]
+    fn builds_aggregation_expressions() {
+        let name = std::ffi::CString::new("salary").unwrap();
+        for op in 0..=7 {
+            let mut col_expr = ptr::null_mut();
+            let mut agg_expr: *mut phs_expr = ptr::null_mut();
+            let mut err = ptr::null_mut();
+            assert_eq!(unsafe { phs_expr_col(name.as_ptr(), &mut col_expr, &mut err) }, PHS_OK);
+            assert_eq!(unsafe { phs_expr_agg(op, col_expr, &mut agg_expr, &mut err) }, PHS_OK);
+            assert!(!agg_expr.is_null());
+            unsafe {
+                crate::handles::phs_expr_free(col_expr);
+                crate::handles::phs_expr_free(agg_expr);
+            }
+        }
+    }
+
+    #[test]
+    fn unknown_aggregation_operator_returns_error() {
+        let name = std::ffi::CString::new("salary").unwrap();
+        let mut col_expr = ptr::null_mut();
+        let mut out: *mut phs_expr = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(unsafe { phs_expr_col(name.as_ptr(), &mut col_expr, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { phs_expr_agg(99, col_expr, &mut out, &mut err) }, crate::error::PHS_INVALID_ARGUMENT);
+        assert!(out.is_null());
+        assert!(!err.is_null());
+        unsafe {
+            crate::handles::phs_expr_free(col_expr);
+            crate::error::phs_error_free(err);
         }
     }
 }
