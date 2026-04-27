@@ -34,7 +34,7 @@
 - Create: `test/data/sales.csv`
 - Modify: `test/Spec.hs`
 
-- [ ] **Step 1: Create the grouped aggregation fixture**
+- [x] **Step 1: Create the grouped aggregation fixture**
 
 Write `test/data/sales.csv` exactly as follows:
 
@@ -46,7 +46,7 @@ Sales,Carol,29,90
 Sales,Dave,41,110
 ```
 
-- [ ] **Step 2: Add failing Haskell tests**
+- [x] **Step 2: Add failing Haskell tests**
 
 In `test/Spec.hs`, add this constant below `fixtureCsv`:
 
@@ -116,7 +116,7 @@ Add this `describe` block between the LazyFrame and IPC sections:
                                 Left err -> Pl.polarsErrorCode err `shouldBe` Pl.PolarsFailure
 ```
 
-- [ ] **Step 3: Run the Haskell tests and confirm the expected failure**
+- [x] **Step 3: Run the Haskell tests and confirm the expected failure**
 
 Run:
 

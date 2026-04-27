@@ -13,6 +13,9 @@ import qualified Polars as Pl
 fixtureCsv :: FilePath
 fixtureCsv = "test/data/people.csv"
 
+salesCsv :: FilePath
+salesCsv = "test/data/sales.csv"
+
 main :: IO ()
 main = hspec $ do
     describe "Polars.DataFrame" $ do
@@ -62,6 +65,63 @@ main = hspec $ do
                                     case collected of
                                         Left err -> expectationFailure (show err)
                                         Right df -> Pl.shape df `shouldReturn` Right (1, 1)
+
+    describe "Polars.GroupBy" $ do
+        it "groups a lazy CSV scan and aggregates columns" $ do
+            scanResult <- Pl.scanCsv salesCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    groupedResult <-
+                        Pl.agg
+                            [ Pl.alias "salary_sum" (Pl.sum_ (Pl.col "salary"))
+                            , Pl.alias "age_mean" (Pl.mean_ (Pl.col "age"))
+                            , Pl.alias "people" (Pl.count_ (Pl.col "name"))
+                            ]
+                            (Pl.groupByStable [Pl.col "department"] lf0)
+                    case groupedResult of
+                        Left err -> expectationFailure (show err)
+                        Right lf1 -> do
+                            collected <- Pl.collect lf1
+                            case collected of
+                                Left err -> expectationFailure (show err)
+                                Right df -> do
+                                    Pl.shape df `shouldReturn` Right (2, 4)
+                                    schemaResult <- Pl.schema df
+                                    fmap (map Pl.fieldName) schemaResult
+                                        `shouldBe` Right ["department", "salary_sum", "age_mean", "people"]
+                                    textResult <- Pl.toText df
+                                    fmap (T.isInfixOf "Engineering") textResult `shouldBe` Right True
+                                    fmap (T.isInfixOf "250") textResult `shouldBe` Right True
+                                    fmap (T.isInfixOf "Sales") textResult `shouldBe` Right True
+                                    fmap (T.isInfixOf "200") textResult `shouldBe` Right True
+
+        it "rejects an empty aggregation list" $ do
+            scanResult <- Pl.scanCsv salesCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf -> do
+                    result <- Pl.agg [] (Pl.groupBy [Pl.col "department"] lf)
+                    case result of
+                        Right _ -> expectationFailure "expected InvalidArgument for empty aggregation list"
+                        Left err -> Pl.polarsErrorCode err `shouldBe` Pl.InvalidArgument
+
+        it "reports missing aggregation columns during collect" $ do
+            scanResult <- Pl.scanCsv salesCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    groupedResult <-
+                        Pl.agg
+                            [Pl.alias "missing_sum" (Pl.sum_ (Pl.col "missing"))]
+                            (Pl.groupBy [Pl.col "department"] lf0)
+                    case groupedResult of
+                        Left err -> expectationFailure (show err)
+                        Right lf1 -> do
+                            collected <- Pl.collect lf1
+                            case collected of
+                                Right _ -> expectationFailure "expected a Polars failure for missing column"
+                                Left err -> Pl.polarsErrorCode err `shouldBe` Pl.PolarsFailure
 
     describe "Polars.IPC" $ do
         it "round-trips a dataframe through IPC bytes" $ do
