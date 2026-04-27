@@ -1149,7 +1149,7 @@ Expected in a jj repository: a commit is created. Expected in the current checko
 - Modify: `rust/polars-hs-ffi/src/expr.rs`
 - Modify: `rust/polars-hs-ffi/src/lazyframe.rs`
 
-- [ ] **Step 1: Update `rust/polars-hs-ffi/src/lib.rs` for expression and LazyFrame modules**
+- [x] **Step 1: Update `rust/polars-hs-ffi/src/lib.rs` for expression and LazyFrame modules**
 
 ```rust
 pub mod bytes;
@@ -1171,7 +1171,7 @@ pub extern "C" fn phs_version_minor() -> u32 {
 }
 ```
 
-- [ ] **Step 2: Replace `rust/polars-hs-ffi/src/expr.rs`**
+- [x] **Step 2: Replace `rust/polars-hs-ffi/src/expr.rs`**
 
 ```rust
 use std::os::raw::{c_char, c_double, c_int};
@@ -1354,7 +1354,7 @@ pub unsafe extern "C" fn phs_expr_not(
 }
 ```
 
-- [ ] **Step 3: Replace `rust/polars-hs-ffi/src/lazyframe.rs`**
+- [x] **Step 3: Replace `rust/polars-hs-ffi/src/lazyframe.rs`**
 
 ```rust
 use std::os::raw::{c_char, c_int};
@@ -1598,7 +1598,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 4: Run Rust tests**
+- [x] **Step 4: Run Rust tests**
 
 Run:
 
@@ -1608,7 +1608,7 @@ cargo test --manifest-path rust/polars-hs-ffi/Cargo.toml
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit the Rust lazy task**
+- [x] **Step 5: Commit the Rust lazy task**
 
 Run:
 

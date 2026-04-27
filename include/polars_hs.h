@@ -30,13 +30,13 @@ typedef struct phs_error {
   uint8_t _private[0];
 } phs_error;
 
-typedef struct phs_lazyframe {
-  uint8_t _private[0];
-} phs_lazyframe;
-
 typedef struct phs_expr {
   uint8_t _private[0];
 } phs_expr;
+
+typedef struct phs_lazyframe {
+  uint8_t _private[0];
+} phs_lazyframe;
 
 uint32_t phs_version_major(void);
 
@@ -89,6 +89,29 @@ const char *phs_error_message(const struct phs_error *error);
 
 void phs_error_free(struct phs_error *error);
 
+int phs_expr_col(const char *name, struct phs_expr **out, struct phs_error **err);
+
+int phs_expr_lit_bool(bool value, struct phs_expr **out, struct phs_error **err);
+
+int phs_expr_lit_int(int64_t value, struct phs_expr **out, struct phs_error **err);
+
+int phs_expr_lit_double(double value, struct phs_expr **out, struct phs_error **err);
+
+int phs_expr_lit_text(const char *value, struct phs_expr **out, struct phs_error **err);
+
+int phs_expr_alias(const struct phs_expr *expr,
+                   const char *name,
+                   struct phs_expr **out,
+                   struct phs_error **err);
+
+int phs_expr_not(const struct phs_expr *expr, struct phs_expr **out, struct phs_error **err);
+
+int phs_expr_binary(int op,
+                    const struct phs_expr *left,
+                    const struct phs_expr *right,
+                    struct phs_expr **out,
+                    struct phs_error **err);
+
 void phs_dataframe_free(struct phs_dataframe *ptr);
 
 void phs_lazyframe_free(struct phs_lazyframe *ptr);
@@ -109,5 +132,41 @@ int phs_read_ipc_file(const char *path, struct phs_dataframe **out, struct phs_e
 int phs_write_ipc_file(const char *path,
                        const struct phs_dataframe *dataframe,
                        struct phs_error **err);
+
+int phs_scan_csv(const char *path, struct phs_lazyframe **out, struct phs_error **err);
+
+int phs_scan_parquet(const char *path, struct phs_lazyframe **out, struct phs_error **err);
+
+int phs_lazyframe_collect(const struct phs_lazyframe *lazyframe,
+                          struct phs_dataframe **out,
+                          struct phs_error **err);
+
+int phs_lazyframe_filter(const struct phs_lazyframe *lazyframe,
+                         const struct phs_expr *predicate,
+                         struct phs_lazyframe **out,
+                         struct phs_error **err);
+
+int phs_lazyframe_select(const struct phs_lazyframe *lazyframe,
+                         const struct phs_expr *const *exprs,
+                         uintptr_t len,
+                         struct phs_lazyframe **out,
+                         struct phs_error **err);
+
+int phs_lazyframe_with_columns(const struct phs_lazyframe *lazyframe,
+                               const struct phs_expr *const *exprs,
+                               uintptr_t len,
+                               struct phs_lazyframe **out,
+                               struct phs_error **err);
+
+int phs_lazyframe_sort(const struct phs_lazyframe *lazyframe,
+                       const char *const *names,
+                       uintptr_t len,
+                       struct phs_lazyframe **out,
+                       struct phs_error **err);
+
+int phs_lazyframe_limit(const struct phs_lazyframe *lazyframe,
+                        uint64_t n,
+                        struct phs_lazyframe **out,
+                        struct phs_error **err);
 
 #endif  /* POLARS_HS_H */
