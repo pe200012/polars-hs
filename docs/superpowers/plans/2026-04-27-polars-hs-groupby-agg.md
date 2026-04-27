@@ -253,7 +253,7 @@ jj bookmark move master --to @-
 **Files:**
 - Modify: `rust/polars-hs-ffi/src/lazyframe.rs`
 
-- [ ] **Step 1: Add Rust tests for grouped aggregation**
+- [x] **Step 1: Add Rust tests for grouped aggregation**
 
 In the `#[cfg(test)] mod tests` block in `rust/polars-hs-ffi/src/lazyframe.rs`, add this helper below `fixture_path`:
 
@@ -356,7 +356,7 @@ Add these tests below `lazy_filter_select_collect_reports_shape`:
     }
 ```
 
-- [ ] **Step 2: Run the Rust test and confirm the expected failure**
+- [x] **Step 2: Run the Rust test and confirm the expected failure**
 
 Run:
 
@@ -366,7 +366,7 @@ cargo test --manifest-path rust/polars-hs-ffi/Cargo.toml lazyframe::tests::lazy_
 
 Expected result: build fails because `phs_lazyframe_group_by_agg` is missing.
 
-- [ ] **Step 3: Implement `phs_lazyframe_group_by_agg`**
+- [x] **Step 3: Implement `phs_lazyframe_group_by_agg`**
 
 In `rust/polars-hs-ffi/src/lazyframe.rs`, add this function after `phs_lazyframe_limit`:
 
@@ -395,7 +395,7 @@ pub unsafe extern "C" fn phs_lazyframe_group_by_agg(
 }
 ```
 
-- [ ] **Step 4: Run Rust LazyFrame tests**
+- [x] **Step 4: Run Rust LazyFrame tests**
 
 Run:
 
@@ -405,7 +405,7 @@ cargo test --manifest-path rust/polars-hs-ffi/Cargo.toml lazyframe::tests
 
 Expected result: all `lazyframe::tests` pass.
 
-- [ ] **Step 5: Commit Rust grouped aggregation FFI**
+- [x] **Step 5: Commit Rust grouped aggregation FFI**
 
 Run:
 

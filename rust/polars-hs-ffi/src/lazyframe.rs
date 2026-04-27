@@ -176,6 +176,29 @@ pub unsafe extern "C" fn phs_lazyframe_limit(
     })
 }
 
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_group_by_agg(
+    lazyframe: *const phs_lazyframe,
+    keys: *const *const phs_expr,
+    key_len: usize,
+    aggs: *const *const phs_expr,
+    agg_len: usize,
+    maintain_order: bool,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        let keys = unsafe { expr_vec(keys, key_len) }?;
+        let aggs = unsafe { expr_vec(aggs, agg_len) }?;
+        let grouped = if maintain_order { lf.group_by_stable(keys) } else { lf.group_by(keys) };
+        *out = lazyframe_into_raw(grouped.agg(aggs));
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -188,6 +211,16 @@ mod tests {
             .join("test")
             .join("data")
             .join("people.csv");
+        std::ffi::CString::new(path.to_string_lossy().as_bytes()).unwrap()
+    }
+
+    fn sales_fixture_path() -> std::ffi::CString {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("test")
+            .join("data")
+            .join("sales.csv");
         std::ffi::CString::new(path.to_string_lossy().as_bytes()).unwrap()
     }
 
@@ -232,6 +265,87 @@ mod tests {
             crate::handles::phs_lazyframe_free(lf1);
             crate::handles::phs_lazyframe_free(lf2);
             crate::handles::phs_dataframe_free(df);
+        }
+    }
+
+    #[test]
+    fn lazy_group_by_agg_collects_expected_shape() {
+        let path = sales_fixture_path();
+        let mut lf0 = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(unsafe { phs_scan_csv(path.as_ptr(), &mut lf0, &mut err) }, PHS_OK);
+
+        let department = std::ffi::CString::new("department").unwrap();
+        let mut department_expr = ptr::null_mut();
+        assert_eq!(unsafe { crate::expr::phs_expr_col(department.as_ptr(), &mut department_expr, &mut err) }, PHS_OK);
+
+        let salary = std::ffi::CString::new("salary").unwrap();
+        let mut salary_expr = ptr::null_mut();
+        let mut salary_sum_expr = ptr::null_mut();
+        assert_eq!(unsafe { crate::expr::phs_expr_col(salary.as_ptr(), &mut salary_expr, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::expr::phs_expr_agg(0, salary_expr, &mut salary_sum_expr, &mut err) }, PHS_OK);
+
+        let keys = [department_expr as *const phs_expr];
+        let aggs = [salary_sum_expr as *const phs_expr];
+        let mut lf1: *mut phs_lazyframe = ptr::null_mut();
+        assert_eq!(
+            unsafe {
+                phs_lazyframe_group_by_agg(
+                    lf0,
+                    keys.as_ptr(),
+                    keys.len(),
+                    aggs.as_ptr(),
+                    aggs.len(),
+                    true,
+                    &mut lf1,
+                    &mut err,
+                )
+            },
+            PHS_OK
+        );
+
+        let mut df = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_collect(lf1, &mut df, &mut err) }, PHS_OK);
+        let mut height = 0;
+        let mut width = 0;
+        assert_eq!(unsafe { crate::dataframe::phs_dataframe_shape(df, &mut height, &mut width, &mut err) }, PHS_OK);
+        assert_eq!((height, width), (2, 2));
+
+        unsafe {
+            crate::handles::phs_expr_free(department_expr);
+            crate::handles::phs_expr_free(salary_expr);
+            crate::handles::phs_expr_free(salary_sum_expr);
+            crate::handles::phs_lazyframe_free(lf0);
+            crate::handles::phs_lazyframe_free(lf1);
+            crate::handles::phs_dataframe_free(df);
+        }
+    }
+
+    #[test]
+    fn lazy_group_by_agg_rejects_null_key_array_with_positive_length() {
+        let path = sales_fixture_path();
+        let mut lf0 = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(unsafe { phs_scan_csv(path.as_ptr(), &mut lf0, &mut err) }, PHS_OK);
+
+        let salary = std::ffi::CString::new("salary").unwrap();
+        let mut salary_expr = ptr::null_mut();
+        let mut salary_sum_expr = ptr::null_mut();
+        assert_eq!(unsafe { crate::expr::phs_expr_col(salary.as_ptr(), &mut salary_expr, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::expr::phs_expr_agg(0, salary_expr, &mut salary_sum_expr, &mut err) }, PHS_OK);
+
+        let aggs = [salary_sum_expr as *const phs_expr];
+        let mut lf1: *mut phs_lazyframe = ptr::null_mut();
+        let status = unsafe { phs_lazyframe_group_by_agg(lf0, ptr::null(), 1, aggs.as_ptr(), aggs.len(), false, &mut lf1, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        assert!(lf1.is_null());
+        assert!(!err.is_null());
+
+        unsafe {
+            crate::error::phs_error_free(err);
+            crate::handles::phs_expr_free(salary_expr);
+            crate::handles::phs_expr_free(salary_sum_expr);
+            crate::handles::phs_lazyframe_free(lf0);
         }
     }
 }

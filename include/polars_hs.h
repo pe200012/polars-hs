@@ -174,4 +174,13 @@ int phs_lazyframe_limit(const struct phs_lazyframe *lazyframe,
                         struct phs_lazyframe **out,
                         struct phs_error **err);
 
+int phs_lazyframe_group_by_agg(const struct phs_lazyframe *lazyframe,
+                               const struct phs_expr *const *keys,
+                               uintptr_t key_len,
+                               const struct phs_expr *const *aggs,
+                               uintptr_t agg_len,
+                               bool maintain_order,
+                               struct phs_lazyframe **out,
+                               struct phs_error **err);
+
 #endif  /* POLARS_HS_H */
