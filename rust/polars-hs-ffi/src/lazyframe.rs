@@ -40,6 +40,25 @@ unsafe fn name_vec(names: *const *const c_char, len: usize) -> PhsResult<Vec<PlS
         .collect()
 }
 
+fn join_type_from_code(code: c_int) -> PhsResult<JoinType> {
+    match code {
+        0 => Ok(JoinType::Inner),
+        1 => Ok(JoinType::Left),
+        2 => Ok(JoinType::Right),
+        3 => Ok(JoinType::Full),
+        _ => Err(PhsError::invalid_argument(format!("unknown join type code {code}"))),
+    }
+}
+
+unsafe fn optional_suffix(suffix: *const c_char) -> PhsResult<Option<PlSmallStr>> {
+    if suffix.is_null() {
+        Ok(None)
+    } else {
+        let suffix = unsafe { c_str_to_str(suffix, "suffix") }?;
+        Ok(Some(PlSmallStr::from_str(suffix)))
+    }
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_scan_csv(
     path: *const c_char,
@@ -195,6 +214,44 @@ pub unsafe extern "C" fn phs_lazyframe_group_by_agg(
         let aggs = unsafe { expr_vec(aggs, agg_len) }?;
         let grouped = if maintain_order { lf.group_by_stable(keys) } else { lf.group_by(keys) };
         *out = lazyframe_into_raw(grouped.agg(aggs));
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_join(
+    left: *const phs_lazyframe,
+    right: *const phs_lazyframe,
+    left_on: *const *const phs_expr,
+    left_len: usize,
+    right_on: *const *const phs_expr,
+    right_len: usize,
+    join_type: c_int,
+    suffix: *const c_char,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        if left_len == 0 {
+            return Err(PhsError::invalid_argument("left join keys must contain at least one expression"));
+        }
+        if right_len == 0 {
+            return Err(PhsError::invalid_argument("right join keys must contain at least one expression"));
+        }
+        if left_len != right_len {
+            return Err(PhsError::invalid_argument("left and right join key counts must match"));
+        }
+        let left_frame = unsafe { lazyframe_ref(left) }?.value.clone();
+        let right_frame = unsafe { lazyframe_ref(right) }?.value.clone();
+        let left_on = unsafe { expr_vec(left_on, left_len) }?;
+        let right_on = unsafe { expr_vec(right_on, right_len) }?;
+        let mut args = JoinArgs::new(join_type_from_code(join_type)?);
+        if let Some(suffix) = unsafe { optional_suffix(suffix) }? {
+            args = args.with_suffix(Some(suffix));
+        }
+        *out = lazyframe_into_raw(left_frame.join(right_frame, left_on, right_on, args));
         Ok(())
     })
 }

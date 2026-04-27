@@ -183,4 +183,15 @@ int phs_lazyframe_group_by_agg(const struct phs_lazyframe *lazyframe,
                                struct phs_lazyframe **out,
                                struct phs_error **err);
 
+int phs_lazyframe_join(const struct phs_lazyframe *left,
+                       const struct phs_lazyframe *right,
+                       const struct phs_expr *const *left_on,
+                       uintptr_t left_len,
+                       const struct phs_expr *const *right_on,
+                       uintptr_t right_len,
+                       int join_type,
+                       const char *suffix,
+                       struct phs_lazyframe **out,
+                       struct phs_error **err);
+
 #endif  /* POLARS_HS_H */

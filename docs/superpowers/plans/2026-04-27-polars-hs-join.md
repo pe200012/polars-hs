@@ -449,7 +449,7 @@ jj bookmark move master --to @-
 - Modify: `rust/polars-hs-ffi/src/lazyframe.rs`
 - Generated: `include/polars_hs.h`
 
-- [ ] **Step 1: Add join helpers**
+- [x] **Step 1: Add join helpers**
 
 In `rust/polars-hs-ffi/src/lazyframe.rs`, add these helper functions below `name_vec`:
 
@@ -474,7 +474,7 @@ unsafe fn optional_suffix(suffix: *const c_char) -> PhsResult<Option<PlSmallStr>
 }
 ```
 
-- [ ] **Step 2: Add `phs_lazyframe_join`**
+- [x] **Step 2: Add `phs_lazyframe_join`**
 
 Add this function after `phs_lazyframe_group_by_agg`:
 
@@ -518,7 +518,7 @@ pub unsafe extern "C" fn phs_lazyframe_join(
 }
 ```
 
-- [ ] **Step 3: Run Rust LazyFrame tests**
+- [x] **Step 3: Run Rust LazyFrame tests**
 
 Run:
 
@@ -528,7 +528,7 @@ cargo test --manifest-path rust/polars-hs-ffi/Cargo.toml lazyframe::tests
 
 Expected result: all LazyFrame Rust tests pass.
 
-- [ ] **Step 4: Run Rust Clippy**
+- [x] **Step 4: Run Rust Clippy**
 
 Run:
 
@@ -538,7 +538,7 @@ cargo clippy --manifest-path rust/polars-hs-ffi/Cargo.toml -- -D warnings
 
 Expected result: clippy passes.
 
-- [ ] **Step 5: Commit Rust join FFI**
+- [x] **Step 5: Commit Rust join FFI**
 
 Run:
 
