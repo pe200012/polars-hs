@@ -160,3 +160,15 @@ Pl.alias "prefix" (Pl.strSlice (Pl.col "text") (Pl.litInt 0) (Pl.litInt 2))
 - A single string ABI family keeps the C ABI compact and centralizes arity validation in Rust.
 - Deferring regex extract/replace and split/list-producing helpers keeps this phase focused on scalar outputs and current typed extraction support.
 - Adding the `regex` feature enables literal contains through Polars 0.53 and should have limited dependency impact.
+
+## Implementation Results
+
+### Phase 2A: String namespace — Implemented
+
+**Public APIs in `Polars.Expr`:** `strContainsLiteral`, `strStartsWith`, `strEndsWith`, `strStrip`, `strStripStart`, `strStripEnd`, `strToLowercase`, `strToUppercase`, `strLenBytes`, `strLenChars`, `strSlice`, `strHead`, and `strTail`.
+
+**AST and compiler:** `StringFunctionExpr` AST constructor with private `StringFunction` enum and opcode mapping in `Polars.Internal.Expr`. The compiler case marshals the input expression and argument list through the `phs_expr_string_function` ABI.
+
+**Rust ABI:** `phs_expr_string_function` in `rust/polars-hs-ffi/src/expr.rs` dispatches 13 opcodes with arity validation and delegates to `expr.str().*` Polars methods. Rust unit tests cover all opcodes and error paths (unknown opcode, wrong arity).
+
+**Fixture and Hspec tests:** `test/data/strings.csv` provides ASCII, Greek, and Japanese text rows. Two Hspec examples test the full result pipeline for 13 string operations across all four rows, covering boolean predicates, text transformations, byte/char lengths, and character slicing.
