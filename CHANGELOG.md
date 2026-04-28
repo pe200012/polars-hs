@@ -29,6 +29,7 @@ and this project adheres to the
 - Arrow C Data Interface RecordBatch import for managed DataFrame construction.
 - Arrow C Data Interface RecordBatch export from managed DataFrames.
 - Dataset-driven smoke fixtures generated from Polars public data and Metasyn synthetic data.
-- Opt-in NYC Taxi Parquet real-world test script.
+- Dataset-driven lazy query smoke tests for generated CSV fixtures.
+- Opt-in NYC Taxi Parquet real-world test script with lazy grouped query coverage.
 
 ## 0.1.0.0 - YYYY-MM-DD

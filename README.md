@@ -272,7 +272,7 @@ Generate committed smoke-test fixtures with:
 uv run --with polars --with metasyn --with pyarrow python scripts/generate_dataset_fixtures.py
 ```
 
-Default `stack test --fast` reads generated Polars/Metasyn CSV fixtures from `test/data/generated/`.
+Default `stack test --fast` reads generated Polars/Metasyn CSV fixtures from `test/data/generated/` and runs lazy query smoke tests over those fixtures.
 
 Run the opt-in NYC Taxi Parquet test with:
 

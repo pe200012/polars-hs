@@ -7,6 +7,7 @@ import Prelude hiding (filter, head)
 
 import qualified Data.ByteString as BS
 import Data.Int (Int64)
+import Data.Maybe (isJust)
 import qualified Data.Text as T
 import qualified Data.Vector as V
 import Foreign.Ptr (nullPtr)
@@ -737,6 +738,82 @@ main = hspec $ do
                     case scores of
                         Left err -> expectationFailure (show err)
                         Right values -> V.length values `shouldBe` 16
+
+    describe "Dataset-driven lazy queries" $ do
+        it "filters, groups, sorts, and collects the iris fixture" $ do
+            scanResult <- Pl.scanCsv polarsIrisCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    filtered <- Pl.filter (Pl.col "sepal_length" Pl..> Pl.litDouble 5.0) lf0
+                    case filtered of
+                        Left err -> expectationFailure (show err)
+                        Right lf1 -> do
+                            grouped <-
+                                Pl.agg
+                                    [Pl.alias "mean_sepal_width" (Pl.mean_ (Pl.col "sepal_width"))]
+                                    (Pl.groupByStable [Pl.col "species"] lf1)
+                            case grouped of
+                                Left err -> expectationFailure (show err)
+                                Right lf2 -> do
+                                    sorted <- Pl.sort ["species"] lf2
+                                    case sorted of
+                                        Left err -> expectationFailure (show err)
+                                        Right lf3 -> do
+                                            collected <- Pl.collect lf3
+                                            case collected of
+                                                Left err -> expectationFailure (show err)
+                                                Right df -> do
+                                                    Pl.shape df `shouldReturn` Right (3, 2)
+                                                    Pl.column @T.Text df "species"
+                                                        `shouldReturn` Right (V.fromList [Just "setosa", Just "versicolor", Just "virginica"])
+                                                    means <- Pl.column @Double df "mean_sepal_width"
+                                                    case means of
+                                                        Left err -> expectationFailure (show err)
+                                                        Right values -> do
+                                                            V.length values `shouldBe` 3
+                                                            V.toList values `shouldSatisfy` all isJust
+
+        it "adds derived Metasyn columns and filters on them" $ do
+            scanResult <- Pl.scanCsv metasynPeopleCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    enriched <- Pl.withColumns [Pl.alias "score_boosted" (Pl.col "score" Pl..+ Pl.litDouble 1.0)] lf0
+                    case enriched of
+                        Left err -> expectationFailure (show err)
+                        Right lf1 -> do
+                            filtered <- Pl.filter (Pl.col "age" Pl..>= Pl.litInt 30) lf1
+                            case filtered of
+                                Left err -> expectationFailure (show err)
+                                Right lf2 -> do
+                                    sorted <- Pl.sort ["city"] lf2
+                                    case sorted of
+                                        Left err -> expectationFailure (show err)
+                                        Right lf3 -> do
+                                            limited <- Pl.limit 8 lf3
+                                            case limited of
+                                                Left err -> expectationFailure (show err)
+                                                Right lf4 -> do
+                                                    collected <- Pl.collect lf4
+                                                    case collected of
+                                                        Left err -> expectationFailure (show err)
+                                                        Right df -> do
+                                                            shapeResult <- Pl.shape df
+                                                            case shapeResult of
+                                                                Left err -> expectationFailure (show err)
+                                                                Right (rows, columns) -> do
+                                                                    rows `shouldSatisfy` (>= 1)
+                                                                    rows `shouldSatisfy` (<= 8)
+                                                                    columns `shouldBe` 4
+                                                            cities <- Pl.column @T.Text df "city"
+                                                            case cities of
+                                                                Left err -> expectationFailure (show err)
+                                                                Right values -> V.length values `shouldSatisfy` (>= 1)
+                                                            boosted <- Pl.column @Double df "score_boosted"
+                                                            case boosted of
+                                                                Left err -> expectationFailure (show err)
+                                                                Right values -> V.toList values `shouldSatisfy` all isJust
 
     describe "Polars.IPC" $ do
         it "round-trips a dataframe through IPC bytes" $ do
