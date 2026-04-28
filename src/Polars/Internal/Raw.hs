@@ -19,6 +19,7 @@ module Polars.Internal.Raw
     , phs_bytes_len
     , phs_dataframe_column
     , phs_dataframe_column_bool
+    , phs_dataframe_new
     , phs_dataframe_column_f64
     , phs_dataframe_column_i64
     , phs_dataframe_column_text
@@ -67,6 +68,10 @@ module Polars.Internal.Raw
     , phs_series_head
     , phs_series_len
     , phs_series_name
+    , phs_series_new_bool
+    , phs_series_new_f64
+    , phs_series_new_i64
+    , phs_series_new_text
     , phs_series_rename
     , phs_series_reverse
     , phs_series_null_count
@@ -131,6 +136,9 @@ foreign import ccall unsafe "phs_read_csv"
 
 foreign import ccall unsafe "phs_read_parquet"
     phs_read_parquet :: CString -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_dataframe_new"
+    phs_dataframe_new :: Ptr (Ptr RawSeries) -> CSize -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_dataframe_shape"
     phs_dataframe_shape :: Ptr RawDataFrame -> Ptr Word64 -> Ptr Word64 -> Ptr (Ptr RawError) -> IO CInt
@@ -236,6 +244,18 @@ foreign import ccall unsafe "phs_read_ipc_file"
 
 foreign import ccall unsafe "phs_write_ipc_file"
     phs_write_ipc_file :: CString -> Ptr RawDataFrame -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_new_bool"
+    phs_series_new_bool :: CString -> Ptr Word8 -> CSize -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_new_i64"
+    phs_series_new_i64 :: CString -> Ptr Word8 -> CSize -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_new_f64"
+    phs_series_new_f64 :: CString -> Ptr Word8 -> CSize -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_new_text"
+    phs_series_new_text :: CString -> Ptr Word8 -> CSize -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_series_name"
     phs_series_name :: Ptr RawSeries -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt

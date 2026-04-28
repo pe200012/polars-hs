@@ -117,6 +117,176 @@ fn dtype_from_code(code: c_int) -> PhsResult<DataType> {
     }
 }
 
+fn raw_bytes<'a>(data: *const u8, len: usize, name: &str) -> PhsResult<&'a [u8]> {
+    if len == 0 {
+        Ok(&[])
+    } else if data.is_null() {
+        Err(PhsError::invalid_argument(format!("{name} pointer was null")))
+    } else {
+        Ok(unsafe { std::slice::from_raw_parts(data, len) })
+    }
+}
+
+fn read_tag(bytes: &[u8], offset: &mut usize, context: &str) -> PhsResult<u8> {
+    if *offset >= bytes.len() {
+        return Err(PhsError::invalid_argument(format!("{context} ended early")));
+    }
+    let tag = bytes[*offset];
+    *offset += 1;
+    Ok(tag)
+}
+
+fn read_u64_le(bytes: &[u8], offset: &mut usize, context: &str) -> PhsResult<u64> {
+    let end = offset
+        .checked_add(8)
+        .ok_or_else(|| PhsError::invalid_argument(format!("{context} length overflow")))?;
+    if end > bytes.len() {
+        return Err(PhsError::invalid_argument(format!("{context} ended early")));
+    }
+    let value = u64::from_le_bytes(bytes[*offset..end].try_into().expect("slice length checked"));
+    *offset = end;
+    Ok(value)
+}
+
+fn decode_bool_values(bytes: &[u8]) -> PhsResult<Vec<Option<bool>>> {
+    let mut values = Vec::new();
+    let mut offset = 0;
+    while offset < bytes.len() {
+        match read_tag(bytes, &mut offset, "bool payload")? {
+            COLUMN_TAG_NULL => values.push(None),
+            COLUMN_TAG_VALUE => {
+                let value = read_tag(bytes, &mut offset, "bool value")?;
+                match value {
+                    0 => values.push(Some(false)),
+                    1 => values.push(Some(true)),
+                    other => return Err(PhsError::invalid_argument(format!("invalid bool value {other}"))),
+                }
+            },
+            other => return Err(PhsError::invalid_argument(format!("unknown bool tag {other}"))),
+        }
+    }
+    Ok(values)
+}
+
+fn decode_i64_values(bytes: &[u8]) -> PhsResult<Vec<Option<i64>>> {
+    let mut values = Vec::new();
+    let mut offset = 0;
+    while offset < bytes.len() {
+        match read_tag(bytes, &mut offset, "i64 payload")? {
+            COLUMN_TAG_NULL => values.push(None),
+            COLUMN_TAG_VALUE => values.push(Some(read_u64_le(bytes, &mut offset, "i64 value")? as i64)),
+            other => return Err(PhsError::invalid_argument(format!("unknown i64 tag {other}"))),
+        }
+    }
+    Ok(values)
+}
+
+fn decode_f64_values(bytes: &[u8]) -> PhsResult<Vec<Option<f64>>> {
+    let mut values = Vec::new();
+    let mut offset = 0;
+    while offset < bytes.len() {
+        match read_tag(bytes, &mut offset, "f64 payload")? {
+            COLUMN_TAG_NULL => values.push(None),
+            COLUMN_TAG_VALUE => values.push(Some(f64::from_bits(read_u64_le(bytes, &mut offset, "f64 value")?))),
+            other => return Err(PhsError::invalid_argument(format!("unknown f64 tag {other}"))),
+        }
+    }
+    Ok(values)
+}
+
+fn decode_text_values(bytes: &[u8]) -> PhsResult<Vec<Option<String>>> {
+    let mut values = Vec::new();
+    let mut offset = 0;
+    while offset < bytes.len() {
+        match read_tag(bytes, &mut offset, "text payload")? {
+            COLUMN_TAG_NULL => values.push(None),
+            COLUMN_TAG_VALUE => {
+                let len: usize = read_u64_le(bytes, &mut offset, "text length")?
+                    .try_into()
+                    .map_err(|_| PhsError::invalid_argument("text length overflow"))?;
+                let end = offset
+                    .checked_add(len)
+                    .ok_or_else(|| PhsError::invalid_argument("text length overflow"))?;
+                if end > bytes.len() {
+                    return Err(PhsError::invalid_argument("text value ended early"));
+                }
+                let value = std::str::from_utf8(&bytes[offset..end])?.to_owned();
+                offset = end;
+                values.push(Some(value));
+            },
+            other => return Err(PhsError::invalid_argument(format!("unknown text tag {other}"))),
+        }
+    }
+    Ok(values)
+}
+
+fn series_new_from_payload<T, F>(
+    name: *const c_char,
+    data: *const u8,
+    len: usize,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+    decode: F,
+) -> c_int
+where
+    Series: NamedFrom<Vec<Option<T>>, [Option<T>]>,
+    F: FnOnce(&[u8]) -> PhsResult<Vec<Option<T>>> + std::panic::UnwindSafe,
+{
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let name = unsafe { c_str_to_str(name, "name") }?;
+        let bytes = raw_bytes(data, len, "data")?;
+        let values = decode(bytes)?;
+        *out = series_into_raw(Series::new(name.into(), values));
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_new_bool(
+    name: *const c_char,
+    data: *const u8,
+    len: usize,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_new_from_payload(name, data, len, out, err, decode_bool_values)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_new_i64(
+    name: *const c_char,
+    data: *const u8,
+    len: usize,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_new_from_payload(name, data, len, out, err, decode_i64_values)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_new_f64(
+    name: *const c_char,
+    data: *const u8,
+    len: usize,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_new_from_payload(name, data, len, out, err, decode_f64_values)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_new_text(
+    name: *const c_char,
+    data: *const u8,
+    len: usize,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_new_from_payload(name, data, len, out, err, decode_text_values)
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_series_name(
     series: *const phs_series,
@@ -382,7 +552,7 @@ pub unsafe extern "C" fn phs_series_values_text(
 mod tests {
     use super::*;
     use crate::bytes::{phs_bytes_data, phs_bytes_free, phs_bytes_len};
-    use crate::dataframe::{phs_dataframe_column, phs_read_csv};
+    use crate::dataframe::{phs_dataframe_column, phs_dataframe_new, phs_read_csv};
     use crate::error::{PHS_OK, phs_error_free};
     use crate::handles::{phs_dataframe_free, phs_series_free};
     use std::path::PathBuf;
@@ -429,6 +599,106 @@ mod tests {
         let bytes = unsafe { std::slice::from_raw_parts(data, len) }.to_vec();
         unsafe { phs_bytes_free(raw) };
         bytes
+    }
+
+    fn encoded_i64(values: &[Option<i64>]) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        for value in values {
+            match value {
+                None => bytes.push(0),
+                Some(value) => {
+                    bytes.push(1);
+                    bytes.extend_from_slice(&value.to_le_bytes());
+                },
+            }
+        }
+        bytes
+    }
+
+    fn encoded_text(values: &[Option<&str>]) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        for value in values {
+            match value {
+                None => bytes.push(0),
+                Some(value) => {
+                    bytes.push(1);
+                    bytes.extend_from_slice(&(value.len() as u64).to_le_bytes());
+                    bytes.extend_from_slice(value.as_bytes());
+                },
+            }
+        }
+        bytes
+    }
+
+    #[test]
+    fn series_constructors_build_typed_series() {
+        let name = std::ffi::CString::new("age").unwrap();
+        let bytes = encoded_i64(&[Some(34), None, Some(29)]);
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        let status = unsafe { phs_series_new_i64(name.as_ptr(), bytes.as_ptr(), bytes.len(), &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let series = unsafe { series_ref(out) }.unwrap();
+        assert_eq!(series.value.name().as_str(), "age");
+        assert_eq!(series.value.dtype(), &DataType::Int64);
+        assert_eq!(series.value.len(), 3);
+        assert_eq!(series.value.null_count(), 1);
+        unsafe { phs_series_free(out) };
+    }
+
+    #[test]
+    fn dataframe_constructor_builds_frame_from_series() {
+        let age_name = std::ffi::CString::new("age").unwrap();
+        let age_bytes = encoded_i64(&[Some(34), None]);
+        let mut age = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        let status = unsafe { phs_series_new_i64(age_name.as_ptr(), age_bytes.as_ptr(), age_bytes.len(), &mut age, &mut err) };
+        assert_eq!(status, PHS_OK);
+
+        let name_name = std::ffi::CString::new("name").unwrap();
+        let name_bytes = encoded_text(&[Some("Alice"), Some("Bob")]);
+        let mut name = ptr::null_mut();
+        let status = unsafe { phs_series_new_text(name_name.as_ptr(), name_bytes.as_ptr(), name_bytes.len(), &mut name, &mut err) };
+        assert_eq!(status, PHS_OK);
+
+        let series = [name as *const phs_series, age as *const phs_series];
+        let mut dataframe = ptr::null_mut();
+        let status = unsafe { phs_dataframe_new(series.as_ptr(), series.len(), &mut dataframe, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { crate::handles::dataframe_ref(dataframe) }.unwrap().value.shape(), (2, 2));
+        unsafe {
+            phs_dataframe_free(dataframe);
+            phs_series_free(name);
+            phs_series_free(age);
+        }
+    }
+
+    #[test]
+    fn dataframe_constructor_reports_duplicate_names() {
+        let first_name = std::ffi::CString::new("value").unwrap();
+        let first_bytes = encoded_i64(&[Some(1), Some(2)]);
+        let mut first = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        let status = unsafe { phs_series_new_i64(first_name.as_ptr(), first_bytes.as_ptr(), first_bytes.len(), &mut first, &mut err) };
+        assert_eq!(status, PHS_OK);
+
+        let second_name = std::ffi::CString::new("value").unwrap();
+        let second_bytes = encoded_i64(&[Some(3), Some(4)]);
+        let mut second = ptr::null_mut();
+        let status = unsafe { phs_series_new_i64(second_name.as_ptr(), second_bytes.as_ptr(), second_bytes.len(), &mut second, &mut err) };
+        assert_eq!(status, PHS_OK);
+
+        let series = [first as *const phs_series, second as *const phs_series];
+        let mut dataframe = ptr::null_mut();
+        let status = unsafe { phs_dataframe_new(series.as_ptr(), series.len(), &mut dataframe, &mut err) };
+        assert_eq!(status, crate::error::PHS_POLARS_ERROR);
+        assert!(dataframe.is_null());
+        assert!(!err.is_null());
+        unsafe {
+            phs_error_free(err);
+            phs_series_free(second);
+            phs_series_free(first);
+        }
     }
 
     #[test]

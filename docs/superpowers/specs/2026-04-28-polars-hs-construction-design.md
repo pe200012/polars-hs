@@ -231,4 +231,56 @@ Right sorted <- Pl.seriesSort Pl.defaultSeriesSortOptions dense
 
 ## Implementation Results
 
-Implementation starts after design approval. Verification results, deviations, and final commit information are recorded during implementation.
+Implemented APIs:
+
+```haskell
+class SeriesFrom a where
+    series :: Text -> Vector (Maybe a) -> IO (Either PolarsError Series)
+
+dataFrame :: [Series] -> IO (Either PolarsError DataFrame)
+```
+
+Implemented instances:
+
+```haskell
+instance SeriesFrom Bool
+instance SeriesFrom Int64
+instance SeriesFrom Double
+instance SeriesFrom Text
+```
+
+Files added:
+
+- `src/Polars/Internal/ColumnEncode.hs`
+- `examples/construction.hs`
+
+Rust ABI added:
+
+- `phs_series_new_bool`
+- `phs_series_new_i64`
+- `phs_series_new_f64`
+- `phs_series_new_text`
+- `phs_dataframe_new`
+
+Validation coverage:
+
+- Hspec round-trip test builds Bool, Int64, Double, and Text Series, assembles a DataFrame, checks shape, and reads values back through `column @xxx`.
+- Hspec error test verifies duplicate column names and mismatched lengths return `PolarsFailure`.
+- Rust tests verify typed Series construction, DataFrame construction, and duplicate-name errors.
+
+Implementation matched the approved design.
+
+Verification results:
+
+```text
+cargo test --manifest-path rust/polars-hs-ffi/Cargo.toml: 35 passed
+cargo clippy --manifest-path rust/polars-hs-ffi/Cargo.toml -- -D warnings: passed
+stack test --fast: 41 examples, 0 failures
+hlint src app test: No hints
+stack runghc examples/iris.hs: passed
+stack runghc examples/groupby.hs: passed
+stack runghc examples/join.hs: passed
+stack runghc examples/columns.hs: passed
+stack runghc examples/series.hs: passed
+stack runghc examples/construction.hs: passed
+```

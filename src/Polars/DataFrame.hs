@@ -5,10 +5,12 @@ Module      : Polars.DataFrame
 Description : Safe eager DataFrame operations backed by Rust Polars handles.
 
 A DataFrame wraps a Rust-owned Polars DataFrame handle in a ForeignPtr finalizer.
+The module supports eager readers, metadata queries, text rendering, and construction from owned Series handles.
 Functions return Either so Polars and FFI failures stay explicit.
 -}
 module Polars.DataFrame
     ( DataFrame
+    , dataFrame
     , head
     , height
     , readCsv
@@ -26,20 +28,23 @@ import qualified Data.ByteString as BS
 import Data.Text (Text)
 import qualified Data.Text.Encoding as TE
 import Data.Word (Word64)
-import Foreign.C.Types (CInt)
+import Foreign.C.Types (CInt, CSize)
 import Foreign.Marshal.Alloc (alloca)
+import Foreign.Marshal.Array (withArray)
 import Foreign.Ptr (Ptr, nullPtr)
 import Foreign.Storable (peek, poke)
 
 import Polars.Error (PolarsError)
 import Polars.Internal.Bytes (copyAndFreeBytes)
 import Polars.Internal.CString (withFilePathCString)
-import Polars.Internal.Managed (DataFrame, mkDataFrame, withDataFrame)
+import Polars.Internal.Managed (DataFrame, Series, mkDataFrame, withDataFrame, withSeries)
 import Polars.Internal.Raw
     ( RawBytes
     , RawDataFrame
     , RawError
+    , RawSeries
     , phs_dataframe_head
+    , phs_dataframe_new
     , phs_dataframe_height
     , phs_dataframe_schema
     , phs_dataframe_shape
@@ -57,6 +62,9 @@ readCsv path = withFilePathCString path $ \cPath -> dataframeOut (phs_read_csv c
 
 readParquet :: FilePath -> IO (Either PolarsError DataFrame)
 readParquet path = withFilePathCString path $ \cPath -> dataframeOut (phs_read_parquet cPath)
+
+dataFrame :: [Series] -> IO (Either PolarsError DataFrame)
+dataFrame values = withSeriesArray values $ \ptr len -> dataframeOut (phs_dataframe_new ptr len)
 
 height :: DataFrame -> IO (Either PolarsError Int)
 height df = withDataFrame df $ \ptr -> word64Out (phs_dataframe_height ptr)
@@ -118,6 +126,12 @@ word64Out action =
             if fromIntegralStatus status == 0
                 then word64ToInt <$> peek outPtr
                 else Left <$> (consumeError (fromIntegralStatus status) =<< peek errPtr)
+
+withSeriesArray :: [Series] -> (Ptr (Ptr RawSeries) -> CSize -> IO a) -> IO a
+withSeriesArray values action = go values []
+  where
+    go [] acc = withArray (reverse acc) $ \ptr -> action ptr (fromIntegral (length acc))
+    go (value : rest) acc = withSeries value $ \ptr -> go rest (ptr : acc)
 
 bytesOut :: DataFrame -> (Ptr RawDataFrame -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt) -> (BS.ByteString -> a) -> IO (Either PolarsError a)
 bytesOut df action decode = withDataFrame df $ \ptr ->

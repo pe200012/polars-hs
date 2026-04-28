@@ -6,8 +6,8 @@ use std::ptr;
 use polars::prelude::*;
 
 use crate::bytes::{bytes_into_raw, phs_bytes};
-use crate::error::{PhsResult, c_str_to_str, ffi_boundary, phs_error, required_mut};
-use crate::handles::{dataframe_into_raw, dataframe_ref, phs_dataframe, phs_series, series_into_raw};
+use crate::error::{PhsError, PhsResult, c_str_to_str, ffi_boundary, phs_error, required_mut};
+use crate::handles::{dataframe_into_raw, dataframe_ref, phs_dataframe, phs_series, series_into_raw, series_ref};
 use crate::series::{encode_bool_series, encode_f64_series, encode_i64_series, encode_text_series};
 
 unsafe fn c_path(path: *const c_char) -> PhsResult<PathBuf> {
@@ -46,6 +46,33 @@ pub unsafe extern "C" fn phs_read_parquet(
         let file = File::open(path)?;
         let df = ParquetReader::new(file).finish()?;
         *out = dataframe_into_raw(df);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_new(
+    series: *const *const phs_series,
+    len: usize,
+    out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let ptrs = if len == 0 {
+            &[]
+        } else if series.is_null() {
+            return Err(PhsError::invalid_argument("series array pointer was null"));
+        } else {
+            unsafe { std::slice::from_raw_parts(series, len) }
+        };
+        let mut columns = Vec::with_capacity(ptrs.len());
+        for ptr in ptrs {
+            let handle = unsafe { series_ref(*ptr) }?;
+            columns.push(handle.value.clone().into());
+        }
+        *out = dataframe_into_raw(DataFrame::new_infer_height(columns)?);
         Ok(())
     })
 }

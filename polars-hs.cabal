@@ -68,6 +68,7 @@ library
   other-modules:
       Polars.Internal.Bytes
       Polars.Internal.ColumnDecode
+      Polars.Internal.ColumnEncode
       Polars.Internal.CString
       Polars.Internal.Expr
       Polars.Internal.Managed

@@ -166,6 +166,34 @@ Right [Just True,Just False,Nothing]
 
 The named helpers remain available as aliases: `columnText`, `columnInt64`, `columnDouble`, and `columnBool`.
 
+## Series and DataFrame construction
+
+```haskell
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeApplications #-}
+
+import Data.Int (Int64)
+import qualified Data.Text as T
+import qualified Data.Vector as V
+import qualified Polars as Pl
+
+main :: IO ()
+main = do
+  Right name <- Pl.series @T.Text "name" (V.fromList [Just "Alice", Just "Bob", Just "Carol"])
+  Right age <- Pl.series @Int64 "age" (V.fromList [Just 34, Nothing, Just 29])
+  Right score <- Pl.series @Double "score" (V.fromList [Just 9.5, Just 8.25, Nothing])
+  Right active <- Pl.series @Bool "active" (V.fromList [Just True, Just False, Nothing])
+  Right df <- Pl.dataFrame [name, age, score, active]
+  print =<< Pl.shape df
+  print =<< Pl.column @Int64 df "age"
+```
+
+Run the construction example with:
+
+```bash
+stack runghc examples/construction.hs
+```
+
 ## Series transforms
 
 ```haskell
@@ -200,14 +228,15 @@ Run the column and Series examples with:
 ```bash
 stack runghc examples/columns.hs
 stack runghc examples/series.hs
+stack runghc examples/construction.hs
 ```
 
 ## Public modules
 
 - `Polars` re-exports the MVP API.
-- `Polars.DataFrame` provides eager readers, shape/schema queries, head/tail, text rendering, and IPC byte conversion.
+- `Polars.DataFrame` provides `dataFrame`, eager readers, shape/schema queries, head/tail, text rendering, and IPC byte conversion.
 - `Polars.Column` provides `column @Series` and typed `column @Bool/@Int64/@Double/@Text` extraction with null preservation.
-- `Polars.Series` provides Series metadata, slicing, DataFrame conversion, typed value readers, and transforms.
+- `Polars.Series` provides `series @xxx`, Series metadata, slicing, DataFrame conversion, typed value readers, and transforms.
 - `Polars.LazyFrame` provides scan, filter, select, withColumns, sort, limit, and collect.
 - `Polars.GroupBy` provides grouped lazy aggregation through groupBy, groupByStable, and agg.
 - `Polars.Join` provides lazy inner, left, right, and full joins with optional suffix configuration.

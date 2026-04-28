@@ -8,12 +8,13 @@ Module      : Polars.Series
 Description : Safe Series operations backed by Rust Polars handles.
 
 A Series wraps a Rust-owned Polars Series handle in a ForeignPtr finalizer.
-This module exposes metadata, slicing, conversion to a one-column DataFrame,
-and typed value extraction with null preservation.
+This module exposes construction from Haskell vectors, metadata, slicing,
+conversion to a one-column DataFrame, transforms, and typed value extraction with null preservation.
 -}
 module Polars.Series
     ( Series
     , SeriesCast (..)
+    , SeriesFrom (..)
     , SeriesSortOptions (..)
     , defaultSeriesSortOptions
     , seriesAppend
@@ -41,13 +42,20 @@ import qualified Data.ByteString as BS
 import Data.Int (Int64)
 import Data.Text (Text)
 import qualified Data.Text.Encoding as TE
-import Data.Word (Word64)
+import Data.Word (Word8, Word64)
 import Data.Vector (Vector)
-import Foreign.C.Types (CBool (..), CInt)
-import Foreign.Ptr (Ptr)
+import Foreign.C.String (CString)
+import Foreign.C.Types (CBool (..), CInt, CSize)
+import Foreign.Ptr (Ptr, castPtr)
 
 import Polars.DataFrame (DataFrame)
 import Polars.Error (PolarsError (..), PolarsErrorCode (InvalidArgument))
+import Polars.Internal.ColumnEncode
+    ( encodeBoolColumn
+    , encodeDoubleColumn
+    , encodeInt64Column
+    , encodeTextColumn
+    )
 import Polars.Internal.ColumnDecode
     ( decodeBoolColumn
     , decodeDoubleColumn
@@ -67,6 +75,10 @@ import Polars.Internal.Raw
     , phs_series_head
     , phs_series_len
     , phs_series_name
+    , phs_series_new_bool
+    , phs_series_new_f64
+    , phs_series_new_i64
+    , phs_series_new_text
     , phs_series_rename
     , phs_series_reverse
     , phs_series_shift
@@ -118,39 +130,54 @@ instance SeriesCast Double where
 instance SeriesCast Text where
     seriesCast = seriesCastWithCode 3
 
+class SeriesFrom a where
+    series :: Text -> Vector (Maybe a) -> IO (Either PolarsError Series)
+
+instance SeriesFrom Bool where
+    series name values = seriesFromBytes phs_series_new_bool name (encodeBoolColumn values)
+
+instance SeriesFrom Int64 where
+    series name values = seriesFromBytes phs_series_new_i64 name (encodeInt64Column values)
+
+instance SeriesFrom Double where
+    series name values = seriesFromBytes phs_series_new_f64 name (encodeDoubleColumn values)
+
+instance SeriesFrom Text where
+    series name values = seriesFromBytes phs_series_new_text name (encodeTextColumn values)
+
 seriesName :: Series -> IO (Either PolarsError Text)
-seriesName series = seriesBytesOut series phs_series_name decodeUtf8Bytes
+seriesName input = seriesBytesOut input phs_series_name decodeUtf8Bytes
 
 seriesDataType :: Series -> IO (Either PolarsError DataType)
-seriesDataType series = seriesBytesOut series phs_series_dtype (fmap parseDataType . decodeUtf8Bytes)
+seriesDataType input = seriesBytesOut input phs_series_dtype (fmap parseDataType . decodeUtf8Bytes)
 
 seriesLength :: Series -> IO (Either PolarsError Int)
-seriesLength series = seriesWord64Out series phs_series_len
+seriesLength input = seriesWord64Out input phs_series_len
 
 seriesNullCount :: Series -> IO (Either PolarsError Int)
-seriesNullCount series = seriesWord64Out series phs_series_null_count
+seriesNullCount input = seriesWord64Out input phs_series_null_count
 
 seriesHead :: Int -> Series -> IO (Either PolarsError Series)
-seriesHead n series
+seriesHead n input
     | n < 0 = pure (Left (nullPointerError "series head count"))
-    | otherwise = withSeries series $ \ptr -> seriesOut (phs_series_head ptr (fromIntegral n))
+    | otherwise = withSeries input $ \ptr -> seriesOut (phs_series_head ptr (fromIntegral n))
 
 seriesTail :: Int -> Series -> IO (Either PolarsError Series)
-seriesTail n series
+seriesTail n input
     | n < 0 = pure (Left (nullPointerError "series tail count"))
-    | otherwise = withSeries series $ \ptr -> seriesOut (phs_series_tail ptr (fromIntegral n))
+    | otherwise = withSeries input $ \ptr -> seriesOut (phs_series_tail ptr (fromIntegral n))
 
 seriesToFrame :: Series -> IO (Either PolarsError DataFrame)
-seriesToFrame series = seriesDataFrameOut series phs_series_to_frame
+seriesToFrame input = seriesDataFrameOut input phs_series_to_frame
 
 seriesRename :: Text -> Series -> IO (Either PolarsError Series)
-seriesRename name series = withSeries series $ \ptr ->
+seriesRename name input = withSeries input $ \ptr ->
     withTextCString name $ \cName -> seriesOut (phs_series_rename ptr cName)
 
 seriesSort :: SeriesSortOptions -> Series -> IO (Either PolarsError Series)
-seriesSort options series = case sortLimitWord64 (seriesSortLimit options) of
+seriesSort options input = case sortLimitWord64 (seriesSortLimit options) of
     Left err -> pure (Left err)
-    Right (hasLimit, limitValue) -> withSeries series $ \ptr ->
+    Right (hasLimit, limitValue) -> withSeries input $ \ptr ->
         seriesOut
             ( phs_series_sort
                 ptr
@@ -163,19 +190,19 @@ seriesSort options series = case sortLimitWord64 (seriesSortLimit options) of
             )
 
 seriesUnique :: Series -> IO (Either PolarsError Series)
-seriesUnique series = seriesUnaryOut series phs_series_unique
+seriesUnique input = seriesUnaryOut input phs_series_unique
 
 seriesUniqueStable :: Series -> IO (Either PolarsError Series)
-seriesUniqueStable series = seriesUnaryOut series phs_series_unique_stable
+seriesUniqueStable input = seriesUnaryOut input phs_series_unique_stable
 
 seriesReverse :: Series -> IO (Either PolarsError Series)
-seriesReverse series = seriesUnaryOut series phs_series_reverse
+seriesReverse input = seriesUnaryOut input phs_series_reverse
 
 seriesDropNulls :: Series -> IO (Either PolarsError Series)
-seriesDropNulls series = seriesUnaryOut series phs_series_drop_nulls
+seriesDropNulls input = seriesUnaryOut input phs_series_drop_nulls
 
 seriesShift :: Int -> Series -> IO (Either PolarsError Series)
-seriesShift periods series = withSeries series $ \ptr ->
+seriesShift periods input = withSeries input $ \ptr ->
     seriesOut (phs_series_shift ptr (fromIntegral periods))
 
 seriesAppend :: Series -> Series -> IO (Either PolarsError Series)
@@ -185,22 +212,30 @@ seriesAppend left right =
             seriesOut (phs_series_append leftPtr rightPtr)
 
 seriesBool :: Series -> IO (Either PolarsError (Vector (Maybe Bool)))
-seriesBool series = seriesBytesOut series phs_series_values_bool decodeBoolColumn
+seriesBool input = seriesBytesOut input phs_series_values_bool decodeBoolColumn
 
 seriesInt64 :: Series -> IO (Either PolarsError (Vector (Maybe Int64)))
-seriesInt64 series = seriesBytesOut series phs_series_values_i64 decodeInt64Column
+seriesInt64 input = seriesBytesOut input phs_series_values_i64 decodeInt64Column
 
 seriesDouble :: Series -> IO (Either PolarsError (Vector (Maybe Double)))
-seriesDouble series = seriesBytesOut series phs_series_values_f64 decodeDoubleColumn
+seriesDouble input = seriesBytesOut input phs_series_values_f64 decodeDoubleColumn
 
 seriesText :: Series -> IO (Either PolarsError (Vector (Maybe Text)))
-seriesText series = seriesBytesOut series phs_series_values_text decodeTextColumn
+seriesText input = seriesBytesOut input phs_series_values_text decodeTextColumn
+
+type SeriesNewAction = CString -> Ptr Word8 -> CSize -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+seriesFromBytes :: SeriesNewAction -> Text -> BS.ByteString -> IO (Either PolarsError Series)
+seriesFromBytes action name bytes =
+    withTextCString name $ \cName ->
+        BS.useAsCStringLen bytes $ \(bytesPtr, len) ->
+            seriesOut (action cName (castPtr bytesPtr) (fromIntegral len))
 
 seriesCastWithCode :: CInt -> Series -> IO (Either PolarsError Series)
-seriesCastWithCode code series = withSeries series $ \ptr -> seriesOut (phs_series_cast ptr code)
+seriesCastWithCode code input = withSeries input $ \ptr -> seriesOut (phs_series_cast ptr code)
 
 seriesUnaryOut :: Series -> (Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt) -> IO (Either PolarsError Series)
-seriesUnaryOut series action = withSeries series $ \ptr -> seriesOut (action ptr)
+seriesUnaryOut input action = withSeries input $ \ptr -> seriesOut (action ptr)
 
 sortLimitWord64 :: Maybe Int -> Either PolarsError (Bool, Word64)
 sortLimitWord64 Nothing = Right (False, 0)

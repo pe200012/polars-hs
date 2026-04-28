@@ -1,6 +1,6 @@
 # Series and DataFrame Construction API Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Add `series @xxx` constructors for Bool, Int64, Double, and Text, plus `dataFrame` from Series handles.
 
@@ -30,7 +30,7 @@
 **Files:**
 - Modify: `test/Spec.hs`
 
-- [ ] **Step 1: Add constructor Hspec examples**
+- [x] **Step 1: Add constructor Hspec examples**
 
 Inside `describe "Polars.DataFrame"`, append:
 
@@ -75,7 +75,7 @@ Inside `describe "Polars.DataFrame"`, append:
                 (_, _, Left err) -> expectationFailure (show err)
 ```
 
-- [ ] **Step 2: Run RED test**
+- [x] **Step 2: Run RED test**
 
 Run:
 
@@ -93,7 +93,7 @@ Expected: build fails with missing `Pl.series` and `Pl.dataFrame`.
 - Modify: `rust/polars-hs-ffi/src/series.rs`
 - Modify: `rust/polars-hs-ffi/src/dataframe.rs`
 
-- [ ] **Step 1: Add payload helpers in `series.rs`**
+- [x] **Step 1: Add payload helpers in `series.rs`**
 
 Add helpers after `dtype_from_code`:
 
@@ -130,7 +130,7 @@ fn read_tag(bytes: &[u8], offset: &mut usize, context: &str) -> PhsResult<u8> {
 
 Add decoders for Bool, Int64, Float64, and Text using tag `0` for null and tag `1` for values.
 
-- [ ] **Step 2: Add Series constructor ABI functions**
+- [x] **Step 2: Add Series constructor ABI functions**
 
 Add exported functions in `series.rs`:
 
@@ -143,7 +143,7 @@ phs_series_new_text
 
 Each function reads the name through `c_str_to_str`, decodes bytes, calls `Series::new(name.into(), values)`, and returns `series_into_raw(series)`.
 
-- [ ] **Step 3: Add DataFrame constructor ABI function**
+- [x] **Step 3: Add DataFrame constructor ABI function**
 
 Add to `dataframe.rs` imports:
 
@@ -182,11 +182,11 @@ pub unsafe extern "C" fn phs_dataframe_new(
 }
 ```
 
-- [ ] **Step 4: Add Rust tests**
+- [x] **Step 4: Add Rust tests**
 
 Add Rust tests that create each typed Series, verify dtype/len/name, create a DataFrame from two Series, and verify duplicate names return `PHS_POLARS_ERROR`.
 
-- [ ] **Step 5: Run Rust tests**
+- [x] **Step 5: Run Rust tests**
 
 Run:
 
@@ -207,7 +207,7 @@ Expected: Rust tests pass and `include/polars_hs.h` contains constructor declara
 - Modify: `src/Polars/DataFrame.hs`
 - Modify: `package.yaml`
 
-- [ ] **Step 1: Create `Polars.Internal.ColumnEncode`**
+- [x] **Step 1: Create `Polars.Internal.ColumnEncode`**
 
 Implement pure encoders:
 
@@ -220,11 +220,11 @@ encodeTextColumn :: Vector (Maybe Text) -> BS.ByteString
 
 Use `Data.ByteString.Builder`, `Data.Text.Encoding.encodeUtf8`, and `GHC.Float.castDoubleToWord64`.
 
-- [ ] **Step 2: Add raw imports**
+- [x] **Step 2: Add raw imports**
 
 Add `phs_series_new_bool`, `phs_series_new_i64`, `phs_series_new_f64`, `phs_series_new_text`, and `phs_dataframe_new` to `Polars.Internal.Raw`.
 
-- [ ] **Step 3: Add `SeriesFrom` class**
+- [x] **Step 3: Add `SeriesFrom` class**
 
 In `Polars.Series`, export and implement:
 
@@ -235,7 +235,7 @@ class SeriesFrom a where
 
 Instances call a shared `seriesFromBytes` helper with the matching encoder and raw FFI function.
 
-- [ ] **Step 4: Add `dataFrame`**
+- [x] **Step 4: Add `dataFrame`**
 
 In `Polars.DataFrame`, export and implement:
 
@@ -245,7 +245,7 @@ dataFrame :: [Series] -> IO (Either PolarsError DataFrame)
 
 Use nested `withSeries`, `withArray`, and `dataframeOut (phs_dataframe_new array len)`.
 
-- [ ] **Step 5: Update package metadata and run tests**
+- [x] **Step 5: Update package metadata and run tests**
 
 Add `Polars.Internal.ColumnEncode` to `package.yaml` other modules.
 
@@ -268,11 +268,11 @@ Expected: all Hspec examples pass and `polars-hs.cabal` includes `Polars.Interna
 - Modify: `docs/superpowers/specs/2026-04-28-polars-hs-construction-design.md`
 - Modify: `docs/superpowers/plans/2026-04-28-polars-hs-construction.md`
 
-- [ ] **Step 1: Add construction example**
+- [x] **Step 1: Add construction example**
 
 Create `examples/construction.hs` showing `series @Text`, `series @Int64`, `series @Double`, `series @Bool`, `dataFrame`, `shape`, and read-back through `column @Int64`.
 
-- [ ] **Step 2: Update README and CHANGELOG**
+- [x] **Step 2: Update README and CHANGELOG**
 
 Document `series @xxx` and `dataFrame`. Add CHANGELOG bullet:
 
@@ -280,7 +280,7 @@ Document `series @xxx` and `dataFrame`. Add CHANGELOG bullet:
 - Series and DataFrame constructors from Haskell vectors with null preservation.
 ```
 
-- [ ] **Step 3: Run full verification**
+- [x] **Step 3: Run full verification**
 
 Run:
 
@@ -299,11 +299,11 @@ stack runghc examples/construction.hs
 
 Expected: Rust tests pass, Clippy exits 0, Hspec has 0 failures, HLint reports no hints, and each example runs.
 
-- [ ] **Step 4: Record implementation results**
+- [x] **Step 4: Record implementation results**
 
 Append exact verification results to the design doc and mark plan checkboxes complete.
 
-- [ ] **Step 5: Commit and push**
+- [x] **Step 5: Commit and push**
 
 Run:
 
@@ -314,3 +314,35 @@ jj git push --bookmark master
 ```
 
 Expected: remote `master` advances to the feature commit.
+
+
+## Implementation Results
+
+- Added Hspec RED tests first; initial `stack test --fast` failed with missing `Pl.series` and `Pl.dataFrame`.
+- Added Rust constructor ABI:
+  - `phs_series_new_bool`
+  - `phs_series_new_i64`
+  - `phs_series_new_f64`
+  - `phs_series_new_text`
+  - `phs_dataframe_new`
+- Added pure Haskell encoder module `Polars.Internal.ColumnEncode`.
+- Added public APIs:
+  - `series @Bool/@Int64/@Double/@Text :: Text -> Vector (Maybe a) -> IO (Either PolarsError Series)`
+  - `dataFrame :: [Series] -> IO (Either PolarsError DataFrame)`
+- Added `examples/construction.hs`, README documentation, and CHANGELOG entry.
+- Implementation matched the approved design.
+
+Verification results:
+
+```text
+cargo test --manifest-path rust/polars-hs-ffi/Cargo.toml: 35 passed
+cargo clippy --manifest-path rust/polars-hs-ffi/Cargo.toml -- -D warnings: passed
+stack test --fast: 41 examples, 0 failures
+hlint src app test: No hints
+stack runghc examples/iris.hs: passed
+stack runghc examples/groupby.hs: passed
+stack runghc examples/join.hs: passed
+stack runghc examples/columns.hs: passed
+stack runghc examples/series.hs: passed
+stack runghc examples/construction.hs: passed
+```

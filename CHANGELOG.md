@@ -25,5 +25,6 @@ and this project adheres to the
 - Unified `column @xxx` API with Series handles and `Vector (Maybe a)` typed value readers.
 - Series transform helpers for type-application casts, rename, sort, unique, reverse, and dropNulls.
 - Series append and shift helpers for owned Series handles.
+- Series and DataFrame constructors from Haskell vectors with null preservation.
 
 ## 0.1.0.0 - YYYY-MM-DD

@@ -60,6 +60,45 @@ main = hspec $ do
                     textResult <- Pl.toText df
                     fmap (T.isInfixOf "Alice") textResult `shouldBe` Right True
 
+        it "constructs Series from Haskell vectors and builds a DataFrame" $ do
+            nameResult <- Pl.series @T.Text "name" (V.fromList [Just "Alice", Just "Bob", Just "Carol"])
+            ageResult <- Pl.series @Int64 "age" (V.fromList [Just 34, Nothing, Just 29])
+            scoreResult <- Pl.series @Double "score" (V.fromList [Just 9.5, Just 8.25, Nothing])
+            activeResult <- Pl.series @Bool "active" (V.fromList [Just True, Just False, Nothing])
+            case (nameResult, ageResult, scoreResult, activeResult) of
+                (Right name, Right age, Right score, Right active) -> do
+                    dfResult <- Pl.dataFrame [name, age, score, active]
+                    case dfResult of
+                        Left err -> expectationFailure (show err)
+                        Right df -> do
+                            Pl.shape df `shouldReturn` Right (3, 4)
+                            Pl.column @T.Text df "name" `shouldReturn` Right (V.fromList [Just "Alice", Just "Bob", Just "Carol"])
+                            Pl.column @Int64 df "age" `shouldReturn` Right (V.fromList [Just 34, Nothing, Just 29])
+                            Pl.column @Double df "score" `shouldReturn` Right (V.fromList [Just 9.5, Just 8.25, Nothing])
+                            Pl.column @Bool df "active" `shouldReturn` Right (V.fromList [Just True, Just False, Nothing])
+                (Left err, _, _, _) -> expectationFailure (show err)
+                (_, Left err, _, _) -> expectationFailure (show err)
+                (_, _, Left err, _) -> expectationFailure (show err)
+                (_, _, _, Left err) -> expectationFailure (show err)
+
+        it "reports Polars errors for invalid DataFrame construction" $ do
+            first <- Pl.series @Int64 "value" (V.fromList [Just 1, Just 2])
+            second <- Pl.series @Int64 "value" (V.fromList [Just 3, Just 4])
+            short <- Pl.series @Int64 "short" (V.fromList [Just 5])
+            case (first, second, short) of
+                (Right left, Right duplicate, Right shortSeries) -> do
+                    duplicateResult <- Pl.dataFrame [left, duplicate]
+                    case duplicateResult of
+                        Right _ -> expectationFailure "expected a Polars error for duplicate names"
+                        Left err -> Pl.polarsErrorCode err `shouldBe` Pl.PolarsFailure
+                    lengthResult <- Pl.dataFrame [left, shortSeries]
+                    case lengthResult of
+                        Right _ -> expectationFailure "expected a Polars error for mismatched lengths"
+                        Left err -> Pl.polarsErrorCode err `shouldBe` Pl.PolarsFailure
+                (Left err, _, _) -> expectationFailure (show err)
+                (_, Left err, _) -> expectationFailure (show err)
+                (_, _, Left err) -> expectationFailure (show err)
+
     describe "Polars.LazyFrame" $ do
         it "filters, selects, and collects a lazy CSV scan" $ do
             scanResult <- Pl.scanCsv fixtureCsv

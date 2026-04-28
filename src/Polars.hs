@@ -4,7 +4,7 @@ Description : Convenience re-export for the Polars Haskell binding MVP.
 
 Import this module for the first binding surface: eager DataFrames, lazy query
 construction, expressions, operators, typed column extraction, Series handles,
-schema values, typed errors, and IPC byte helpers.
+Series/DataFrame construction, schema values, typed errors, and IPC byte helpers.
 -}
 module Polars
     ( module Polars.Column
