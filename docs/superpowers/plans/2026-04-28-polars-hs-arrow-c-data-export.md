@@ -1,6 +1,6 @@
 # Arrow C Data Interface Export Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Add scoped `withArrowRecordBatch` export for `DataFrame -> ArrowSchema + ArrowArray` RecordBatch interop.
 
@@ -29,7 +29,7 @@
 **Files:**
 - Modify: `test/Spec.hs`
 
-- [ ] **Step 1: Add the RED Hspec example**
+- [x] **Step 1: Add the RED Hspec example**
 
 Inside `describe "Polars.Arrow"`, after the import tests, add:
 
@@ -55,7 +55,7 @@ Inside `describe "Polars.Arrow"`, after the import tests, add:
                 (_, Left err) -> expectationFailure (show err)
 ```
 
-- [ ] **Step 2: Run the RED test**
+- [x] **Step 2: Run the RED test**
 
 Run:
 
@@ -72,7 +72,7 @@ Expected result: build fails because `Polars` lacks `withArrowRecordBatch`.
 **Files:**
 - Modify: `rust/polars-hs-ffi/src/arrow.rs`
 
-- [ ] **Step 1: Add imports in `arrow.rs`**
+- [x] **Step 1: Add imports in `arrow.rs`**
 
 Extend imports:
 
@@ -81,7 +81,7 @@ use polars_arrow::datatypes::{ArrowDataType, Field as ArrowField};
 use polars_arrow::ffi::{ArrowArray, ArrowSchema, export_array_to_c, export_field_to_c, import_array_from_c, import_field_from_c};
 ```
 
-- [ ] **Step 2: Add the export handle type**
+- [x] **Step 2: Add the export handle type**
 
 Add near the local C Arrow layout structs:
 
@@ -117,7 +117,7 @@ unsafe fn arrow_record_batch_mut<'a>(ptr: *mut phs_arrow_record_batch) -> PhsRes
 }
 ```
 
-- [ ] **Step 3: Add export/free/accessor ABI functions**
+- [x] **Step 3: Add export/free/accessor ABI functions**
 
 Add:
 
@@ -173,7 +173,7 @@ pub unsafe extern "C" fn phs_arrow_record_batch_free(batch: *mut phs_arrow_recor
 }
 ```
 
-- [ ] **Step 4: Add Rust tests**
+- [x] **Step 4: Add Rust tests**
 
 In `arrow.rs` tests, add:
 
@@ -218,7 +218,7 @@ fn dataframe_export_arrow_record_batch_free_releases_live_export() {
 }
 ```
 
-- [ ] **Step 5: Run Rust tests and Clippy**
+- [x] **Step 5: Run Rust tests and Clippy**
 
 Run:
 
@@ -237,7 +237,7 @@ Expected result: Rust tests pass and Clippy exits successfully.
 - Modify: `src/Polars/Internal/Raw.hs`
 - Modify: `src/Polars/Arrow.hs`
 
-- [ ] **Step 1: Add raw FFI imports**
+- [x] **Step 1: Add raw FFI imports**
 
 In `src/Polars/Internal/Raw.hs`, add `RawArrowRecordBatch` to the export list and define:
 
@@ -261,7 +261,7 @@ foreign import ccall unsafe "phs_arrow_record_batch_array"
     phs_arrow_record_batch_array :: Ptr RawArrowRecordBatch -> IO (Ptr ())
 ```
 
-- [ ] **Step 2: Extend `src/Polars/Arrow.hs`**
+- [x] **Step 2: Extend `src/Polars/Arrow.hs`**
 
 Add imports:
 
@@ -315,11 +315,11 @@ withExportedArrowRecordBatch (ExportedArrowRecordBatch foreignPtr) action =
         action (castPtr schema) (castPtr array)
 ```
 
-- [ ] **Step 3: Export `withArrowRecordBatch`**
+- [x] **Step 3: Export `withArrowRecordBatch`**
 
 Add `withArrowRecordBatch` to the `Polars.Arrow` export list.
 
-- [ ] **Step 4: Run Haskell tests**
+- [x] **Step 4: Run Haskell tests**
 
 Run:
 
@@ -339,7 +339,7 @@ Expected result: Hspec passes.
 - Modify: `docs/superpowers/specs/2026-04-28-polars-hs-arrow-c-data-export-design.md`
 - Modify: `docs/superpowers/plans/2026-04-28-polars-hs-arrow-c-data-export.md`
 
-- [ ] **Step 1: Update README**
+- [x] **Step 1: Update README**
 
 Extend the Arrow C Data Interface section with:
 
@@ -354,7 +354,7 @@ result <- Pl.withArrowRecordBatch df $ \schemaPtr arrayPtr ->
 The schema and array pointers stay valid for the callback duration.
 ```
 
-- [ ] **Step 2: Update CHANGELOG**
+- [x] **Step 2: Update CHANGELOG**
 
 Add under `Unreleased` / `Added`:
 
@@ -362,7 +362,7 @@ Add under `Unreleased` / `Added`:
 - Scoped Arrow C Data Interface RecordBatch export from DataFrame handles.
 ```
 
-- [ ] **Step 3: Run full verification**
+- [x] **Step 3: Run full verification**
 
 Run:
 
@@ -389,11 +389,11 @@ HLint: No hints
 All examples: passed
 ```
 
-- [ ] **Step 4: Record implementation results**
+- [x] **Step 4: Record implementation results**
 
 Append exact verification results and deviations to the design doc. Mark all plan checkboxes complete.
 
-- [ ] **Step 5: Commit and push**
+- [x] **Step 5: Commit and push**
 
 Run:
 
@@ -404,3 +404,33 @@ jj git push --bookmark master
 ```
 
 Expected result: remote `master` advances to the export feature commit.
+
+
+## Implementation Results
+
+- Implemented public `withArrowRecordBatch :: DataFrame -> (Ptr schema -> Ptr array -> IO a) -> IO (Either PolarsError a)`.
+- Implemented Rust `phs_arrow_record_batch` export handle and ABI functions:
+  - `phs_dataframe_to_arrow_record_batch`
+  - `phs_arrow_record_batch_schema`
+  - `phs_arrow_record_batch_array`
+  - `phs_arrow_record_batch_free`
+- Added Rust export tests for live pointers and export/import round-trip.
+- Added Hspec export/import round-trip through the public Haskell API.
+- Updated README and CHANGELOG.
+
+Implementation matched the approved scoped-callback design.
+
+Verification results:
+
+```text
+cargo test --manifest-path rust/polars-hs-ffi/Cargo.toml: 41 passed
+cargo clippy --manifest-path rust/polars-hs-ffi/Cargo.toml -- -D warnings: passed
+stack test --fast: 44 examples, 0 failures
+hlint src app test: No hints
+stack runghc examples/iris.hs: passed
+stack runghc examples/groupby.hs: passed
+stack runghc examples/join.hs: passed
+stack runghc examples/columns.hs: passed
+stack runghc examples/series.hs: passed
+stack runghc examples/construction.hs: passed
+```

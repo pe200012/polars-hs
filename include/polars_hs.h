@@ -22,6 +22,10 @@ typedef struct phs_dataframe {
   uint8_t _private[0];
 } phs_dataframe;
 
+typedef struct phs_arrow_record_batch {
+  uint8_t _private[0];
+} phs_arrow_record_batch;
+
 typedef struct phs_error {
   uint8_t _private[0];
 } phs_error;
@@ -45,6 +49,16 @@ typedef struct phs_lazyframe {
 uint32_t phs_version_major(void);
 
 uint32_t phs_version_minor(void);
+
+int phs_dataframe_to_arrow_record_batch(const struct phs_dataframe *dataframe,
+                                        struct phs_arrow_record_batch **out,
+                                        struct phs_error **err);
+
+void *phs_arrow_record_batch_schema(struct phs_arrow_record_batch *batch);
+
+void *phs_arrow_record_batch_array(struct phs_arrow_record_batch *batch);
+
+void phs_arrow_record_batch_free(struct phs_arrow_record_batch *batch);
 
 int phs_dataframe_from_arrow_record_batch(void *schema,
                                           void *array,

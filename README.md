@@ -194,7 +194,7 @@ Run the construction example with:
 stack runghc examples/construction.hs
 ```
 
-## Arrow C Data Interface import
+## Arrow C Data Interface import and export
 
 `fromArrowRecordBatch` imports a standard Arrow C Data Interface RecordBatch into a managed Polars `DataFrame`:
 
@@ -203,7 +203,14 @@ stack runghc examples/construction.hs
 result <- Pl.fromArrowRecordBatch (Pl.unsafeArrowRecordBatch schemaPtr arrayPtr)
 ```
 
-The batch is represented by a top-level struct `ArrowSchema` and top-level struct `ArrowArray`. The call consumes the Arrow producer pointers after validation and returns a normal Polars `DataFrame` handle.
+`withArrowRecordBatch` exports a Polars `DataFrame` as callback-scoped Arrow C Data Interface pointers:
+
+```haskell
+roundTrip <- Pl.withArrowRecordBatch df $ \schemaPtr arrayPtr ->
+  Pl.fromArrowRecordBatch (Pl.unsafeArrowRecordBatch schemaPtr arrayPtr)
+```
+
+The batch is represented by a top-level struct `ArrowSchema` and top-level struct `ArrowArray`. Import consumes producer pointers after validation. Export pointers stay live during the callback.
 
 ## Series transforms
 
@@ -245,7 +252,7 @@ stack runghc examples/construction.hs
 ## Public modules
 
 - `Polars` re-exports the MVP API.
-- `Polars.Arrow` provides Arrow C Data Interface RecordBatch import.
+- `Polars.Arrow` provides Arrow C Data Interface RecordBatch import and export.
 - `Polars.DataFrame` provides `dataFrame`, eager readers, shape/schema queries, head/tail, text rendering, and IPC byte conversion.
 - `Polars.Column` provides `column @Series` and typed `column @Bool/@Int64/@Double/@Text` extraction with null preservation.
 - `Polars.Series` provides `series @xxx`, Series metadata, slicing, DataFrame conversion, typed value readers, and transforms.

@@ -27,5 +27,6 @@ and this project adheres to the
 - Series append and shift helpers for owned Series handles.
 - Series and DataFrame constructors from Haskell vectors with null preservation.
 - Arrow C Data Interface RecordBatch import for managed DataFrame construction.
+- Arrow C Data Interface RecordBatch export from managed DataFrames.
 
 ## 0.1.0.0 - YYYY-MM-DD

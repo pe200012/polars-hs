@@ -674,6 +674,27 @@ main = hspec $ do
                 Right _ -> expectationFailure "expected InvalidArgument for null Arrow pointers"
                 Left err -> Pl.polarsErrorCode err `shouldBe` Pl.InvalidArgument
 
+        it "exports a DataFrame to an Arrow RecordBatch and imports it back" $ do
+            nameResult <- Pl.series @T.Text "name" (V.fromList [Just "Alice", Just "Bob", Nothing])
+            ageResult <- Pl.series @Int64 "age" (V.fromList [Just 34, Nothing, Just 29])
+            case (nameResult, ageResult) of
+                (Right name, Right age) -> do
+                    dfResult <- Pl.dataFrame [name, age]
+                    case dfResult of
+                        Left err -> expectationFailure (show err)
+                        Right df -> do
+                            roundTrip <- Pl.withArrowRecordBatch df $ \schemaPtr arrayPtr ->
+                                Pl.fromArrowRecordBatch (Pl.unsafeArrowRecordBatch schemaPtr arrayPtr)
+                            case roundTrip of
+                                Left err -> expectationFailure (show err)
+                                Right (Left err) -> expectationFailure (show err)
+                                Right (Right imported) -> do
+                                    Pl.shape imported `shouldReturn` Right (3, 2)
+                                    Pl.column @T.Text imported "name" `shouldReturn` Right (V.fromList [Just "Alice", Just "Bob", Nothing])
+                                    Pl.column @Int64 imported "age" `shouldReturn` Right (V.fromList [Just 34, Nothing, Just 29])
+                (Left err, _) -> expectationFailure (show err)
+                (_, Left err) -> expectationFailure (show err)
+
     describe "Polars.IPC" $ do
         it "round-trips a dataframe through IPC bytes" $ do
             result <- Pl.readCsv fixtureCsv

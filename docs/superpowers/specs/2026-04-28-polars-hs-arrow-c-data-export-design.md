@@ -220,3 +220,50 @@ The consumer must finish importing or copying before the callback returns.
 - `Series -> ArrowSchema + ArrowArray` export.
 - Arrow C Stream export for chunked/lazy outputs.
 - Optional helpers for specific Haskell Arrow ecosystem packages.
+
+## Implementation Results
+
+Implemented public API:
+
+```haskell
+withArrowRecordBatch :: DataFrame -> (Ptr schema -> Ptr array -> IO a) -> IO (Either PolarsError a)
+```
+
+Implemented Rust ABI:
+
+```c
+struct phs_arrow_record_batch;
+int phs_dataframe_to_arrow_record_batch(const struct phs_dataframe *dataframe, struct phs_arrow_record_batch **out, struct phs_error **err);
+void *phs_arrow_record_batch_schema(struct phs_arrow_record_batch *batch);
+void *phs_arrow_record_batch_array(struct phs_arrow_record_batch *batch);
+void phs_arrow_record_batch_free(struct phs_arrow_record_batch *batch);
+```
+
+Implementation files updated:
+
+- `rust/polars-hs-ffi/src/arrow.rs`
+- `src/Polars/Arrow.hs`
+- `src/Polars/Internal/Raw.hs`
+- `test/Spec.hs`
+
+Validation coverage:
+
+- Rust tests cover live export pointers and export/import round-trip.
+- Hspec tests cover public `withArrowRecordBatch` export followed by `fromArrowRecordBatch` import, preserving shape and typed columns.
+
+Implementation matched the approved scoped-callback design.
+
+Verification results:
+
+```text
+cargo test --manifest-path rust/polars-hs-ffi/Cargo.toml: 41 passed
+cargo clippy --manifest-path rust/polars-hs-ffi/Cargo.toml -- -D warnings: passed
+stack test --fast: 44 examples, 0 failures
+hlint src app test: No hints
+stack runghc examples/iris.hs: passed
+stack runghc examples/groupby.hs: passed
+stack runghc examples/join.hs: passed
+stack runghc examples/columns.hs: passed
+stack runghc examples/series.hs: passed
+stack runghc examples/construction.hs: passed
+```
