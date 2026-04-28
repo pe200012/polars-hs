@@ -197,3 +197,30 @@ Pl.alias "prefix" (Pl.strSlice (Pl.col "text") (Pl.litInt 0) (Pl.litInt 2))
 - `examples/construction.hs` — OK
 
 **Marker/whitespace scan:** Clean for incomplete-work markers. `git diff --check` reports no whitespace issues.
+
+### Phase 2B: Regex/Find/Extract/Count/Replace — Implemented
+
+**Public APIs in `Polars.Expr`:** `strContainsRegex`, `strFindLiteral`, `strFindRegex`, `strExtract`, `strCountMatches`, `strReplace`, and `strReplaceAll`.
+
+**AST and compiler:** Phase 2B adds to the `StringFunction` type: `StrContainsRegex !Bool`, `StrFindLiteral`, `StrFindRegex !Bool`, `StrCountMatches !Bool`, `StrReplace !Bool`, `StrReplaceAll !Bool`, and `StrExtract !Int`. New opcodes 13–23 in `phs_expr_string_function` cover regex contains (strict/non-strict), find (literal/regex), count matches (literal/regex), and replace/replaceAll (literal/regex). `StrExtract` dispatches through the new `phs_expr_string_function_i64` ABI with negative group index validation.
+
+**Rust ABI:** `phs_expr_string_function_i64` opcode 0 wraps `expr.str().extract(pattern, group_index)` with `arg` validated non-negative. Rust unit tests cover the extract path and error paths (unknown opcode, negative group index). Total Rust tests: 59 (one new extract test, one new error test).
+
+**Hspec tests:** Two Phase 2B tests validate regex contains/find/extract/count/replace operations across all 4 string fixture rows, literal find behavior for regex metacharacters, and strict regex find error propagation. Total Hspec examples: 64 (4 string namespace tests).
+
+#### Full verification — 2026-04-29
+
+**Cargo tests (59 passed, 0 failed, 0 ignored):**
+- `builds_string_i64_extract_expression` — extract opcode 0
+- `string_i64_errors_validate_opcode_and_negative_arg` — unknown opcode + negative group index
+- All existing 57 tests continue to pass.
+
+**Cargo clippy:** `-D warnings` — clean, no warnings.
+
+**Stack test (64 examples, 0 failures):**
+- Phase 2B examples cover scalar regex/find/extract/count/replace results and strict regex find error propagation.
+- All existing 62 examples pass.
+
+**HLint:** `No hints` across `src`, `app`, `test`.
+
+**Marker/whitespace scan:** Clean for incomplete-work markers.

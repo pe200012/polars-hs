@@ -1174,6 +1174,54 @@ main = hspec $ do
                                     Pl.column @T.Text df "strip_start" `shouldReturn` Right (V.fromList [Just "Alice ", Just "βeta", Just "CAROL", Just "日本語"])
                                     Pl.column @T.Text df "strip_end" `shouldReturn` Right (V.fromList [Just " Alice", Just "βeta", Just "CAROL", Just "日本語"])
 
+        it "uses regex contains, find, extract, count, and replace" $ do
+            scanResult <- Pl.scanCsv stringsCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    projected <-
+                        Pl.select
+                            [ Pl.alias "contains_caps" (Pl.strContainsRegex True (Pl.col "text") (Pl.litText "[A-Z]+"))
+                            , Pl.alias "find_li" (Pl.cast Pl.Int64 (Pl.strFindLiteral (Pl.col "text") (Pl.litText "li")))
+                            , Pl.alias "find_literal_regex_chars" (Pl.cast Pl.Int64 (Pl.strFindLiteral (Pl.col "text") (Pl.litText "[A-Z]+")))
+                            , Pl.alias "find_caps" (Pl.cast Pl.Int64 (Pl.strFindRegex True (Pl.col "text") (Pl.litText "[A-Z]+")))
+                            , Pl.alias "extract_caps" (Pl.strExtract 1 (Pl.col "text") (Pl.litText "([A-Z]+)"))
+                            , Pl.alias "caps_count" (Pl.cast Pl.Int64 (Pl.strCountMatches False (Pl.col "text") (Pl.litText "[A-Z]")))
+                            , Pl.alias "replace_a" (Pl.strReplace True (Pl.col "text") (Pl.litText "A") (Pl.litText "X"))
+                            , Pl.alias "replace_all_caps" (Pl.strReplaceAll False (Pl.col "text") (Pl.litText "[A-Z]") (Pl.litText "x"))
+                            ]
+                            lf0
+                    case projected of
+                        Left err -> expectationFailure (show err)
+                        Right lf1 -> do
+                            collected <- Pl.collect lf1
+                            case collected of
+                                Left err -> expectationFailure (show err)
+                                Right df -> do
+                                    Pl.shape df `shouldReturn` Right (4, 8)
+                                    Pl.column @Bool df "contains_caps" `shouldReturn` Right (V.fromList [Just True, Just False, Just True, Just False])
+                                    Pl.column @Int64 df "find_li" `shouldReturn` Right (V.fromList [Just 2, Nothing, Nothing, Nothing])
+                                    Pl.column @Int64 df "find_literal_regex_chars" `shouldReturn` Right (V.fromList [Nothing, Nothing, Nothing, Nothing])
+                                    Pl.column @Int64 df "find_caps" `shouldReturn` Right (V.fromList [Just 1, Nothing, Just 0, Nothing])
+                                    Pl.column @T.Text df "extract_caps" `shouldReturn` Right (V.fromList [Just "A", Nothing, Just "CAROL", Nothing])
+                                    Pl.column @Int64 df "caps_count" `shouldReturn` Right (V.fromList [Just 1, Just 0, Just 5, Just 0])
+                                    Pl.column @T.Text df "replace_a" `shouldReturn` Right (V.fromList [Just " Xlice ", Just "βeta", Just "CXROL", Just "日本語"])
+                                    Pl.column @T.Text df "replace_all_caps" `shouldReturn` Right (V.fromList [Just " xlice ", Just "βeta", Just "xxxxx", Just "日本語"])
+
+        it "reports invalid regex for strict string find" $ do
+            scanResult <- Pl.scanCsv stringsCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    projected <- Pl.select [Pl.alias "bad" (Pl.strFindRegex True (Pl.col "text") (Pl.litText "["))] lf0
+                    case projected of
+                        Left err -> expectationFailure (show err)
+                        Right lf1 -> do
+                            collected <- Pl.collect lf1
+                            case collected of
+                                Right _ -> expectationFailure "expected strict regex find to report invalid pattern"
+                                Left err -> Pl.polarsErrorCode err `shouldBe` Pl.PolarsFailure
+
     describe "Polars.IPC" $ do
         it "round-trips a dataframe through IPC bytes" $ do
             result <- Pl.readCsv fixtureCsv

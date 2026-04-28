@@ -60,7 +60,14 @@ module Polars.Expr
     , std_
     , strContainsLiteral
     , strEndsWith
+    , strContainsRegex
+    , strCountMatches
+    , strExtract
+    , strFindLiteral
+    , strFindRegex
     , strHead
+    , strReplace
+    , strReplaceAll
     , strLenBytes
     , strLenChars
     , strSlice
@@ -162,6 +169,13 @@ data BinaryFunction
 -- | String namespace expression functions.
 data StringFunction
     = StrContainsLiteral
+    | StrContainsRegex !Bool
+    | StrCountMatches !Bool
+    | StrExtract !Int
+    | StrFindLiteral
+    | StrFindRegex !Bool
+    | StrReplace !Bool
+    | StrReplaceAll !Bool
     | StrStartsWith
     | StrEndsWith
     | StrStrip
@@ -335,3 +349,24 @@ strLenChars input = StringFunctionExpr StrLenChars input []
 
 strSlice :: Expr -> Expr -> Expr -> Expr
 strSlice input offset len = StringFunctionExpr StrSlice input [offset, len]
+
+strContainsRegex :: Bool -> Expr -> Expr -> Expr
+strContainsRegex strict input pat = StringFunctionExpr (StrContainsRegex strict) input [pat]
+
+strFindLiteral :: Expr -> Expr -> Expr
+strFindLiteral input pat = StringFunctionExpr StrFindLiteral input [pat]
+
+strFindRegex :: Bool -> Expr -> Expr -> Expr
+strFindRegex strict input pat = StringFunctionExpr (StrFindRegex strict) input [pat]
+
+strExtract :: Int -> Expr -> Expr -> Expr
+strExtract groupIndex input pat = StringFunctionExpr (StrExtract groupIndex) input [pat]
+
+strCountMatches :: Bool -> Expr -> Expr -> Expr
+strCountMatches literal input pat = StringFunctionExpr (StrCountMatches literal) input [pat]
+
+strReplace :: Bool -> Expr -> Expr -> Expr -> Expr
+strReplace literal input pat value = StringFunctionExpr (StrReplace literal) input [pat, value]
+
+strReplaceAll :: Bool -> Expr -> Expr -> Expr -> Expr
+strReplaceAll literal input pat value = StringFunctionExpr (StrReplaceAll literal) input [pat, value]

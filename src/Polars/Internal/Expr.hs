@@ -46,6 +46,7 @@ import Polars.Internal.Raw
     , phs_expr_slice
     , phs_expr_sort_by
     , phs_expr_string_function
+    , phs_expr_string_function_i64
     , phs_expr_ternary
     , phs_expr_unary
     , phs_expr_unary_i64
@@ -209,7 +210,13 @@ compileExpr = \case
             Right inputManaged ->
                 withCompiledExprs args $ \argPtrs argLen ->
                     withManagedExpr inputManaged $ \inputPtr ->
-                        exprOut (phs_expr_string_function (stringFunctionCode fn) inputPtr argPtrs argLen)
+                        case fn of
+                            StrExtract groupIndex
+                                | groupIndex < 0 -> pure (Left (PolarsError InvalidArgument (T.pack ("string extract group index " <> show groupIndex <> " is negative"))))
+                                | otherwise ->
+                                    exprOut (phs_expr_string_function_i64 0 (fromIntegral groupIndex :: CLLong) inputPtr argPtrs argLen)
+                            _ ->
+                                exprOut (phs_expr_string_function (stringFunctionCode fn) inputPtr argPtrs argLen)
 
 withCompiledExprs :: [Expr] -> (Ptr (Ptr RawExpr) -> CSize -> IO (Either PolarsError a)) -> IO (Either PolarsError a)
 withCompiledExprs exprs action = do
@@ -333,6 +340,17 @@ binaryFunctionCode ExprFilter = 2
 
 stringFunctionCode :: StringFunction -> CInt
 stringFunctionCode StrContainsLiteral = 0
+stringFunctionCode (StrContainsRegex False) = 13
+stringFunctionCode (StrContainsRegex True) = 14
+stringFunctionCode StrFindLiteral = 15
+stringFunctionCode (StrFindRegex False) = 16
+stringFunctionCode (StrFindRegex True) = 17
+stringFunctionCode (StrCountMatches False) = 18
+stringFunctionCode (StrCountMatches True) = 19
+stringFunctionCode (StrReplace False) = 20
+stringFunctionCode (StrReplace True) = 21
+stringFunctionCode (StrReplaceAll False) = 22
+stringFunctionCode (StrReplaceAll True) = 23
 stringFunctionCode StrStartsWith = 1
 stringFunctionCode StrEndsWith = 2
 stringFunctionCode StrStrip = 3
@@ -345,3 +363,4 @@ stringFunctionCode StrLenChars = 9
 stringFunctionCode StrSlice = 10
 stringFunctionCode StrHead = 11
 stringFunctionCode StrTail = 12
+stringFunctionCode (StrExtract _) = 0  -- not used; dispatched via _i64 ABI

@@ -562,9 +562,89 @@ pub unsafe extern "C" fn phs_expr_string_function(
                 require_string_arity(op, &args, 1)?;
                 expr.str().tail(args[0].clone())
             }
+            13 => {
+                require_string_arity(op, &args, 1)?;
+                expr.str().contains(args[0].clone(), false)
+            }
+            14 => {
+                require_string_arity(op, &args, 1)?;
+                expr.str().contains(args[0].clone(), true)
+            }
+            15 => {
+                require_string_arity(op, &args, 1)?;
+                expr.str().find_literal(args[0].clone())
+            }
+            16 => {
+                require_string_arity(op, &args, 1)?;
+                expr.str().find(args[0].clone(), false)
+            }
+            17 => {
+                require_string_arity(op, &args, 1)?;
+                expr.str().find(args[0].clone(), true)
+            }
+            18 => {
+                require_string_arity(op, &args, 1)?;
+                expr.str().count_matches(args[0].clone(), false)
+            }
+            19 => {
+                require_string_arity(op, &args, 1)?;
+                expr.str().count_matches(args[0].clone(), true)
+            }
+            20 => {
+                require_string_arity(op, &args, 2)?;
+                expr.str().replace(args[0].clone(), args[1].clone(), false)
+            }
+            21 => {
+                require_string_arity(op, &args, 2)?;
+                expr.str().replace(args[0].clone(), args[1].clone(), true)
+            }
+            22 => {
+                require_string_arity(op, &args, 2)?;
+                expr.str().replace_all(args[0].clone(), args[1].clone(), false)
+            }
+            23 => {
+                require_string_arity(op, &args, 2)?;
+                expr.str().replace_all(args[0].clone(), args[1].clone(), true)
+            }
             _ => {
                 return Err(PhsError::invalid_argument(format!(
                     "unknown string expression opcode {op}"
+                )))
+            }
+        };
+        *out = expr_into_raw(result);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_expr_string_function_i64(
+    op: c_int,
+    arg: i64,
+    expr: *const phs_expr,
+    args: *const *const phs_expr,
+    arg_len: usize,
+    out: *mut *mut phs_expr,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let expr = unsafe { expr_ref(expr) }?.value.clone();
+        let args = string_args(args, arg_len)?;
+        let result = match op {
+            0 => {
+                require_string_arity(op, &args, 1)?;
+                if arg < 0 {
+                    return Err(PhsError::invalid_argument(format!(
+                        "string extract group index {arg} is negative"
+                    )));
+                }
+                expr.str().extract(args[0].clone(), arg as usize)
+            }
+            _ => {
+                return Err(PhsError::invalid_argument(format!(
+                    "unknown string_i64 expression opcode {op}"
                 )))
             }
         };
@@ -1107,7 +1187,7 @@ mod tests {
             PHS_OK
         );
         let args = [pat_expr as *const phs_expr];
-        for op in [0, 1, 2, 3, 4, 5, 11, 12] {
+        for op in [0, 1, 2, 3, 4, 5, 11, 12, 13, 14, 15, 16, 17, 18, 19] {
             let mut out = ptr::null_mut();
             assert_eq!(
                 unsafe {
@@ -1194,6 +1274,105 @@ mod tests {
         assert!(!err.is_null());
         unsafe {
             crate::handles::phs_expr_free(col_expr);
+            crate::error::phs_error_free(err);
+        }
+    }
+
+    #[test]
+    fn builds_string_i64_extract_expression() {
+        let name = std::ffi::CString::new("text").unwrap();
+        let pattern = std::ffi::CString::new(r"(\w+)").unwrap();
+        let mut col_expr = ptr::null_mut();
+        let mut pat_expr = ptr::null_mut();
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_expr_col(name.as_ptr(), &mut col_expr, &mut err) },
+            PHS_OK
+        );
+        assert_eq!(
+            unsafe { phs_expr_lit_text(pattern.as_ptr(), &mut pat_expr, &mut err) },
+            PHS_OK
+        );
+        let args = [pat_expr as *const phs_expr];
+        assert_eq!(
+            unsafe {
+                phs_expr_string_function_i64(
+                    0,
+                    0,
+                    col_expr,
+                    args.as_ptr(),
+                    1,
+                    &mut out,
+                    &mut err,
+                )
+            },
+            PHS_OK
+        );
+        assert!(!out.is_null());
+        unsafe {
+            crate::handles::phs_expr_free(col_expr);
+            crate::handles::phs_expr_free(pat_expr);
+            crate::handles::phs_expr_free(out);
+        }
+    }
+
+    #[test]
+    fn string_i64_errors_validate_opcode_and_negative_arg() {
+        let name = std::ffi::CString::new("text").unwrap();
+        let mut col_expr = ptr::null_mut();
+        let mut pat_expr = ptr::null_mut();
+        let mut out: *mut phs_expr = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        let pattern = std::ffi::CString::new(r"(\w+)").unwrap();
+        assert_eq!(
+            unsafe { phs_expr_col(name.as_ptr(), &mut col_expr, &mut err) },
+            PHS_OK
+        );
+        assert_eq!(
+            unsafe { phs_expr_lit_text(pattern.as_ptr(), &mut pat_expr, &mut err) },
+            PHS_OK
+        );
+        let args = [pat_expr as *const phs_expr];
+        // unknown opcode
+        assert_eq!(
+            unsafe {
+                phs_expr_string_function_i64(
+                    99,
+                    0,
+                    col_expr,
+                    args.as_ptr(),
+                    1,
+                    &mut out,
+                    &mut err,
+                )
+            },
+            PHS_INVALID_ARGUMENT
+        );
+        assert!(out.is_null());
+        assert!(!err.is_null());
+        unsafe { crate::error::phs_error_free(err) };
+        err = ptr::null_mut();
+        // negative group index
+        assert_eq!(
+            unsafe {
+                phs_expr_string_function_i64(
+                    0,
+                    -1,
+                    col_expr,
+                    args.as_ptr(),
+                    1,
+                    &mut out,
+                    &mut err,
+                )
+            },
+            PHS_INVALID_ARGUMENT
+        );
+        assert!(out.is_null());
+        assert!(!err.is_null());
+        unsafe {
+            crate::handles::phs_expr_free(col_expr);
+            crate::handles::phs_expr_free(pat_expr);
             crate::error::phs_error_free(err);
         }
     }

@@ -33,6 +33,6 @@ and this project adheres to the
 - Dataset-driven lazy query smoke tests for generated CSV fixtures.
 - Opt-in NYC Taxi Parquet real-world test script with lazy grouped query coverage.
 - Core Expression DSL coverage for casts, predicates, fills, conditionals, statistics, cumulative expressions, ranking, expression sorting/filtering/slicing, and window `over`.
-- String Expression DSL helpers for literal contains, starts/ends predicates, strip variants, case conversion, byte/character lengths, and character slicing/head/tail.
+- String Expression DSL helpers for literal contains, starts/ends predicates, strip variants, case conversion, byte/character lengths, character slicing/head/tail, regex contains/find/extract/count, and replace/replaceAll.
 
 ## 0.1.0.0 - YYYY-MM-DD
