@@ -894,8 +894,10 @@ main = hspec $ do
                                     Pl.shape df `shouldReturn` Right (3, 4)
                                     Pl.column @T.Text df "status" `shouldReturn` Right (V.fromList [Just "present", Just "present", Just "missing"])
                                     Pl.column @Double df "present_score_mean" `shouldReturn` Right (V.fromList [Just 8.875, Just 8.875, Just 8.875])
+                                    Pl.column @Double df "score_median" `shouldReturn` Right (V.fromList [Just 8.875, Just 8.875, Just 8.875])
+                                    Pl.column @Double df "score_q50" `shouldReturn` Right (V.fromList [Just 8.875, Just 8.875, Just 8.875])
 
-        it "uses cumulative expressions, rank, sort_by, slice, and windows" $ do
+        it "uses cumulative expressions, rank, and windows" $ do
             scanResult <- Pl.scanCsv salesCsv
             case scanResult of
                 Left err -> expectationFailure (show err)
@@ -906,7 +908,6 @@ main = hspec $ do
                             , Pl.alias "salary_rank" (Pl.rank Pl.defaultRankOptions {Pl.rankDescending = True} (Pl.col "salary"))
                             , Pl.alias "department_salary_total" (Pl.over [Pl.col "department"] (Pl.sum_ (Pl.col "salary")))
                             , Pl.alias "salary_cum" (Pl.cumSum False (Pl.col "salary"))
-                            , Pl.alias "top_names" (Pl.exprSlice (Pl.exprSortBy Pl.defaultExprSortOptions {Pl.exprSortDescending = True} [Pl.col "salary"] (Pl.col "name")) (Pl.litInt 0) (Pl.litInt 2))
                             ]
                             lf0
                     case projected of
@@ -916,8 +917,29 @@ main = hspec $ do
                             case collected of
                                 Left err -> expectationFailure (show err)
                                 Right df -> do
-                                    Pl.shape df `shouldReturn` Right (4, 5)
-                                    Pl.column @Int64 df "department_salary_total" `shouldReturn` Right (V.fromList [Just 250, Just 250, Just 200, Just 80])
+                                    Pl.shape df `shouldReturn` Right (4, 4)
+                                    Pl.column @Int64 df "department_salary_total" `shouldReturn` Right (V.fromList [Just 250, Just 250, Just 200, Just 200])
+                                    Pl.column @Int64 df "salary_cum" `shouldReturn` Right (V.fromList [Just 100, Just 250, Just 340, Just 450])
+
+        it "sorts and slices expression values" $ do
+            scanResult <- Pl.scanCsv salesCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    projected <-
+                        Pl.select
+                            [ Pl.alias "top_names" (Pl.exprSlice (Pl.exprSortBy Pl.defaultExprSortOptions {Pl.exprSortDescending = True} [Pl.col "salary"] (Pl.col "name")) (Pl.litInt 0) (Pl.litInt 2))
+                            ]
+                            lf0
+                    case projected of
+                        Left err -> expectationFailure (show err)
+                        Right lf1 -> do
+                            collected <- Pl.collect lf1
+                            case collected of
+                                Left err -> expectationFailure (show err)
+                                Right df -> do
+                                    Pl.shape df `shouldReturn` Right (2, 1)
+                                    Pl.column @T.Text df "top_names" `shouldReturn` Right (V.fromList [Just "Bob", Just "Dave"])
 
     describe "Polars.IPC" $ do
         it "round-trips a dataframe through IPC bytes" $ do
