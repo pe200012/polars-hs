@@ -17,6 +17,7 @@ module Polars.Expr
     , QuantileMethod (..)
     , RankMethod (..)
     , RankOptions (..)
+    , StringFunction (..)
     , UnaryFunction (..)
     , alias
     , cast
@@ -57,6 +58,19 @@ module Polars.Expr
     , quantile_
     , rank
     , std_
+    , strContainsLiteral
+    , strEndsWith
+    , strHead
+    , strLenBytes
+    , strLenChars
+    , strSlice
+    , strStartsWith
+    , strStrip
+    , strStripEnd
+    , strStripStart
+    , strTail
+    , strToLowercase
+    , strToUppercase
     , strictCast
     , sum_
     , var_
@@ -90,6 +104,7 @@ data Expr
     | SliceExpr !Expr !Expr !Expr
     | SortByExpr !ExprSortOptions ![Expr] !Expr
     | OverExpr ![Expr] !Expr
+    | StringFunctionExpr !StringFunction !Expr ![Expr]
     deriving stock (Eq, Show)
 
 -- | Binary operators supported by the MVP expression compiler.
@@ -142,6 +157,23 @@ data BinaryFunction
     = FillNull
     | FillNan
     | ExprFilter
+    deriving stock (Eq, Show)
+
+-- | String namespace expression functions.
+data StringFunction
+    = StrContainsLiteral
+    | StrStartsWith
+    | StrEndsWith
+    | StrStrip
+    | StrStripStart
+    | StrStripEnd
+    | StrToLowercase
+    | StrToUppercase
+    | StrLenBytes
+    | StrLenChars
+    | StrSlice
+    | StrHead
+    | StrTail
     deriving stock (Eq, Show)
 
 -- | Method for computing quantiles.
@@ -284,3 +316,22 @@ exprSortBy = SortByExpr
 
 over :: [Expr] -> Expr -> Expr
 over = OverExpr
+
+strContainsLiteral, strStartsWith, strEndsWith, strStrip, strStripStart, strStripEnd, strHead, strTail :: Expr -> Expr -> Expr
+strContainsLiteral input patternExpr = StringFunctionExpr StrContainsLiteral input [patternExpr]
+strStartsWith input prefix = StringFunctionExpr StrStartsWith input [prefix]
+strEndsWith input suffix = StringFunctionExpr StrEndsWith input [suffix]
+strStrip input matches = StringFunctionExpr StrStrip input [matches]
+strStripStart input matches = StringFunctionExpr StrStripStart input [matches]
+strStripEnd input matches = StringFunctionExpr StrStripEnd input [matches]
+strHead input n = StringFunctionExpr StrHead input [n]
+strTail input n = StringFunctionExpr StrTail input [n]
+
+strToLowercase, strToUppercase, strLenBytes, strLenChars :: Expr -> Expr
+strToLowercase input = StringFunctionExpr StrToLowercase input []
+strToUppercase input = StringFunctionExpr StrToUppercase input []
+strLenBytes input = StringFunctionExpr StrLenBytes input []
+strLenChars input = StringFunctionExpr StrLenChars input []
+
+strSlice :: Expr -> Expr -> Expr -> Expr
+strSlice input offset len = StringFunctionExpr StrSlice input [offset, len]
