@@ -3,3 +3,4 @@
 .worktrees/
 rust/polars-hs-ffi/target/
 *~
+test/data/external/

@@ -190,3 +190,66 @@ scripts/run-nyc-taxi-test.sh
 - Add weekly CI job for NYC Taxi opt-in test.
 - Add Arrow C Data Interface round-trip against PyArrow-generated batches.
 - Add dtype matrix tests generated from Polars/Metasyn schemas.
+
+## Implementation Results
+
+Implemented files:
+
+- `scripts/generate_dataset_fixtures.py`
+- `scripts/run-nyc-taxi-test.sh`
+- `test/NYCTaxi.hs`
+- `test/data/generated/polars_iris.csv`
+- `test/data/generated/metasyn_people.csv`
+- `test/data/generated/manifest.json`
+
+Default fixture generation:
+
+```bash
+uv run --with polars --with metasyn --with pyarrow python scripts/generate_dataset_fixtures.py
+```
+
+Generated fixture summary:
+
+```text
+polars_iris.csv: 150 rows, columns sepal_length/sepal_width/petal_length/petal_width/species
+metasyn_people.csv: 16 rows, columns city/age/score
+manifest.json: source, path, row count, columns, dtypes
+```
+
+NYC Taxi opt-in result:
+
+```bash
+scripts/run-nyc-taxi-test.sh
+```
+
+Result:
+
+```text
+Generated local test/data/external/nyc_taxi_sample.parquet with 5000 rows and 4 columns.
+Haskell readParquet + scanParquet smoke test passed.
+```
+
+Implementation notes:
+
+- Current PyPI `polars` 1.40.1 did not expose `pl.datasets`, so generation used the Hugging Face fallback iris CSV.
+- `MetaFrame.synthesize` uses `seed=20260428` for reproducible committed fixtures.
+- Dataset tests used existing APIs: `readCsv`, `readParquet`, `scanParquet`, `shape`, `schema`, `column @Text`, `column @Int64`, `column @Double`, `filter`, `limit`, and `collect`.
+- No additional binding features were required for this phase.
+- `test/data/external/` is ignored by version control; NYC Taxi samples are generated locally.
+
+Verification results:
+
+```text
+uv run --with polars --with metasyn --with pyarrow python scripts/generate_dataset_fixtures.py: passed
+scripts/run-nyc-taxi-test.sh: passed, generated 5000 x 4 NYC Taxi sample locally
+cargo test --manifest-path rust/polars-hs-ffi/Cargo.toml: 41 passed
+cargo clippy --manifest-path rust/polars-hs-ffi/Cargo.toml -- -D warnings: passed
+stack test --fast: 46 examples, 0 failures
+hlint src app test: No hints
+stack runghc examples/iris.hs: passed
+stack runghc examples/groupby.hs: passed
+stack runghc examples/join.hs: passed
+stack runghc examples/columns.hs: passed
+stack runghc examples/series.hs: passed
+stack runghc examples/construction.hs: passed
+```

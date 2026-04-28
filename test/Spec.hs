@@ -31,6 +31,12 @@ departmentsCsv = "test/data/departments.csv"
 valuesCsv :: FilePath
 valuesCsv = "test/data/values.csv"
 
+polarsIrisCsv :: FilePath
+polarsIrisCsv = "test/data/generated/polars_iris.csv"
+
+metasynPeopleCsv :: FilePath
+metasynPeopleCsv = "test/data/generated/metasyn_people.csv"
+
 main :: IO ()
 main = hspec $ do
     describe "Polars.DataFrame" $ do
@@ -694,6 +700,43 @@ main = hspec $ do
                                     Pl.column @Int64 imported "age" `shouldReturn` Right (V.fromList [Just 34, Nothing, Just 29])
                 (Left err, _) -> expectationFailure (show err)
                 (_, Left err) -> expectationFailure (show err)
+
+    describe "Dataset-driven fixtures" $ do
+        it "reads a Polars public iris fixture" $ do
+            result <- Pl.readCsv polarsIrisCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    Pl.shape df `shouldReturn` Right (150, 5)
+                    fields <- Pl.schema df
+                    fmap (map Pl.fieldName) fields `shouldBe` Right ["sepal_length", "sepal_width", "petal_length", "petal_width", "species"]
+                    lengths <- Pl.column @Double df "sepal_length"
+                    case lengths of
+                        Left err -> expectationFailure (show err)
+                        Right values -> V.length values `shouldBe` 150
+                    species <- Pl.column @T.Text df "species"
+                    case species of
+                        Left err -> expectationFailure (show err)
+                        Right values -> V.length values `shouldBe` 150
+
+        it "reads a Metasyn synthetic people fixture" $ do
+            result <- Pl.readCsv metasynPeopleCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    Pl.shape df `shouldReturn` Right (16, 3)
+                    cities <- Pl.column @T.Text df "city"
+                    case cities of
+                        Left err -> expectationFailure (show err)
+                        Right values -> V.length values `shouldBe` 16
+                    ages <- Pl.column @Int64 df "age"
+                    case ages of
+                        Left err -> expectationFailure (show err)
+                        Right values -> V.length values `shouldBe` 16
+                    scores <- Pl.column @Double df "score"
+                    case scores of
+                        Left err -> expectationFailure (show err)
+                        Right values -> V.length values `shouldBe` 16
 
     describe "Polars.IPC" $ do
         it "round-trips a dataframe through IPC bytes" $ do

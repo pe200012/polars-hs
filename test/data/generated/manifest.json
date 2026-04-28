@@ -1,0 +1,36 @@
+{
+  "metasyn_people": {
+    "columns": [
+      "city",
+      "age",
+      "score"
+    ],
+    "dtypes": [
+      "String",
+      "Int64",
+      "Float64"
+    ],
+    "path": "test/data/generated/metasyn_people.csv",
+    "rows": 16,
+    "source": "metasyn.MetaFrame fitted to a small Polars DataFrame"
+  },
+  "polars_iris": {
+    "columns": [
+      "sepal_length",
+      "sepal_width",
+      "petal_length",
+      "petal_width",
+      "species"
+    ],
+    "dtypes": [
+      "Float64",
+      "Float64",
+      "Float64",
+      "Float64",
+      "String"
+    ],
+    "path": "test/data/generated/polars_iris.csv",
+    "rows": 150,
+    "source": "pl.datasets.load('iris') when available, otherwise Hugging Face Polars docs iris CSV"
+  }
+}

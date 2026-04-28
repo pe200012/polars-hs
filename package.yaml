@@ -18,6 +18,11 @@ extra-source-files:
 - rust/polars-hs-ffi/cbindgen.toml
 - rust/polars-hs-ffi/src/*.rs
 - test/data/*.csv
+- scripts/*.py
+- scripts/*.sh
+- test/data/generated/*.csv
+- test/data/generated/*.json
+- test/NYCTaxi.hs
 
 synopsis:            Haskell bindings for the Rust Polars dataframe library
 category:            Data

@@ -40,6 +40,12 @@ extra-source-files:
     test/data/people.csv
     test/data/sales.csv
     test/data/values.csv
+    scripts/generate_dataset_fixtures.py
+    scripts/run-nyc-taxi-test.sh
+    test/data/generated/metasyn_people.csv
+    test/data/generated/polars_iris.csv
+    test/data/generated/manifest.json
+    test/NYCTaxi.hs
 
 source-repository head
   type: git

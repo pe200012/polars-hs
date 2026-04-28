@@ -1,6 +1,6 @@
 # Dataset-Driven Testing Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Add deterministic dataset-driven smoke tests using Polars public data and Metasyn-generated data, plus an opt-in NYC Taxi real-world test.
 
@@ -30,7 +30,7 @@
 **Files:**
 - Create: `scripts/generate_dataset_fixtures.py`
 
-- [ ] **Step 1: Create the generator script**
+- [x] **Step 1: Create the generator script**
 
 Create `scripts/generate_dataset_fixtures.py`:
 
@@ -163,7 +163,7 @@ if __name__ == "__main__":
     main()
 ```
 
-- [ ] **Step 2: Make the script executable**
+- [x] **Step 2: Make the script executable**
 
 Run:
 
@@ -171,7 +171,7 @@ Run:
 chmod +x scripts/generate_dataset_fixtures.py
 ```
 
-- [ ] **Step 3: Generate default fixtures**
+- [x] **Step 3: Generate default fixtures**
 
 Run:
 
@@ -195,7 +195,7 @@ test/data/generated/manifest.json exists
 - Modify: `test/Spec.hs`
 - Modify: `package.yaml`
 
-- [ ] **Step 1: Add generated fixture paths**
+- [x] **Step 1: Add generated fixture paths**
 
 Near the other fixture paths in `test/Spec.hs`, add:
 
@@ -207,7 +207,7 @@ metasynPeopleCsv :: FilePath
 metasynPeopleCsv = "test/data/generated/metasyn_people.csv"
 ```
 
-- [ ] **Step 2: Add dataset smoke tests**
+- [x] **Step 2: Add dataset smoke tests**
 
 Add this block before `describe "Polars.IPC"`:
 
@@ -250,7 +250,7 @@ Add this block before `describe "Polars.IPC"`:
                         Right values -> V.length values `shouldBe` 16
 ```
 
-- [ ] **Step 3: Update package metadata**
+- [x] **Step 3: Update package metadata**
 
 In `package.yaml`, add generated data and scripts to `extra-source-files`:
 
@@ -261,7 +261,7 @@ In `package.yaml`, add generated data and scripts to `extra-source-files`:
 - test/data/generated/*.json
 ```
 
-- [ ] **Step 4: Run Hspec**
+- [x] **Step 4: Run Hspec**
 
 Run:
 
@@ -279,7 +279,7 @@ Expected result: dataset tests pass, or RED failure identifies a concrete missin
 - Create: `test/NYCTaxi.hs`
 - Create: `scripts/run-nyc-taxi-test.sh`
 
-- [ ] **Step 1: Create the Haskell NYC Taxi test driver**
+- [x] **Step 1: Create the Haskell NYC Taxi test driver**
 
 Create `test/NYCTaxi.hs`:
 
@@ -332,7 +332,7 @@ main = do
                                         other -> fail ("unexpected filtered shape: " <> show other)
 ```
 
-- [ ] **Step 2: Create the opt-in shell runner**
+- [x] **Step 2: Create the opt-in shell runner**
 
 Create `scripts/run-nyc-taxi-test.sh`:
 
@@ -350,7 +350,7 @@ fi
 stack runghc test/NYCTaxi.hs
 ```
 
-- [ ] **Step 3: Make the runner executable**
+- [x] **Step 3: Make the runner executable**
 
 Run:
 
@@ -358,7 +358,7 @@ Run:
 chmod +x scripts/run-nyc-taxi-test.sh
 ```
 
-- [ ] **Step 4: Run the opt-in test when network is available**
+- [x] **Step 4: Run the opt-in test when network is available**
 
 Run:
 
@@ -378,7 +378,7 @@ Expected result: NYC Taxi sample is generated and the Haskell test exits success
 - Modify: `docs/superpowers/specs/2026-04-28-polars-hs-dataset-driven-testing-design.md`
 - Modify: `docs/superpowers/plans/2026-04-28-polars-hs-dataset-driven-testing.md`
 
-- [ ] **Step 1: Update README**
+- [x] **Step 1: Update README**
 
 Add a section near Verification:
 
@@ -400,7 +400,7 @@ scripts/run-nyc-taxi-test.sh
 ```
 ````
 
-- [ ] **Step 2: Update CHANGELOG**
+- [x] **Step 2: Update CHANGELOG**
 
 Add:
 
@@ -409,7 +409,7 @@ Add:
 - Opt-in NYC Taxi Parquet real-world test script.
 ```
 
-- [ ] **Step 3: Full verification**
+- [x] **Step 3: Full verification**
 
 Run:
 
@@ -428,11 +428,11 @@ stack runghc examples/construction.hs
 
 Expected result: all commands pass.
 
-- [ ] **Step 4: Record implementation results**
+- [x] **Step 4: Record implementation results**
 
 Append verification output, generated fixture provenance, NYC Taxi opt-in result, and any implemented feature gaps to the design doc.
 
-- [ ] **Step 5: Commit and push**
+- [x] **Step 5: Commit and push**
 
 Run:
 
@@ -440,4 +440,42 @@ Run:
 jj commit -m "test: add dataset-driven smoke tests"
 jj bookmark move master --to @-
 jj git push --bookmark master
+```
+
+
+## Implementation Results
+
+- Added `scripts/generate_dataset_fixtures.py` with Polars iris fallback, seeded Metasyn people fixture generation, manifest output, and optional NYC Taxi sampling.
+- Added committed fixtures under `test/data/generated/`:
+  - `polars_iris.csv`
+  - `metasyn_people.csv`
+  - `manifest.json`
+- Added default Hspec tests for generated Polars and Metasyn fixtures.
+- Added opt-in NYC Taxi runner and Haskell test driver:
+  - `scripts/run-nyc-taxi-test.sh`
+  - `test/NYCTaxi.hs`
+- Added `test/data/external/` to `.gitignore`; NYC Taxi Parquet samples are generated locally.
+- Updated README, CHANGELOG, and package metadata.
+
+Implementation notes:
+
+- Current PyPI `polars` 1.40.1 does not expose `pl.datasets`; the generator exercised the Hugging Face fallback.
+- `MetaFrame.synthesize` is called with `seed=20260428` so committed Metasyn fixtures are reproducible.
+- Dataset tests used existing binding APIs; no additional binding feature was required.
+
+Verification results:
+
+```text
+uv run --with polars --with metasyn --with pyarrow python scripts/generate_dataset_fixtures.py: passed
+scripts/run-nyc-taxi-test.sh: passed, generated 5000 x 4 NYC Taxi sample locally
+cargo test --manifest-path rust/polars-hs-ffi/Cargo.toml: 41 passed
+cargo clippy --manifest-path rust/polars-hs-ffi/Cargo.toml -- -D warnings: passed
+stack test --fast: 46 examples, 0 failures
+hlint src app test: No hints
+stack runghc examples/iris.hs: passed
+stack runghc examples/groupby.hs: passed
+stack runghc examples/join.hs: passed
+stack runghc examples/columns.hs: passed
+stack runghc examples/series.hs: passed
+stack runghc examples/construction.hs: passed
 ```

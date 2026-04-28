@@ -264,6 +264,24 @@ stack runghc examples/construction.hs
 - `Polars.Schema` defines schema field and datatype values.
 - `Polars.IPC` provides IPC byte and file helpers.
 
+## Dataset-driven tests
+
+Generate committed smoke-test fixtures with:
+
+```bash
+uv run --with polars --with metasyn --with pyarrow python scripts/generate_dataset_fixtures.py
+```
+
+Default `stack test --fast` reads generated Polars/Metasyn CSV fixtures from `test/data/generated/`.
+
+Run the opt-in NYC Taxi Parquet test with:
+
+```bash
+scripts/run-nyc-taxi-test.sh
+```
+
+The NYC sample is generated under `test/data/external/`, which is ignored by version control.
+
 ## Verification
 
 Use these commands before committing implementation changes:
