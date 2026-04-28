@@ -10,12 +10,37 @@ boundary.
 -}
 module Polars.Expr
     ( AggFunction (..)
+    , BinaryFunction (..)
     , BinaryOperator (..)
     , Expr (..)
+    , ExprSortOptions (..)
+    , QuantileMethod (..)
+    , RankMethod (..)
+    , RankOptions (..)
+    , UnaryFunction (..)
     , alias
+    , cast
     , col
     , count_
+    , cumCount
+    , cumMax
+    , cumMin
+    , cumProd
+    , cumSum
+    , defaultExprSortOptions
+    , defaultRankOptions
+    , exprFilter
+    , exprSlice
+    , exprSortBy
+    , fillNan
+    , fillNull
     , first_
+    , isFinite
+    , isInfinite
+    , isNan
+    , isNotNan
+    , isNotNull
+    , isNull
     , last_
     , len_
     , litBool
@@ -24,13 +49,24 @@ module Polars.Expr
     , litText
     , max_
     , mean_
+    , median_
     , min_
+    , nUnique_
     , not_
+    , over
+    , quantile_
+    , rank
+    , std_
+    , strictCast
     , sum_
+    , var_
+    , whenThenOtherwise
     ) where
 
+import Prelude hiding (isInfinite)
 import Data.Int (Int64)
 import Data.Text (Text)
+import Polars.Schema (DataType)
 
 -- | Pure Haskell representation of a Polars expression.
 data Expr
@@ -43,6 +79,17 @@ data Expr
     | BinaryExpr !BinaryOperator !Expr !Expr
     | Not !Expr
     | Aggregate !AggFunction !Expr
+    | Cast !Bool !DataType !Expr
+    | UnaryExpr !UnaryFunction !Expr
+    | BinaryFunctionExpr !BinaryFunction !Expr !Expr
+    | TernaryExpr !Expr !Expr !Expr
+    | StdExpr !Int !Expr
+    | VarExpr !Int !Expr
+    | QuantileExpr !QuantileMethod !Expr !Expr
+    | RankExpr !RankOptions !Expr
+    | SliceExpr !Expr !Expr !Expr
+    | SortByExpr !ExprSortOptions ![Expr] !Expr
+    | OverExpr ![Expr] !Expr
     deriving stock (Eq, Show)
 
 -- | Binary operators supported by the MVP expression compiler.
@@ -72,6 +119,72 @@ data AggFunction
     | AggFirst
     | AggLast
     deriving stock (Eq, Show)
+
+-- | Unary expression functions.
+data UnaryFunction
+    = IsNull
+    | IsNotNull
+    | IsNan
+    | IsNotNan
+    | IsFinite
+    | IsInfinite
+    | Median
+    | NUnique
+    | CumCount !Bool
+    | CumSum !Bool
+    | CumProd !Bool
+    | CumMin !Bool
+    | CumMax !Bool
+    deriving stock (Eq, Show)
+
+-- | Binary expression functions.
+data BinaryFunction
+    = FillNull
+    | FillNan
+    | ExprFilter
+    deriving stock (Eq, Show)
+
+-- | Method for computing quantiles.
+data QuantileMethod
+    = QuantileNearest
+    | QuantileLower
+    | QuantileHigher
+    | QuantileMidpoint
+    | QuantileLinear
+    | QuantileEquiprobable
+    deriving stock (Eq, Show)
+
+-- | Method for ranking.
+data RankMethod = RankAverage | RankMin | RankMax | RankDense | RankOrdinal
+    deriving stock (Eq, Show)
+
+-- | Options for rank expressions.
+data RankOptions = RankOptions
+    { rankMethod :: !RankMethod
+    , rankDescending :: !Bool
+    }
+    deriving stock (Eq, Show)
+
+defaultRankOptions :: RankOptions
+defaultRankOptions = RankOptions {rankMethod = RankDense, rankDescending = False}
+
+-- | Options for expression sorting.
+data ExprSortOptions = ExprSortOptions
+    { exprSortDescending :: !Bool
+    , exprSortNullsLast :: !Bool
+    , exprSortMultithreaded :: !Bool
+    , exprSortMaintainOrder :: !Bool
+    }
+    deriving stock (Eq, Show)
+
+defaultExprSortOptions :: ExprSortOptions
+defaultExprSortOptions =
+    ExprSortOptions
+        { exprSortDescending = False
+        , exprSortNullsLast = False
+        , exprSortMultithreaded = True
+        , exprSortMaintainOrder = False
+        }
 
 col :: Text -> Expr
 col = Column
@@ -117,3 +230,57 @@ first_ = Aggregate AggFirst
 
 last_ :: Expr -> Expr
 last_ = Aggregate AggLast
+
+cast :: DataType -> Expr -> Expr
+cast = Cast False
+
+strictCast :: DataType -> Expr -> Expr
+strictCast = Cast True
+
+isNull, isNotNull, isNan, isNotNan, isFinite, isInfinite :: Expr -> Expr
+isNull = UnaryExpr IsNull
+isNotNull = UnaryExpr IsNotNull
+isNan = UnaryExpr IsNan
+isNotNan = UnaryExpr IsNotNan
+isFinite = UnaryExpr IsFinite
+isInfinite = UnaryExpr IsInfinite
+
+fillNull, fillNan, exprFilter :: Expr -> Expr -> Expr
+fillNull fillValue input = BinaryFunctionExpr FillNull input fillValue
+fillNan fillValue input = BinaryFunctionExpr FillNan input fillValue
+exprFilter input predicate = BinaryFunctionExpr ExprFilter input predicate
+
+whenThenOtherwise :: Expr -> Expr -> Expr -> Expr
+whenThenOtherwise = TernaryExpr
+
+median_, nUnique_ :: Expr -> Expr
+median_ = UnaryExpr Median
+nUnique_ = UnaryExpr NUnique
+
+std_ :: Int -> Expr -> Expr
+std_ = StdExpr
+
+var_ :: Int -> Expr -> Expr
+var_ = VarExpr
+
+quantile_ :: QuantileMethod -> Expr -> Expr -> Expr
+quantile_ = QuantileExpr
+
+cumCount, cumSum, cumProd, cumMin, cumMax :: Bool -> Expr -> Expr
+cumCount = UnaryExpr . CumCount
+cumSum = UnaryExpr . CumSum
+cumProd = UnaryExpr . CumProd
+cumMin = UnaryExpr . CumMin
+cumMax = UnaryExpr . CumMax
+
+rank :: RankOptions -> Expr -> Expr
+rank = RankExpr
+
+exprSlice :: Expr -> Expr -> Expr -> Expr
+exprSlice = SliceExpr
+
+exprSortBy :: ExprSortOptions -> [Expr] -> Expr -> Expr
+exprSortBy = SortByExpr
+
+over :: [Expr] -> Expr -> Expr
+over = OverExpr
