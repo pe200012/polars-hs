@@ -354,13 +354,13 @@ Phase 1 delivers complete Foundation/Core expression coverage as specified in th
 
 - **Public APIs added in `Polars.Expr`:** `cast`, `strictCast`, `isNull`, `isNotNull`, `isNan`, `isNotNan`, `isFinite`, `isInfinite`, `fillNull`, `fillNan`, `whenThenOtherwise`, `median_`, `std_`, `var_`, `quantile_`, `nUnique_`, `cumCount`, `cumSum`, `cumProd`, `cumMin`, `cumMax`, `rank`, `exprSlice`, `exprFilter`, `exprSortBy`, `over`, and supporting type/data-type definitions (`DataType`, `QuantileMethod`, `RankOptions`, `RankMethod`, `ExprSortOptions`).
 
-- **Rust ABI helpers added:** ABI functions `phs_expr_cast`, `phs_expr_unary`, `phs_expr_unary_i64`, `phs_expr_binary_function`, `phs_expr_ternary`, `phs_expr_slice`, `phs_expr_sort_by`, and `phs_expr_over` are implemented in `rust/polars-hs-ffi/src/expr.rs` and exposed through `include/polars_hs.h`. Opcode constants cover all core expression families.
+- **Rust ABI helpers added:** ABI functions `phs_expr_cast`, `phs_expr_unary`, `phs_expr_unary_i64`, `phs_expr_binary_function`, `phs_expr_ternary`, `phs_expr_quantile`, `phs_expr_rank`, `phs_expr_slice`, `phs_expr_sort_by`, and `phs_expr_over` are implemented in `rust/polars-hs-ffi/src/expr.rs` and exposed through `include/polars_hs.h`. Opcode constants cover all core expression families.
 
 - **Haskell compiler support added:** `Polars.Internal.Expr` compiles new `Expr` constructors (`Cast`, `UnaryExpr`, `BinaryFunctionExpr`, `TernaryExpr`, `StdExpr`, `VarExpr`, `QuantileExpr`, `RankExpr`, `SliceExpr`, `SortByExpr`, `OverExpr`) to the corresponding Rust ABI helpers. Raw FFI bindings are declared in `Polars.Internal.Raw`.
 
-- **Hspec/Rust coverage:** Hspec core Expression DSL tests exercise `select` over `test/data/values.csv` and `test/data/sales.csv`. Rust ABI tests in `rust/polars-hs-ffi` cover opcode dispatch, error propagation, and edge cases (invalid dtype codes).
+- **Hspec/Rust coverage:** Hspec core Expression DSL tests exercise `select` over `test/data/values.csv`, `test/data/sales.csv`, and `test/data/float_specials.csv`. Rust ABI tests in `rust/polars-hs-ffi` cover opcode dispatch, error propagation, invalid dtype/method/opcode paths, and ddof bounds.
 
-- **Final review additions:** Expanded Hspec result-level coverage for strict casts, NaN predicates and fill, std/var/nUnique, cumulative variants (cumCount/cumProd/cumMin/cumMax with reverse cumSum), and additional quantile methods (QuantileLower, QuantileHigher, QuantileMidpoint, QuantileLinear). Removed unused future-looking Polars Cargo features and corrected `fillNull` example argument order.
+- **Final review additions:** Expanded Hspec result-level coverage for strict casts, NaN predicates and fill, std/var/nUnique, cumulative variants (cumCount/cumProd/cumMin/cumMax with reverse cumSum), and additional quantile methods (QuantileLower, QuantileHigher, QuantileMidpoint, QuantileLinear). Removed unused future-looking Polars Cargo features, minimized lockfile churn, and corrected `fillNull` example argument order.
 
 ### Verification results (final, Task 6)
 
