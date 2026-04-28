@@ -9,9 +9,11 @@ import qualified Data.ByteString as BS
 import Data.Int (Int64)
 import qualified Data.Text as T
 import qualified Data.Vector as V
+import Foreign.Ptr (nullPtr)
 import System.Mem (performGC)
 import Test.Hspec
 
+import ArrowRecordBatch (withPeopleRecordBatch)
 import qualified Polars as Pl
 
 fixtureCsv :: FilePath
@@ -654,6 +656,23 @@ main = hspec $ do
                         Left err -> Pl.polarsErrorCode err `shouldBe` Pl.InvalidArgument
                 (Left err, _) -> expectationFailure (show err)
                 (_, Left err) -> expectationFailure (show err)
+
+    describe "Polars.Arrow" $ do
+        it "imports a standard Arrow RecordBatch into a DataFrame" $
+            withPeopleRecordBatch $ \schemaPtr arrayPtr -> do
+                result <- Pl.fromArrowRecordBatch (Pl.unsafeArrowRecordBatch schemaPtr arrayPtr)
+                case result of
+                    Left err -> expectationFailure (show err)
+                    Right df -> do
+                        Pl.shape df `shouldReturn` Right (3, 2)
+                        Pl.column @T.Text df "name" `shouldReturn` Right (V.fromList [Just "Alice", Just "Bob", Nothing])
+                        Pl.column @Int64 df "age" `shouldReturn` Right (V.fromList [Just 34, Nothing, Just 29])
+
+        it "reports InvalidArgument for null Arrow RecordBatch pointers" $ do
+            result <- Pl.fromArrowRecordBatch (Pl.unsafeArrowRecordBatch nullPtr nullPtr)
+            case result of
+                Right _ -> expectationFailure "expected InvalidArgument for null Arrow pointers"
+                Left err -> Pl.polarsErrorCode err `shouldBe` Pl.InvalidArgument
 
     describe "Polars.IPC" $ do
         it "round-trips a dataframe through IPC bytes" $ do

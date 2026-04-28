@@ -54,6 +54,7 @@ library:
   source-dirs: src
   exposed-modules:
   - Polars
+  - Polars.Arrow
   - Polars.Column
   - Polars.DataFrame
   - Polars.Error
@@ -98,6 +99,10 @@ tests:
   polars-hs-test:
     main:                Spec.hs
     source-dirs:         test
+    other-modules:
+    - ArrowRecordBatch
+    c-sources:
+    - test/cbits/arrow_record_batch.c
     ghc-options:
     - -threaded
     - -rtsopts

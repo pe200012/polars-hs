@@ -2,7 +2,7 @@
 
 ![CI](https://github.com/pe200012/polars-hs/actions/workflows/ci.yml/badge.svg?branch=master)
 
-`polars-hs` is a Haskell binding to the Rust Polars dataframe engine. The current MVP exposes eager CSV/Parquet readers, lazy CSV/Parquet scans, expression-based lazy filters and projections, grouped aggregations, lazy joins, typed column extraction, typed errors, and Arrow IPC byte round-trips.
+`polars-hs` is a Haskell binding to the Rust Polars dataframe engine. The current MVP exposes eager CSV/Parquet readers, lazy CSV/Parquet scans, expression-based lazy filters and projections, grouped aggregations, lazy joins, typed column extraction, typed errors, Arrow C Data Interface import, and Arrow IPC byte round-trips.
 
 The Haskell package uses a small Rust adapter crate in `rust/polars-hs-ffi`. The adapter owns direct calls into Polars and exposes a stable `phs_*` C ABI. Haskell wraps returned handles in `ForeignPtr` finalizers and returns `Either PolarsError a` for recoverable failures.
 
@@ -194,6 +194,17 @@ Run the construction example with:
 stack runghc examples/construction.hs
 ```
 
+## Arrow C Data Interface import
+
+`fromArrowRecordBatch` imports a standard Arrow C Data Interface RecordBatch into a managed Polars `DataFrame`:
+
+```haskell
+(schemaPtr, arrayPtr) <- dataframeToArrow sourceDf
+result <- Pl.fromArrowRecordBatch (Pl.unsafeArrowRecordBatch schemaPtr arrayPtr)
+```
+
+The batch is represented by a top-level struct `ArrowSchema` and top-level struct `ArrowArray`. The call consumes the Arrow producer pointers after validation and returns a normal Polars `DataFrame` handle.
+
 ## Series transforms
 
 ```haskell
@@ -234,6 +245,7 @@ stack runghc examples/construction.hs
 ## Public modules
 
 - `Polars` re-exports the MVP API.
+- `Polars.Arrow` provides Arrow C Data Interface RecordBatch import.
 - `Polars.DataFrame` provides `dataFrame`, eager readers, shape/schema queries, head/tail, text rendering, and IPC byte conversion.
 - `Polars.Column` provides `column @Series` and typed `column @Bool/@Int64/@Double/@Text` extraction with null preservation.
 - `Polars.Series` provides `series @xxx`, Series metadata, slicing, DataFrame conversion, typed value readers, and transforms.

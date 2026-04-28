@@ -19,6 +19,7 @@ module Polars.Internal.Raw
     , phs_bytes_len
     , phs_dataframe_column
     , phs_dataframe_column_bool
+    , phs_dataframe_from_arrow_record_batch
     , phs_dataframe_new
     , phs_dataframe_column_f64
     , phs_dataframe_column_i64
@@ -139,6 +140,9 @@ foreign import ccall unsafe "phs_read_parquet"
 
 foreign import ccall unsafe "phs_dataframe_new"
     phs_dataframe_new :: Ptr (Ptr RawSeries) -> CSize -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_dataframe_from_arrow_record_batch"
+    phs_dataframe_from_arrow_record_batch :: Ptr () -> Ptr () -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_dataframe_shape"
     phs_dataframe_shape :: Ptr RawDataFrame -> Ptr Word64 -> Ptr Word64 -> Ptr (Ptr RawError) -> IO CInt

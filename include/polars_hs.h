@@ -18,10 +18,6 @@
 
 #define PHS_PANIC 4
 
-typedef struct phs_bytes {
-  uint8_t _private[0];
-} phs_bytes;
-
 typedef struct phs_dataframe {
   uint8_t _private[0];
 } phs_dataframe;
@@ -29,6 +25,10 @@ typedef struct phs_dataframe {
 typedef struct phs_error {
   uint8_t _private[0];
 } phs_error;
+
+typedef struct phs_bytes {
+  uint8_t _private[0];
+} phs_bytes;
 
 typedef struct phs_series {
   uint8_t _private[0];
@@ -45,6 +45,11 @@ typedef struct phs_lazyframe {
 uint32_t phs_version_major(void);
 
 uint32_t phs_version_minor(void);
+
+int phs_dataframe_from_arrow_record_batch(void *schema,
+                                          void *array,
+                                          struct phs_dataframe **out,
+                                          struct phs_error **err);
 
 uintptr_t phs_bytes_len(const struct phs_bytes *ptr);
 

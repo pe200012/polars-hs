@@ -1,6 +1,6 @@
 # Arrow C Data Interface Import Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Add `fromArrowRecordBatch` for importing a standard Arrow C Data Interface RecordBatch into a managed Polars `DataFrame`.
 
@@ -35,7 +35,7 @@
 - Modify: `test/Spec.hs`
 - Modify: `package.yaml`
 
-- [ ] **Step 1: Create the Haskell Arrow fixture module**
+- [x] **Step 1: Create the Haskell Arrow fixture module**
 
 Create `test/ArrowRecordBatch.hs`:
 
@@ -258,7 +258,7 @@ arrowFlags False = 0
 arrowFlags True = 2
 ```
 
-- [ ] **Step 2: Add the RED Hspec examples**
+- [x] **Step 2: Add the RED Hspec examples**
 
 In `test/Spec.hs`, import the fixture:
 
@@ -288,7 +288,7 @@ Add this block before `describe "Polars.IPC"`:
                 Left err -> Pl.polarsErrorCode err `shouldBe` Pl.InvalidArgument
 ```
 
-- [ ] **Step 3: Add the test module to package metadata**
+- [x] **Step 3: Add the test module to package metadata**
 
 In `package.yaml`, update the test suite:
 
@@ -308,7 +308,7 @@ tests:
     - hspec >= 2.11 && < 2.12
 ```
 
-- [ ] **Step 4: Run the RED test**
+- [x] **Step 4: Run the RED test**
 
 Run:
 
@@ -327,7 +327,7 @@ Expected result: build fails because `Polars` lacks `fromArrowRecordBatch` and `
 - Create: `rust/polars-hs-ffi/src/arrow.rs`
 - Modify: `rust/polars-hs-ffi/src/lib.rs`
 
-- [ ] **Step 1: Add the Rust dependency**
+- [x] **Step 1: Add the Rust dependency**
 
 In `rust/polars-hs-ffi/Cargo.toml`, add `polars-arrow` next to `polars`:
 
@@ -335,7 +335,7 @@ In `rust/polars-hs-ffi/Cargo.toml`, add `polars-arrow` next to `polars`:
 polars-arrow = "0.53.0"
 ```
 
-- [ ] **Step 2: Add the Rust module export**
+- [x] **Step 2: Add the Rust module export**
 
 In `rust/polars-hs-ffi/src/lib.rs`, add:
 
@@ -343,7 +343,7 @@ In `rust/polars-hs-ffi/src/lib.rs`, add:
 mod arrow;
 ```
 
-- [ ] **Step 3: Create `rust/polars-hs-ffi/src/arrow.rs`**
+- [x] **Step 3: Create `rust/polars-hs-ffi/src/arrow.rs`**
 
 Create the module with this implementation:
 
@@ -571,7 +571,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 4: Run Rust tests**
+- [x] **Step 4: Run Rust tests**
 
 Run:
 
@@ -581,7 +581,7 @@ cargo test --manifest-path rust/polars-hs-ffi/Cargo.toml
 
 Expected result: all Rust tests pass, including the four new Arrow tests.
 
-- [ ] **Step 5: Run Clippy**
+- [x] **Step 5: Run Clippy**
 
 Run:
 
@@ -601,7 +601,7 @@ Expected result: Clippy exits successfully.
 - Modify: `src/Polars.hs`
 - Modify: `package.yaml`
 
-- [ ] **Step 1: Add the raw FFI import**
+- [x] **Step 1: Add the raw FFI import**
 
 In `src/Polars/Internal/Raw.hs`, export `phs_dataframe_from_arrow_record_batch` and add:
 
@@ -610,7 +610,7 @@ foreign import ccall unsafe "phs_dataframe_from_arrow_record_batch"
     phs_dataframe_from_arrow_record_batch :: Ptr () -> Ptr () -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
 ```
 
-- [ ] **Step 2: Create `src/Polars/Arrow.hs`**
+- [x] **Step 2: Create `src/Polars/Arrow.hs`**
 
 Create the public module:
 
@@ -664,11 +664,11 @@ dataframeOut action =
                 else Left <$> (consumeError status =<< peek errPtr)
 ```
 
-- [ ] **Step 3: Re-export the module**
+- [x] **Step 3: Re-export the module**
 
 In `src/Polars.hs`, add `module Polars.Arrow` to the export list and import list.
 
-- [ ] **Step 4: Update package metadata**
+- [x] **Step 4: Update package metadata**
 
 In `package.yaml`, add `Polars.Arrow` to `library.exposed-modules`:
 
@@ -676,7 +676,7 @@ In `package.yaml`, add `Polars.Arrow` to `library.exposed-modules`:
   - Polars.Arrow
 ```
 
-- [ ] **Step 5: Run the Haskell tests**
+- [x] **Step 5: Run the Haskell tests**
 
 Run:
 
@@ -696,7 +696,7 @@ Expected result: Hspec passes and `polars-hs.cabal` includes `Polars.Arrow` plus
 - Modify: `docs/superpowers/specs/2026-04-28-polars-hs-arrow-c-data-import-design.md`
 - Modify: `docs/superpowers/plans/2026-04-28-polars-hs-arrow-c-data-import.md`
 
-- [ ] **Step 1: Update README**
+- [x] **Step 1: Update README**
 
 Add a section after IPC or construction:
 
@@ -713,7 +713,7 @@ result <- Pl.fromArrowRecordBatch (Pl.unsafeArrowRecordBatch schemaPtr arrayPtr)
 The batch is represented by a top-level struct `ArrowSchema` and top-level struct `ArrowArray`. The call consumes the Arrow producer pointers after validation and returns a normal Polars `DataFrame` handle.
 ````
 
-- [ ] **Step 2: Update CHANGELOG**
+- [x] **Step 2: Update CHANGELOG**
 
 Under `Unreleased` / `Added`, add:
 
@@ -721,7 +721,7 @@ Under `Unreleased` / `Added`, add:
 - Arrow C Data Interface RecordBatch import for managed DataFrame construction.
 ```
 
-- [ ] **Step 3: Run full verification**
+- [x] **Step 3: Run full verification**
 
 Run:
 
@@ -748,7 +748,7 @@ HLint: No hints
 All examples: passed
 ```
 
-- [ ] **Step 4: Record implementation results**
+- [x] **Step 4: Record implementation results**
 
 Append to `docs/superpowers/specs/2026-04-28-polars-hs-arrow-c-data-import-design.md`:
 
@@ -774,11 +774,11 @@ Verification results are copied from the completed verification run, including e
 Implementation matched the approved design.
 ````
 
-- [ ] **Step 5: Mark plan checkboxes complete**
+- [x] **Step 5: Mark plan checkboxes complete**
 
-Mark each `- [ ]` item in this plan as `- [x]` after the corresponding step succeeds.
+Mark each `- [x]` item in this plan as `- [x]` after the corresponding step succeeds.
 
-- [ ] **Step 6: Commit and push**
+- [x] **Step 6: Commit and push**
 
 Run:
 

@@ -265,3 +265,55 @@ Right out <- Pl.collect =<< Pl.select [Pl.col "age"] lf
 - `Series` import from a single `ArrowSchema` + `ArrowArray` pair.
 - Arrow C Stream import for batch iterators.
 - Integration helpers for Haskell `dataframe` behind an optional package flag.
+
+## Implementation Results
+
+Implemented public API:
+
+```haskell
+data ArrowRecordBatch
+unsafeArrowRecordBatch :: Ptr schema -> Ptr array -> ArrowRecordBatch
+fromArrowRecordBatch :: ArrowRecordBatch -> IO (Either PolarsError DataFrame)
+```
+
+Implemented Rust ABI:
+
+```c
+int phs_dataframe_from_arrow_record_batch(
+  void *schema,
+  void *array,
+  struct phs_dataframe **out,
+  struct phs_error **err
+);
+```
+
+Implemented files:
+
+- `rust/polars-hs-ffi/src/arrow.rs`
+- `src/Polars/Arrow.hs`
+- `test/ArrowRecordBatch.hs`
+- `test/cbits/arrow_record_batch.c`
+
+Validation coverage:
+
+- Rust tests cover successful RecordBatch import, released array rejection, plain array rejection, and duplicate child-name errors.
+- Hspec tests cover successful import through the public Haskell API and null pointer validation.
+
+Deviation from the original plan:
+
+- The Haskell integration fixture uses C release callbacks in `test/cbits/arrow_record_batch.c`. This keeps Arrow release callbacks compatible with Rust-owned Polars DataFrame finalizers.
+
+Verification results:
+
+```text
+cargo test --manifest-path rust/polars-hs-ffi/Cargo.toml: 39 passed
+cargo clippy --manifest-path rust/polars-hs-ffi/Cargo.toml -- -D warnings: passed
+stack test --fast: 43 examples, 0 failures
+hlint src app test: No hints
+stack runghc examples/iris.hs: passed
+stack runghc examples/groupby.hs: passed
+stack runghc examples/join.hs: passed
+stack runghc examples/columns.hs: passed
+stack runghc examples/series.hs: passed
+stack runghc examples/construction.hs: passed
+```

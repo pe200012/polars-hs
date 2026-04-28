@@ -25,6 +25,7 @@ extra-source-files:
     rust/polars-hs-ffi/Cargo.lock
     rust/polars-hs-ffi/build.rs
     rust/polars-hs-ffi/cbindgen.toml
+    rust/polars-hs-ffi/src/arrow.rs
     rust/polars-hs-ffi/src/bytes.rs
     rust/polars-hs-ffi/src/dataframe.rs
     rust/polars-hs-ffi/src/error.rs
@@ -54,6 +55,7 @@ custom-setup
 library
   exposed-modules:
       Polars
+      Polars.Arrow
       Polars.Column
       Polars.DataFrame
       Polars.Error
@@ -117,12 +119,12 @@ test-suite polars-hs-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
-      Paths_polars_hs
-  autogen-modules:
-      Paths_polars_hs
+      ArrowRecordBatch
   hs-source-dirs:
       test
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
+  c-sources:
+      test/cbits/arrow_record_batch.c
   build-depends:
       base >=4.7 && <5
     , bytestring >=0.12 && <0.14
