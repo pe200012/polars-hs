@@ -62,6 +62,9 @@ polarsIrisCsv = "test/data/generated/polars_iris.csv"
 floatSpecialsCsv :: FilePath
 floatSpecialsCsv = "test/data/float_specials.csv"
 
+stringsCsv :: FilePath
+stringsCsv = "test/data/strings.csv"
+
 metasynPeopleCsv :: FilePath
 metasynPeopleCsv = "test/data/generated/metasyn_people.csv"
 
@@ -1107,6 +1110,69 @@ main = hspec $ do
                                     Pl.column @Double df "q_higher" `shouldReturn` Right (V.singleton (Just 9.5))
                                     Pl.column @Double df "q_midpoint" `shouldReturn` Right (V.singleton (Just 8.875))
                                     Pl.column @Double df "q_linear" `shouldReturn` Right (V.singleton (Just 8.875))
+
+    describe "Expression DSL string namespace" $ do
+        it "matches and transforms string values" $ do
+            scanResult <- Pl.scanCsv stringsCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    projected <-
+                        Pl.select
+                            [ Pl.alias "contains_li" (Pl.strContainsLiteral (Pl.col "text") (Pl.litText "li"))
+                            , Pl.alias "starts_a" (Pl.strStartsWith (Pl.col "text") (Pl.litText " A"))
+                            , Pl.alias "ends_space" (Pl.strEndsWith (Pl.col "text") (Pl.litText " "))
+                            , Pl.alias "stripped" (Pl.strStrip (Pl.col "text") (Pl.litText " "))
+                            , Pl.alias "lowered" (Pl.strToLowercase (Pl.col "text"))
+                            , Pl.alias "uppered" (Pl.strToUppercase (Pl.col "text"))
+                            , Pl.alias "bytes" (Pl.cast Pl.Int64 (Pl.strLenBytes (Pl.col "text")))
+                            , Pl.alias "chars" (Pl.cast Pl.Int64 (Pl.strLenChars (Pl.col "text")))
+                            ]
+                            lf0
+                    case projected of
+                        Left err -> expectationFailure (show err)
+                        Right lf1 -> do
+                            collected <- Pl.collect lf1
+                            case collected of
+                                Left err -> expectationFailure (show err)
+                                Right df -> do
+                                    Pl.shape df `shouldReturn` Right (4, 8)
+                                    Pl.column @Bool df "contains_li" `shouldReturn` Right (V.fromList [Just True, Just False, Just False, Just False])
+                                    Pl.column @Bool df "starts_a" `shouldReturn` Right (V.fromList [Just True, Just False, Just False, Just False])
+                                    Pl.column @Bool df "ends_space" `shouldReturn` Right (V.fromList [Just True, Just False, Just False, Just False])
+                                    Pl.column @T.Text df "stripped" `shouldReturn` Right (V.fromList [Just "Alice", Just "βeta", Just "CAROL", Just "日本語"])
+                                    Pl.column @T.Text df "lowered" `shouldReturn` Right (V.fromList [Just " alice ", Just "βeta", Just "carol", Just "日本語"])
+                                    Pl.column @T.Text df "uppered" `shouldReturn` Right (V.fromList [Just " ALICE ", Just "ΒETA", Just "CAROL", Just "日本語"])
+                                    Pl.column @Int64 df "bytes" `shouldReturn` Right (V.fromList [Just 7, Just 5, Just 5, Just 9])
+                                    Pl.column @Int64 df "chars" `shouldReturn` Right (V.fromList [Just 7, Just 4, Just 5, Just 3])
+
+        it "slices string values by character offsets" $ do
+            scanResult <- Pl.scanCsv stringsCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    projected <-
+                        Pl.select
+                            [ Pl.alias "slice_0_2" (Pl.strSlice (Pl.col "text") (Pl.litInt 0) (Pl.litInt 2))
+                            , Pl.alias "head_2" (Pl.strHead (Pl.col "text") (Pl.litInt 2))
+                            , Pl.alias "tail_2" (Pl.strTail (Pl.col "text") (Pl.litInt 2))
+                            , Pl.alias "strip_start" (Pl.strStripStart (Pl.col "text") (Pl.litText " "))
+                            , Pl.alias "strip_end" (Pl.strStripEnd (Pl.col "text") (Pl.litText " "))
+                            ]
+                            lf0
+                    case projected of
+                        Left err -> expectationFailure (show err)
+                        Right lf1 -> do
+                            collected <- Pl.collect lf1
+                            case collected of
+                                Left err -> expectationFailure (show err)
+                                Right df -> do
+                                    Pl.shape df `shouldReturn` Right (4, 5)
+                                    Pl.column @T.Text df "slice_0_2" `shouldReturn` Right (V.fromList [Just " A", Just "βe", Just "CA", Just "日本"])
+                                    Pl.column @T.Text df "head_2" `shouldReturn` Right (V.fromList [Just " A", Just "βe", Just "CA", Just "日本"])
+                                    Pl.column @T.Text df "tail_2" `shouldReturn` Right (V.fromList [Just "e ", Just "ta", Just "OL", Just "本語"])
+                                    Pl.column @T.Text df "strip_start" `shouldReturn` Right (V.fromList [Just "Alice ", Just "βeta", Just "CAROL", Just "日本語"])
+                                    Pl.column @T.Text df "strip_end" `shouldReturn` Right (V.fromList [Just " Alice", Just "βeta", Just "CAROL", Just "日本語"])
 
     describe "Polars.IPC" $ do
         it "round-trips a dataframe through IPC bytes" $ do
