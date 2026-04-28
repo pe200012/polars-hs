@@ -190,7 +190,7 @@ Hspec tests in `test/Spec.hs`:
 1. Add a small `test/ArrowRecordBatch.hs` fixture module that allocates a valid struct `ArrowSchema` and `ArrowArray` for two columns: `name :: Utf8` and `age :: Int64`, with nulls.
 2. Import with `Pl.fromArrowRecordBatch (Pl.unsafeArrowRecordBatch schema array)`.
 3. Verify `shape`, `column @Text`, and `column @Int64`.
-4. Verify a second import attempt on the consumed pointers returns `InvalidArgument`.
+4. Verify null schema or array pointers return `InvalidArgument`.
 
 ## Implementation Plan
 
