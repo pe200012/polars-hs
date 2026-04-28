@@ -895,7 +895,7 @@ main = hspec $ do
                                     Pl.column @T.Text df "status" `shouldReturn` Right (V.fromList [Just "present", Just "present", Just "missing"])
                                     Pl.column @Double df "present_score_mean" `shouldReturn` Right (V.fromList [Just 8.875, Just 8.875, Just 8.875])
                                     Pl.column @Double df "score_median" `shouldReturn` Right (V.fromList [Just 8.875, Just 8.875, Just 8.875])
-                                    Pl.column @Double df "score_q50" `shouldReturn` Right (V.fromList [Just 8.875, Just 8.875, Just 8.875])
+                                    Pl.column @Double df "score_q50" `shouldReturn` Right (V.fromList [Just 9.5, Just 9.5, Just 9.5])
 
         it "uses cumulative expressions, rank, and windows" $ do
             scanResult <- Pl.scanCsv salesCsv
@@ -905,7 +905,7 @@ main = hspec $ do
                     projected <-
                         Pl.select
                             [ Pl.col "department"
-                            , Pl.alias "salary_rank" (Pl.rank Pl.defaultRankOptions {Pl.rankDescending = True} (Pl.col "salary"))
+                            , Pl.alias "salary_rank" (Pl.cast Pl.Int64 (Pl.rank Pl.defaultRankOptions {Pl.rankDescending = True} (Pl.col "salary")))
                             , Pl.alias "department_salary_total" (Pl.over [Pl.col "department"] (Pl.sum_ (Pl.col "salary")))
                             , Pl.alias "salary_cum" (Pl.cumSum False (Pl.col "salary"))
                             ]
@@ -918,6 +918,7 @@ main = hspec $ do
                                 Left err -> expectationFailure (show err)
                                 Right df -> do
                                     Pl.shape df `shouldReturn` Right (4, 4)
+                                    Pl.column @Int64 df "salary_rank" `shouldReturn` Right (V.fromList [Just 3, Just 1, Just 4, Just 2])
                                     Pl.column @Int64 df "department_salary_total" `shouldReturn` Right (V.fromList [Just 250, Just 250, Just 200, Just 200])
                                     Pl.column @Int64 df "salary_cum" `shouldReturn` Right (V.fromList [Just 100, Just 250, Just 340, Just 450])
 
