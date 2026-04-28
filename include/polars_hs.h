@@ -189,6 +189,69 @@ int phs_expr_agg(int op,
                  struct phs_expr **out,
                  struct phs_error **err);
 
+int phs_expr_cast(bool strict,
+                  int dtype_code,
+                  const struct phs_expr *expr,
+                  struct phs_expr **out,
+                  struct phs_error **err);
+
+int phs_expr_unary(int op,
+                   const struct phs_expr *expr,
+                   struct phs_expr **out,
+                   struct phs_error **err);
+
+int phs_expr_unary_i64(int op,
+                       int64_t arg,
+                       const struct phs_expr *expr,
+                       struct phs_expr **out,
+                       struct phs_error **err);
+
+int phs_expr_binary_function(int op,
+                             const struct phs_expr *left,
+                             const struct phs_expr *right,
+                             struct phs_expr **out,
+                             struct phs_error **err);
+
+int phs_expr_ternary(const struct phs_expr *predicate,
+                     const struct phs_expr *truthy,
+                     const struct phs_expr *falsy,
+                     struct phs_expr **out,
+                     struct phs_error **err);
+
+int phs_expr_quantile(int method,
+                      const struct phs_expr *quantile,
+                      const struct phs_expr *expr,
+                      struct phs_expr **out,
+                      struct phs_error **err);
+
+int phs_expr_rank(int method,
+                  bool descending,
+                  const struct phs_expr *expr,
+                  struct phs_expr **out,
+                  struct phs_error **err);
+
+int phs_expr_slice(const struct phs_expr *expr,
+                   const struct phs_expr *offset,
+                   const struct phs_expr *length,
+                   struct phs_expr **out,
+                   struct phs_error **err);
+
+int phs_expr_sort_by(const struct phs_expr *expr,
+                     const struct phs_expr *const *by,
+                     uintptr_t by_len,
+                     bool descending,
+                     bool nulls_last,
+                     bool multithreaded,
+                     bool maintain_order,
+                     struct phs_expr **out,
+                     struct phs_error **err);
+
+int phs_expr_over(const struct phs_expr *expr,
+                  const struct phs_expr *const *partition_by,
+                  uintptr_t partition_len,
+                  struct phs_expr **out,
+                  struct phs_error **err);
+
 void phs_dataframe_free(struct phs_dataframe *ptr);
 
 void phs_lazyframe_free(struct phs_lazyframe *ptr);
