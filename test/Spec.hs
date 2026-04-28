@@ -848,6 +848,77 @@ main = hspec $ do
                                                                 Left err -> expectationFailure (show err)
                                                                 Right values -> V.toList values `shouldSatisfy` all isJust
 
+    describe "Expression DSL core" $ do
+        it "casts, fills nulls, and evaluates predicates" $ do
+            scanResult <- Pl.scanCsv valuesCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    projected <-
+                        Pl.select
+                            [ Pl.alias "age_f64" (Pl.cast Pl.Float64 (Pl.fillNull (Pl.litInt 0) (Pl.col "age")))
+                            , Pl.alias "age_was_null" (Pl.isNull (Pl.col "age"))
+                            ]
+                            lf0
+                    case projected of
+                        Left err -> expectationFailure (show err)
+                        Right lf1 -> do
+                            collected <- Pl.collect lf1
+                            case collected of
+                                Left err -> expectationFailure (show err)
+                                Right df -> do
+                                    Pl.shape df `shouldReturn` Right (3, 2)
+                                    Pl.column @Double df "age_f64" `shouldReturn` Right (V.fromList [Just 34.0, Just 0.0, Just 29.0])
+                                    Pl.column @Bool df "age_was_null" `shouldReturn` Right (V.fromList [Just False, Just True, Just False])
+
+        it "uses conditionals, expression filters, and statistics" $ do
+            scanResult <- Pl.scanCsv valuesCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    projected <-
+                        Pl.select
+                            [ Pl.alias "status" (Pl.whenThenOtherwise (Pl.isNull (Pl.col "score")) (Pl.litText "missing") (Pl.litText "present"))
+                            , Pl.alias "present_score_mean" (Pl.mean_ (Pl.exprFilter (Pl.col "score") (Pl.isNotNull (Pl.col "score"))))
+                            , Pl.alias "score_median" (Pl.median_ (Pl.col "score"))
+                            , Pl.alias "score_q50" (Pl.quantile_ Pl.QuantileNearest (Pl.litDouble 0.5) (Pl.col "score"))
+                            ]
+                            lf0
+                    case projected of
+                        Left err -> expectationFailure (show err)
+                        Right lf1 -> do
+                            collected <- Pl.collect lf1
+                            case collected of
+                                Left err -> expectationFailure (show err)
+                                Right df -> do
+                                    Pl.shape df `shouldReturn` Right (3, 4)
+                                    Pl.column @T.Text df "status" `shouldReturn` Right (V.fromList [Just "present", Just "present", Just "missing"])
+                                    Pl.column @Double df "present_score_mean" `shouldReturn` Right (V.fromList [Just 8.875, Just 8.875, Just 8.875])
+
+        it "uses cumulative expressions, rank, sort_by, slice, and windows" $ do
+            scanResult <- Pl.scanCsv salesCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    projected <-
+                        Pl.select
+                            [ Pl.col "department"
+                            , Pl.alias "salary_rank" (Pl.rank Pl.defaultRankOptions {Pl.rankDescending = True} (Pl.col "salary"))
+                            , Pl.alias "department_salary_total" (Pl.over [Pl.col "department"] (Pl.sum_ (Pl.col "salary")))
+                            , Pl.alias "salary_cum" (Pl.cumSum False (Pl.col "salary"))
+                            , Pl.alias "top_names" (Pl.exprSlice (Pl.exprSortBy Pl.defaultExprSortOptions {Pl.exprSortDescending = True} [Pl.col "salary"] (Pl.col "name")) (Pl.litInt 0) (Pl.litInt 2))
+                            ]
+                            lf0
+                    case projected of
+                        Left err -> expectationFailure (show err)
+                        Right lf1 -> do
+                            collected <- Pl.collect lf1
+                            case collected of
+                                Left err -> expectationFailure (show err)
+                                Right df -> do
+                                    Pl.shape df `shouldReturn` Right (4, 5)
+                                    Pl.column @Int64 df "department_salary_total" `shouldReturn` Right (V.fromList [Just 250, Just 250, Just 200, Just 80])
+
     describe "Polars.IPC" $ do
         it "round-trips a dataframe through IPC bytes" $ do
             result <- Pl.readCsv fixtureCsv
