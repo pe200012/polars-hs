@@ -252,6 +252,13 @@ int phs_expr_over(const struct phs_expr *expr,
                   struct phs_expr **out,
                   struct phs_error **err);
 
+int phs_expr_string_function(int op,
+                             const struct phs_expr *expr,
+                             const struct phs_expr *const *args,
+                             uintptr_t arg_len,
+                             struct phs_expr **out,
+                             struct phs_error **err);
+
 void phs_dataframe_free(struct phs_dataframe *ptr);
 
 void phs_lazyframe_free(struct phs_lazyframe *ptr);
