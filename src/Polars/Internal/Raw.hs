@@ -49,6 +49,8 @@ module Polars.Internal.Raw
     , phs_expr_agg
     , phs_expr_alias
     , phs_expr_binary
+    , phs_expr_binary_function
+    , phs_expr_cast
     , phs_expr_col
     , phs_expr_free_finalizer
     , phs_expr_lit_bool
@@ -56,6 +58,14 @@ module Polars.Internal.Raw
     , phs_expr_lit_int
     , phs_expr_lit_text
     , phs_expr_not
+    , phs_expr_over
+    , phs_expr_quantile
+    , phs_expr_rank
+    , phs_expr_slice
+    , phs_expr_sort_by
+    , phs_expr_ternary
+    , phs_expr_unary
+    , phs_expr_unary_i64
     , phs_lazyframe_collect
     , phs_lazyframe_filter
     , phs_lazyframe_free_finalizer
@@ -360,3 +370,33 @@ foreign import ccall unsafe "phs_series_values_f64"
 
 foreign import ccall unsafe "phs_series_values_text"
     phs_series_values_text :: Ptr RawSeries -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_expr_cast"
+    phs_expr_cast :: CBool -> CInt -> Ptr RawExpr -> Ptr (Ptr RawExpr) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_expr_unary"
+    phs_expr_unary :: CInt -> Ptr RawExpr -> Ptr (Ptr RawExpr) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_expr_unary_i64"
+    phs_expr_unary_i64 :: CInt -> CLLong -> Ptr RawExpr -> Ptr (Ptr RawExpr) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_expr_binary_function"
+    phs_expr_binary_function :: CInt -> Ptr RawExpr -> Ptr RawExpr -> Ptr (Ptr RawExpr) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_expr_ternary"
+    phs_expr_ternary :: Ptr RawExpr -> Ptr RawExpr -> Ptr RawExpr -> Ptr (Ptr RawExpr) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_expr_quantile"
+    phs_expr_quantile :: CInt -> Ptr RawExpr -> Ptr RawExpr -> Ptr (Ptr RawExpr) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_expr_rank"
+    phs_expr_rank :: CInt -> CBool -> Ptr RawExpr -> Ptr (Ptr RawExpr) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_expr_slice"
+    phs_expr_slice :: Ptr RawExpr -> Ptr RawExpr -> Ptr RawExpr -> Ptr (Ptr RawExpr) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_expr_sort_by"
+    phs_expr_sort_by :: Ptr RawExpr -> Ptr (Ptr RawExpr) -> CSize -> CBool -> CBool -> CBool -> CBool -> Ptr (Ptr RawExpr) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_expr_over"
+    phs_expr_over :: Ptr RawExpr -> Ptr (Ptr RawExpr) -> CSize -> Ptr (Ptr RawExpr) -> Ptr (Ptr RawError) -> IO CInt
