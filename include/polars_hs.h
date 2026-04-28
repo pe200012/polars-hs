@@ -30,13 +30,17 @@ typedef struct phs_error {
   uint8_t _private[0];
 } phs_error;
 
-typedef struct phs_bytes {
-  uint8_t _private[0];
-} phs_bytes;
-
 typedef struct phs_series {
   uint8_t _private[0];
 } phs_series;
+
+typedef struct phs_arrow_series {
+  uint8_t _private[0];
+} phs_arrow_series;
+
+typedef struct phs_bytes {
+  uint8_t _private[0];
+} phs_bytes;
 
 typedef struct phs_expr {
   uint8_t _private[0];
@@ -59,6 +63,21 @@ void *phs_arrow_record_batch_schema(struct phs_arrow_record_batch *batch);
 void *phs_arrow_record_batch_array(struct phs_arrow_record_batch *batch);
 
 void phs_arrow_record_batch_free(struct phs_arrow_record_batch *batch);
+
+int phs_series_to_arrow_array(const struct phs_series *series,
+                              struct phs_arrow_series **out,
+                              struct phs_error **err);
+
+void *phs_arrow_series_schema(struct phs_arrow_series *series);
+
+void *phs_arrow_series_array(struct phs_arrow_series *series);
+
+void phs_arrow_series_free(struct phs_arrow_series *series);
+
+int phs_series_from_arrow_array(void *schema,
+                                void *array,
+                                struct phs_series **out,
+                                struct phs_error **err);
 
 int phs_dataframe_from_arrow_record_batch(void *schema,
                                           void *array,

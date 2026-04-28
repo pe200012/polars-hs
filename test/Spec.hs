@@ -14,7 +14,7 @@ import Foreign.Ptr (nullPtr)
 import System.Mem (performGC)
 import Test.Hspec
 
-import ArrowRecordBatch (withPeopleRecordBatch)
+import ArrowRecordBatch (withAgeArray, withPeopleRecordBatch)
 import qualified Polars as Pl
 
 fixtureCsv :: FilePath
@@ -675,8 +675,25 @@ main = hspec $ do
                         Pl.column @T.Text df "name" `shouldReturn` Right (V.fromList [Just "Alice", Just "Bob", Nothing])
                         Pl.column @Int64 df "age" `shouldReturn` Right (V.fromList [Just 34, Nothing, Just 29])
 
+        it "imports a standard Arrow array into a Series" $
+            withAgeArray $ \schemaPtr arrayPtr -> do
+                result <- Pl.fromArrowSeries (Pl.unsafeArrowSeries schemaPtr arrayPtr)
+                case result of
+                    Left err -> expectationFailure (show err)
+                    Right series -> do
+                        Pl.seriesName series `shouldReturn` Right "age"
+                        Pl.seriesLength series `shouldReturn` Right 3
+                        Pl.seriesNullCount series `shouldReturn` Right 1
+                        Pl.seriesInt64 series `shouldReturn` Right (V.fromList [Just 34, Nothing, Just 29])
+
         it "reports InvalidArgument for null Arrow RecordBatch pointers" $ do
             result <- Pl.fromArrowRecordBatch (Pl.unsafeArrowRecordBatch nullPtr nullPtr)
+            case result of
+                Right _ -> expectationFailure "expected InvalidArgument for null Arrow pointers"
+                Left err -> Pl.polarsErrorCode err `shouldBe` Pl.InvalidArgument
+
+        it "reports InvalidArgument for null Arrow Series pointers" $ do
+            result <- Pl.fromArrowSeries (Pl.unsafeArrowSeries nullPtr nullPtr)
             case result of
                 Right _ -> expectationFailure "expected InvalidArgument for null Arrow pointers"
                 Left err -> Pl.polarsErrorCode err `shouldBe` Pl.InvalidArgument
@@ -701,6 +718,22 @@ main = hspec $ do
                                     Pl.column @Int64 imported "age" `shouldReturn` Right (V.fromList [Just 34, Nothing, Just 29])
                 (Left err, _) -> expectationFailure (show err)
                 (_, Left err) -> expectationFailure (show err)
+
+        it "exports a Series to an Arrow array and imports it back" $ do
+            seriesResult <- Pl.series @Int64 "age" (V.fromList [Just 34, Nothing, Just 29])
+            case seriesResult of
+                Left err -> expectationFailure (show err)
+                Right series -> do
+                    roundTrip <- Pl.withArrowSeries series $ \schemaPtr arrayPtr ->
+                        Pl.fromArrowSeries (Pl.unsafeArrowSeries schemaPtr arrayPtr)
+                    case roundTrip of
+                        Left err -> expectationFailure (show err)
+                        Right (Left err) -> expectationFailure (show err)
+                        Right (Right imported) -> do
+                            Pl.seriesName imported `shouldReturn` Right "age"
+                            Pl.seriesLength imported `shouldReturn` Right 3
+                            Pl.seriesNullCount imported `shouldReturn` Right 1
+                            Pl.seriesInt64 imported `shouldReturn` Right (V.fromList [Just 34, Nothing, Just 29])
 
     describe "Dataset-driven fixtures" $ do
         it "reads a Polars public iris fixture" $ do

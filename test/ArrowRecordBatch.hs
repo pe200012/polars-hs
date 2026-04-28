@@ -10,7 +10,8 @@ allocation, so Rust can consume the batch through the normal Arrow C Data
 Interface release protocol.
 -}
 module ArrowRecordBatch
-    ( withPeopleRecordBatch
+    ( withAgeArray
+    , withPeopleRecordBatch
     ) where
 
 import Foreign.C.Types (CInt (..))
@@ -25,14 +26,23 @@ data ArrowArray
 foreign import ccall unsafe "phs_test_people_record_batch"
     c_phs_test_people_record_batch :: Ptr (Ptr ()) -> Ptr (Ptr ()) -> IO CInt
 
+foreign import ccall unsafe "phs_test_age_array"
+    c_phs_test_age_array :: Ptr (Ptr ()) -> Ptr (Ptr ()) -> IO CInt
+
 withPeopleRecordBatch :: (Ptr ArrowSchema -> Ptr ArrowArray -> IO a) -> IO a
-withPeopleRecordBatch action =
+withPeopleRecordBatch = withArrowFixture c_phs_test_people_record_batch "RecordBatch"
+
+withAgeArray :: (Ptr ArrowSchema -> Ptr ArrowArray -> IO a) -> IO a
+withAgeArray = withArrowFixture c_phs_test_age_array "age array"
+
+withArrowFixture :: (Ptr (Ptr ()) -> Ptr (Ptr ()) -> IO CInt) -> String -> (Ptr ArrowSchema -> Ptr ArrowArray -> IO a) -> IO a
+withArrowFixture allocate label action =
     alloca $ \schemaOut ->
         alloca $ \arrayOut -> do
-            status <- c_phs_test_people_record_batch schemaOut arrayOut
+            status <- allocate schemaOut arrayOut
             if status == 0
                 then do
                     schema <- peek schemaOut
                     array <- peek arrayOut
                     action (castPtr schema) (castPtr array)
-                else ioError (userError "failed to allocate Arrow RecordBatch fixture")
+                else ioError (userError ("failed to allocate Arrow " <> label <> " fixture"))

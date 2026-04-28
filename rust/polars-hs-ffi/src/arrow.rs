@@ -6,18 +6,31 @@ use polars::prelude::*;
 use polars_arrow::array::StructArray;
 use polars_arrow::datatypes::{ArrowDataType, Field as ArrowField};
 use polars_arrow::ffi::{
-    ArrowArray, ArrowSchema, export_array_to_c, export_field_to_c, import_array_from_c, import_field_from_c,
+    ArrowArray, ArrowSchema, export_array_to_c, export_field_to_c, import_array_from_c,
+    import_field_from_c,
 };
 
 use crate::error::{PhsError, PhsResult, ffi_boundary, phs_error, required_mut};
-use crate::handles::{dataframe_into_raw, dataframe_ref, phs_dataframe};
+use crate::handles::{
+    dataframe_into_raw, dataframe_ref, phs_dataframe, phs_series, series_into_raw, series_ref,
+};
 
 #[repr(C)]
 pub struct phs_arrow_record_batch {
     _private: [u8; 0],
 }
 
+#[repr(C)]
+pub struct phs_arrow_series {
+    _private: [u8; 0],
+}
+
 struct ArrowRecordBatchHandle {
+    schema: Box<ArrowSchema>,
+    array: Box<ArrowArray>,
+}
+
+struct ArrowSeriesHandle {
     schema: Box<ArrowSchema>,
     array: Box<ArrowArray>,
 }
@@ -72,13 +85,16 @@ pub unsafe extern "C" fn phs_dataframe_to_arrow_record_batch(
         let field = ArrowField::new("".into(), dtype, false);
         let schema = Box::new(export_field_to_c(&field));
         let array = Box::new(export_array_to_c(Box::new(struct_array)));
-        *out = Box::into_raw(Box::new(ArrowRecordBatchHandle { schema, array })) as *mut phs_arrow_record_batch;
+        *out = Box::into_raw(Box::new(ArrowRecordBatchHandle { schema, array }))
+            as *mut phs_arrow_record_batch;
         Ok(())
     })
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn phs_arrow_record_batch_schema(batch: *mut phs_arrow_record_batch) -> *mut c_void {
+pub unsafe extern "C" fn phs_arrow_record_batch_schema(
+    batch: *mut phs_arrow_record_batch,
+) -> *mut c_void {
     let Some(handle) = (unsafe { arrow_record_batch_handle(batch) }) else {
         return ptr::null_mut();
     };
@@ -86,7 +102,9 @@ pub unsafe extern "C" fn phs_arrow_record_batch_schema(batch: *mut phs_arrow_rec
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn phs_arrow_record_batch_array(batch: *mut phs_arrow_record_batch) -> *mut c_void {
+pub unsafe extern "C" fn phs_arrow_record_batch_array(
+    batch: *mut phs_arrow_record_batch,
+) -> *mut c_void {
     let Some(handle) = (unsafe { arrow_record_batch_handle(batch) }) else {
         return ptr::null_mut();
     };
@@ -103,6 +121,96 @@ pub unsafe extern "C" fn phs_arrow_record_batch_free(batch: *mut phs_arrow_recor
         release_schema(handle.schema.as_mut());
         release_array(handle.array.as_mut());
     }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_to_arrow_array(
+    series: *const phs_series,
+    out: *mut *mut phs_arrow_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { series_ref(series) }?;
+        let series = handle.value.rechunk();
+        let compat_level = CompatLevel::newest();
+        let field = series.field().to_arrow(compat_level);
+        let array = series.to_arrow(0, compat_level);
+        let schema = Box::new(export_field_to_c(&field));
+        let array = Box::new(export_array_to_c(array));
+        *out =
+            Box::into_raw(Box::new(ArrowSeriesHandle { schema, array })) as *mut phs_arrow_series;
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_arrow_series_schema(series: *mut phs_arrow_series) -> *mut c_void {
+    let Some(handle) = (unsafe { arrow_series_handle(series) }) else {
+        return ptr::null_mut();
+    };
+    handle.schema.as_mut() as *mut ArrowSchema as *mut c_void
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_arrow_series_array(series: *mut phs_arrow_series) -> *mut c_void {
+    let Some(handle) = (unsafe { arrow_series_handle(series) }) else {
+        return ptr::null_mut();
+    };
+    handle.array.as_mut() as *mut ArrowArray as *mut c_void
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_arrow_series_free(series: *mut phs_arrow_series) {
+    if series.is_null() {
+        return;
+    }
+    let mut handle = unsafe { Box::from_raw(series as *mut ArrowSeriesHandle) };
+    unsafe {
+        release_schema(handle.schema.as_mut());
+        release_array(handle.array.as_mut());
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_from_arrow_array(
+    schema: *mut c_void,
+    array: *mut c_void,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let schema = required_arrow_ptr::<ArrowSchema>(schema, "schema")?;
+        let array = required_arrow_ptr::<ArrowArray>(array, "array")?;
+        unsafe { ensure_schema_live(schema)? };
+        unsafe { ensure_array_live(array)? };
+
+        let field_result = unsafe { import_field_from_c(&*schema) };
+        unsafe { release_schema(schema) };
+        let field = match field_result {
+            Ok(field) => field,
+            Err(err) => {
+                unsafe { release_array(array) };
+                return Err(err.into());
+            }
+        };
+
+        let array_value = unsafe { take_array(array)? };
+        let imported = unsafe { import_array_from_c(array_value, field.dtype.clone()) }?;
+        let series = unsafe {
+            Series::_try_from_arrow_unchecked_with_md(
+                field.name.clone(),
+                vec![imported],
+                field.dtype(),
+                field.metadata.as_deref(),
+            )?
+        };
+        *out = series_into_raw(series);
+        Ok(())
+    })
 }
 
 #[unsafe(no_mangle)]
@@ -127,11 +235,13 @@ pub unsafe extern "C" fn phs_dataframe_from_arrow_record_batch(
             Err(err) => {
                 unsafe { release_array(array) };
                 return Err(err.into());
-            },
+            }
         };
         if !matches!(&field.dtype, ArrowDataType::Struct(_)) {
             unsafe { release_array(array) };
-            return Err(PhsError::invalid_argument("Arrow RecordBatch schema must be a struct"));
+            return Err(PhsError::invalid_argument(
+                "Arrow RecordBatch schema must be a struct",
+            ));
         }
 
         let array_value = unsafe { take_array(array)? };
@@ -142,8 +252,13 @@ pub unsafe extern "C" fn phs_dataframe_from_arrow_record_batch(
             .ok_or_else(|| PhsError::invalid_argument("Arrow RecordBatch array must be a struct"))?
             .clone();
         let (fields, _, arrays, validity) = struct_array.into_data();
-        if validity.as_ref().is_some_and(|bitmap| bitmap.unset_bits() > 0) {
-            return Err(PhsError::invalid_argument("Arrow RecordBatch struct nulls are unsupported"));
+        if validity
+            .as_ref()
+            .is_some_and(|bitmap| bitmap.unset_bits() > 0)
+        {
+            return Err(PhsError::invalid_argument(
+                "Arrow RecordBatch struct nulls are unsupported",
+            ));
         }
 
         let mut columns = Vec::with_capacity(fields.len());
@@ -165,17 +280,31 @@ pub unsafe extern "C" fn phs_dataframe_from_arrow_record_batch(
 
 fn required_arrow_ptr<T>(ptr: *mut c_void, name: &str) -> PhsResult<*mut T> {
     if ptr.is_null() {
-        Err(PhsError::invalid_argument(format!("{name} pointer was null")))
+        Err(PhsError::invalid_argument(format!(
+            "{name} pointer was null"
+        )))
     } else {
         Ok(ptr.cast::<T>())
     }
 }
 
-unsafe fn arrow_record_batch_handle<'a>(batch: *mut phs_arrow_record_batch) -> Option<&'a mut ArrowRecordBatchHandle> {
+unsafe fn arrow_record_batch_handle<'a>(
+    batch: *mut phs_arrow_record_batch,
+) -> Option<&'a mut ArrowRecordBatchHandle> {
     if batch.is_null() {
         None
     } else {
         Some(unsafe { &mut *(batch as *mut ArrowRecordBatchHandle) })
+    }
+}
+
+unsafe fn arrow_series_handle<'a>(
+    series: *mut phs_arrow_series,
+) -> Option<&'a mut ArrowSeriesHandle> {
+    if series.is_null() {
+        None
+    } else {
+        Some(unsafe { &mut *(series as *mut ArrowSeriesHandle) })
     }
 }
 
@@ -219,19 +348,30 @@ mod tests {
     use super::*;
     use crate::dataframe::{phs_dataframe_column_i64, phs_dataframe_shape};
     use crate::error::{PHS_INVALID_ARGUMENT, PHS_OK, PHS_POLARS_ERROR, phs_error_free};
-    use crate::handles::phs_dataframe_free;
+    use crate::handles::{phs_dataframe_free, phs_series_free};
     use polars_arrow::array::{Array, Int64Array, Utf8Array};
     use polars_arrow::datatypes::{ArrowDataType, Field};
     use polars_arrow::ffi::{export_array_to_c, export_field_to_c};
 
     fn make_record_batch(names: [Field; 2]) -> (ArrowSchema, ArrowArray) {
-        let name_array = Box::new(Utf8Array::<i32>::from([Some("Alice"), Some("Bob"), None])) as Box<dyn Array>;
-        let age_array = Box::new(Int64Array::from(&[Some(34), None, Some(29)])) as Box<dyn Array>;
+        let name_array =
+            Box::new(Utf8Array::<i32>::from([Some("Alice"), Some("Bob"), None])) as Box<dyn Array>;
+        let age_array = Box::new(Int64Array::from(&[Some(34), None, Some(29)]))
+            as Box<dyn Array>;
         let fields = Vec::from(names);
         let dtype = ArrowDataType::Struct(fields.clone());
         let struct_array = StructArray::new(dtype.clone(), 3, vec![name_array, age_array], None);
         let field = Field::new("batch".into(), dtype, false);
-        (export_field_to_c(&field), export_array_to_c(Box::new(struct_array)))
+        (
+            export_field_to_c(&field),
+            export_array_to_c(Box::new(struct_array)),
+        )
+    }
+
+    fn make_age_array() -> (ArrowSchema, ArrowArray) {
+        let age_array = Box::new(Int64Array::from(&[Some(34), None, Some(29)])) as Box<dyn Array>;
+        let field = Field::new("age".into(), ArrowDataType::Int64, true);
+        (export_field_to_c(&field), export_array_to_c(age_array))
     }
 
     fn default_fields() -> [Field; 2] {
@@ -247,12 +387,26 @@ mod tests {
         dataframe_into_raw(DataFrame::new_infer_height(vec![name.into(), age.into()]).unwrap())
     }
 
+    fn make_export_series() -> *mut phs_series {
+        let age = Series::new("age".into(), vec![Some(34_i64), None, Some(29_i64)]);
+        series_into_raw(age)
+    }
+
+    fn make_empty_export_series() -> *mut phs_series {
+        let values: Vec<Option<i64>> = Vec::new();
+        let age = Series::new("age".into(), values);
+        series_into_raw(age)
+    }
+
     #[test]
     fn arrow_record_batch_export_returns_live_pointers() {
         let df = make_export_dataframe();
         let mut batch = ptr::null_mut();
         let mut err = ptr::null_mut();
-        assert_eq!(unsafe { phs_dataframe_to_arrow_record_batch(df, &mut batch, &mut err) }, PHS_OK);
+        assert_eq!(
+            unsafe { phs_dataframe_to_arrow_record_batch(df, &mut batch, &mut err) },
+            PHS_OK
+        );
         assert!(!batch.is_null());
         assert!(!unsafe { phs_arrow_record_batch_schema(batch) }.is_null());
         assert!(!unsafe { phs_arrow_record_batch_array(batch) }.is_null());
@@ -267,22 +421,125 @@ mod tests {
         let df = make_export_dataframe();
         let mut batch = ptr::null_mut();
         let mut err = ptr::null_mut();
-        assert_eq!(unsafe { phs_dataframe_to_arrow_record_batch(df, &mut batch, &mut err) }, PHS_OK);
+        assert_eq!(
+            unsafe { phs_dataframe_to_arrow_record_batch(df, &mut batch, &mut err) },
+            PHS_OK
+        );
 
         let schema = unsafe { phs_arrow_record_batch_schema(batch) };
         let array = unsafe { phs_arrow_record_batch_array(batch) };
         let mut imported = ptr::null_mut();
-        assert_eq!(unsafe { phs_dataframe_from_arrow_record_batch(schema, array, &mut imported, &mut err) }, PHS_OK);
+        assert_eq!(
+            unsafe {
+                phs_dataframe_from_arrow_record_batch(schema, array, &mut imported, &mut err)
+            },
+            PHS_OK
+        );
 
         let mut height = 0;
         let mut width = 0;
-        assert_eq!(unsafe { phs_dataframe_shape(imported, &mut height, &mut width, &mut err) }, PHS_OK);
+        assert_eq!(
+            unsafe { phs_dataframe_shape(imported, &mut height, &mut width, &mut err) },
+            PHS_OK
+        );
         assert_eq!((height, width), (3, 2));
 
         unsafe {
             phs_arrow_record_batch_free(batch);
             phs_dataframe_free(df);
             phs_dataframe_free(imported);
+        }
+    }
+
+    #[test]
+    fn arrow_series_export_returns_live_pointers() {
+        let series = make_export_series();
+        let mut exported = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_series_to_arrow_array(series, &mut exported, &mut err) },
+            PHS_OK
+        );
+        assert!(!exported.is_null());
+        assert!(!unsafe { phs_arrow_series_schema(exported) }.is_null());
+        assert!(!unsafe { phs_arrow_series_array(exported) }.is_null());
+        unsafe {
+            phs_arrow_series_free(exported);
+            phs_series_free(series);
+        }
+    }
+
+    #[test]
+    fn arrow_series_export_import_roundtrip_preserves_values() {
+        let series = make_export_series();
+        let mut exported = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_series_to_arrow_array(series, &mut exported, &mut err) },
+            PHS_OK
+        );
+
+        let schema = unsafe { phs_arrow_series_schema(exported) };
+        let array = unsafe { phs_arrow_series_array(exported) };
+        let mut imported = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_series_from_arrow_array(schema, array, &mut imported, &mut err) },
+            PHS_OK
+        );
+        let imported_ref = unsafe { series_ref(imported) }.unwrap();
+        assert_eq!(imported_ref.value.name().as_str(), "age");
+        assert_eq!(imported_ref.value.dtype(), &DataType::Int64);
+        assert_eq!(
+            imported_ref
+                .value
+                .i64()
+                .unwrap()
+                .into_iter()
+                .collect::<Vec<_>>(),
+            vec![Some(34), None, Some(29)]
+        );
+
+        unsafe {
+            phs_arrow_series_free(exported);
+            phs_series_free(series);
+            phs_series_free(imported);
+        }
+    }
+
+    #[test]
+    fn arrow_series_export_import_roundtrip_preserves_empty_series() {
+        let series = make_empty_export_series();
+        let mut exported = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_series_to_arrow_array(series, &mut exported, &mut err) },
+            PHS_OK
+        );
+
+        let schema = unsafe { phs_arrow_series_schema(exported) };
+        let array = unsafe { phs_arrow_series_array(exported) };
+        let mut imported = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_series_from_arrow_array(schema, array, &mut imported, &mut err) },
+            PHS_OK
+        );
+        let imported_ref = unsafe { series_ref(imported) }.unwrap();
+        assert_eq!(imported_ref.value.name().as_str(), "age");
+        assert_eq!(imported_ref.value.len(), 0);
+        assert_eq!(
+            imported_ref
+                .value
+                .i64()
+                .unwrap()
+                .into_iter()
+                .collect::<Vec<_>>(),
+            Vec::<Option<i64>>::new()
+        );
+
+        unsafe {
+            phs_arrow_series_free(exported);
+            phs_series_free(series);
+            phs_series_free(imported);
         }
     }
 
@@ -304,11 +561,17 @@ mod tests {
         );
         let mut height = 0;
         let mut width = 0;
-        assert_eq!(unsafe { phs_dataframe_shape(df, &mut height, &mut width, &mut err) }, PHS_OK);
+        assert_eq!(
+            unsafe { phs_dataframe_shape(df, &mut height, &mut width, &mut err) },
+            PHS_OK
+        );
         assert_eq!((height, width), (3, 2));
         let column_name = std::ffi::CString::new("age").unwrap();
         let mut bytes = ptr::null_mut();
-        assert_eq!(unsafe { phs_dataframe_column_i64(df, column_name.as_ptr(), &mut bytes, &mut err) }, PHS_OK);
+        assert_eq!(
+            unsafe { phs_dataframe_column_i64(df, column_name.as_ptr(), &mut bytes, &mut err) },
+            PHS_OK
+        );
         unsafe {
             crate::bytes::phs_bytes_free(bytes);
             phs_dataframe_free(df);
@@ -316,9 +579,61 @@ mod tests {
     }
 
     #[test]
+    fn arrow_series_import_builds_series() {
+        let (mut schema, mut array) = make_age_array();
+        let mut series = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(
+            unsafe {
+                phs_series_from_arrow_array(
+                    (&mut schema as *mut ArrowSchema).cast(),
+                    (&mut array as *mut ArrowArray).cast(),
+                    &mut series,
+                    &mut err,
+                )
+            },
+            PHS_OK
+        );
+        let series_ref = unsafe { series_ref(series) }.unwrap();
+        assert_eq!(series_ref.value.name().as_str(), "age");
+        assert_eq!(series_ref.value.dtype(), &DataType::Int64);
+        assert_eq!(
+            series_ref
+                .value
+                .i64()
+                .unwrap()
+                .into_iter()
+                .collect::<Vec<_>>(),
+            vec![Some(34), None, Some(29)]
+        );
+        unsafe { phs_series_free(series) };
+    }
+
+    #[test]
+    fn arrow_series_import_reports_null_pointers() {
+        let mut series = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(
+            unsafe {
+                phs_series_from_arrow_array(ptr::null_mut(), ptr::null_mut(), &mut series, &mut err)
+            },
+            PHS_INVALID_ARGUMENT
+        );
+        assert!(series.is_null());
+        assert!(!err.is_null());
+        unsafe { phs_error_free(err) };
+    }
+
+    #[test]
     fn arrow_record_batch_import_rejects_released_array() {
         let (mut schema, mut array) = make_record_batch(default_fields());
-        unsafe { (&mut array as *mut ArrowArray).cast::<CArrowArray>().as_mut().unwrap().release = None };
+        unsafe {
+            (&mut array as *mut ArrowArray)
+                .cast::<CArrowArray>()
+                .as_mut()
+                .unwrap()
+                .release = None
+        };
         let mut df = ptr::null_mut();
         let mut err = ptr::null_mut();
         let status = unsafe {

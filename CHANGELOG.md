@@ -28,6 +28,7 @@ and this project adheres to the
 - Series and DataFrame constructors from Haskell vectors with null preservation.
 - Arrow C Data Interface RecordBatch import for managed DataFrame construction.
 - Arrow C Data Interface RecordBatch export from managed DataFrames.
+- Arrow C Data Interface single-array import/export for managed Series.
 - Dataset-driven smoke fixtures generated from Polars public data and Metasyn synthetic data.
 - Dataset-driven lazy query smoke tests for generated CSV fixtures.
 - Opt-in NYC Taxi Parquet real-world test script with lazy grouped query coverage.

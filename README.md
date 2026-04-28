@@ -252,7 +252,7 @@ stack runghc examples/construction.hs
 ## Public modules
 
 - `Polars` re-exports the MVP API.
-- `Polars.Arrow` provides Arrow C Data Interface RecordBatch import and export.
+- `Polars.Arrow` provides Arrow C Data Interface RecordBatch and Series import/export.
 - `Polars.DataFrame` provides `dataFrame`, eager readers, shape/schema queries, head/tail, text rendering, and IPC byte conversion.
 - `Polars.Column` provides `column @Series` and typed `column @Bool/@Int64/@Double/@Text` extraction with null preservation.
 - `Polars.Series` provides `series @xxx`, Series metadata, slicing, DataFrame conversion, typed value readers, and transforms.

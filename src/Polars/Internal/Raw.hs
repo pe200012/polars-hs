@@ -9,6 +9,7 @@ managed handles, scoped CString lifetimes, and typed error conversion.
 -}
 module Polars.Internal.Raw
     ( RawArrowRecordBatch
+    , RawArrowSeries
     , RawBytes
     , RawDataFrame
     , RawError
@@ -20,6 +21,9 @@ module Polars.Internal.Raw
     , phs_arrow_record_batch_array
     , phs_arrow_record_batch_free_finalizer
     , phs_arrow_record_batch_schema
+    , phs_arrow_series_array
+    , phs_arrow_series_free_finalizer
+    , phs_arrow_series_schema
     , phs_bytes_len
     , phs_dataframe_column
     , phs_dataframe_column_bool
@@ -84,6 +88,7 @@ module Polars.Internal.Raw
     , phs_series_shift
     , phs_series_sort
     , phs_series_tail
+    , phs_series_to_arrow_array
     , phs_series_to_frame
     , phs_series_unique
     , phs_series_unique_stable
@@ -91,6 +96,7 @@ module Polars.Internal.Raw
     , phs_series_values_f64
     , phs_series_values_i64
     , phs_series_values_text
+    , phs_series_from_arrow_array
     , phs_write_ipc_file
     ) where
 
@@ -101,6 +107,7 @@ import Foreign.ForeignPtr (FinalizerPtr)
 import Foreign.Ptr (Ptr)
 
 data RawArrowRecordBatch
+data RawArrowSeries
 data RawBytes
 data RawDataFrame
 data RawError
@@ -125,6 +132,15 @@ foreign import ccall unsafe "phs_arrow_record_batch_array"
 
 foreign import ccall unsafe "&phs_arrow_record_batch_free"
     phs_arrow_record_batch_free_finalizer :: FinalizerPtr RawArrowRecordBatch
+
+foreign import ccall unsafe "phs_arrow_series_schema"
+    phs_arrow_series_schema :: Ptr RawArrowSeries -> IO (Ptr ())
+
+foreign import ccall unsafe "phs_arrow_series_array"
+    phs_arrow_series_array :: Ptr RawArrowSeries -> IO (Ptr ())
+
+foreign import ccall unsafe "&phs_arrow_series_free"
+    phs_arrow_series_free_finalizer :: FinalizerPtr RawArrowSeries
 
 foreign import ccall unsafe "phs_bytes_len"
     phs_bytes_len :: Ptr RawBytes -> IO CSize
@@ -161,6 +177,12 @@ foreign import ccall unsafe "phs_dataframe_from_arrow_record_batch"
 
 foreign import ccall unsafe "phs_dataframe_to_arrow_record_batch"
     phs_dataframe_to_arrow_record_batch :: Ptr RawDataFrame -> Ptr (Ptr RawArrowRecordBatch) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_from_arrow_array"
+    phs_series_from_arrow_array :: Ptr () -> Ptr () -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_to_arrow_array"
+    phs_series_to_arrow_array :: Ptr RawSeries -> Ptr (Ptr RawArrowSeries) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_dataframe_shape"
     phs_dataframe_shape :: Ptr RawDataFrame -> Ptr Word64 -> Ptr Word64 -> Ptr (Ptr RawError) -> IO CInt

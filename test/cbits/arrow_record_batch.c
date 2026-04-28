@@ -261,3 +261,23 @@ int phs_test_people_record_batch(void **schema_out, void **array_out) {
     *array_out = array;
     return 0;
 }
+
+int phs_test_age_array(void **schema_out, void **array_out) {
+    if (schema_out == NULL || array_out == NULL) {
+        return -1;
+    }
+    *schema_out = NULL;
+    *array_out = NULL;
+
+    struct ArrowSchema *schema = make_schema("l", "age", 1, 0, NULL);
+    struct ArrowArray *array = make_int64_age_array();
+    if (schema == NULL || array == NULL) {
+        if (schema != NULL && schema->release != NULL) schema->release(schema);
+        if (array != NULL && array->release != NULL) array->release(array);
+        return -1;
+    }
+
+    *schema_out = schema;
+    *array_out = array;
+    return 0;
+}
