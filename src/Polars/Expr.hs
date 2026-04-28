@@ -248,7 +248,7 @@ isInfinite = UnaryExpr IsInfinite
 fillNull, fillNan, exprFilter :: Expr -> Expr -> Expr
 fillNull fillValue input = BinaryFunctionExpr FillNull input fillValue
 fillNan fillValue input = BinaryFunctionExpr FillNan input fillValue
-exprFilter input predicate = BinaryFunctionExpr ExprFilter input predicate
+exprFilter = BinaryFunctionExpr ExprFilter
 
 whenThenOtherwise :: Expr -> Expr -> Expr -> Expr
 whenThenOtherwise = TernaryExpr

@@ -308,7 +308,7 @@ pub unsafe extern "C" fn phs_expr_unary_i64(
         let expr = unsafe { expr_ref(expr) }?.value.clone();
         let result = match op {
             0 | 1 => {
-                if arg < 0 || arg > 255 {
+                if !(0..=255).contains(&arg) {
                     return Err(PhsError::invalid_argument(format!(
                         "ddof {arg} is out of range, must be 0..=255"
                     )));

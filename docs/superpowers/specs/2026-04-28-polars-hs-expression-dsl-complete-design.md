@@ -360,13 +360,21 @@ Phase 1 delivers complete Foundation/Core expression coverage as specified in th
 
 - **Hspec/Rust coverage:** Hspec core Expression DSL tests exercise `select` over `test/data/values.csv` and `test/data/sales.csv`. Rust ABI tests in `rust/polars-hs-ffi` cover opcode dispatch, error propagation, and edge cases (null inputs, empty partition lists, invalid dtype codes).
 
-### Verification results (so far)
+### Verification results (final, Task 6)
 
 ```text
-cargo test --manifest-path rust/polars-hs-ffi/Cargo.toml: 55 passed
+cargo test --manifest-path rust/polars-hs-ffi/Cargo.toml: 55 passed, 0 failed
+cargo clippy --manifest-path rust/polars-hs-ffi/Cargo.toml -- -D warnings: passed (no warnings)
 stack test --fast: 55 examples, 0 failures
+hlint src app test: No hints
+stack runghc test/NYCTaxi.hs: passed (no errors)
+stack runghc examples/iris.hs: passed
+stack runghc examples/groupby.hs: passed
+stack runghc examples/join.hs: passed
+stack runghc examples/columns.hs: passed
+stack runghc examples/series.hs: passed
+stack runghc examples/construction.hs: passed
 ```
 
-### Notes
-
-Final full verification (including `hlint src app test` and `cargo clippy`) is performed in Task 6.
+Marker scan for incomplete-implementation tags: clean across src, test, rust, docs.
+`git diff --check`: passes (no whitespace errors).
