@@ -32,5 +32,6 @@ and this project adheres to the
 - Dataset-driven smoke fixtures generated from Polars public data and Metasyn synthetic data.
 - Dataset-driven lazy query smoke tests for generated CSV fixtures.
 - Opt-in NYC Taxi Parquet real-world test script with lazy grouped query coverage.
+- Core Expression DSL coverage for casts, predicates, fills, conditionals, statistics, cumulative expressions, ranking, expression sorting/filtering/slicing, and window `over`.
 
 ## 0.1.0.0 - YYYY-MM-DD

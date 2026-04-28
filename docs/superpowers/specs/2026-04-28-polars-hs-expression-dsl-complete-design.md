@@ -345,3 +345,28 @@ Pl.withColumns
 ## Approval State
 
 The user selected full upstream expression coverage and approved the phased design direction. This design log defines the full route and makes Phase 1 the first implementation target.
+
+## Implementation Results
+
+### Phase 1: Foundation/Core — Implemented
+
+Phase 1 delivers complete Foundation/Core expression coverage as specified in the design:
+
+- **Public APIs added in `Polars.Expr`:** `cast`, `strictCast`, `isNull`, `isNotNull`, `isNan`, `isNotNan`, `isFinite`, `isInfinite`, `fillNull`, `fillNan`, `whenThenOtherwise`, `median_`, `std_`, `var_`, `quantile_`, `nUnique_`, `cumCount`, `cumSum`, `cumProd`, `cumMin`, `cumMax`, `rank`, `exprSlice`, `exprFilter`, `exprSortBy`, `over`, and supporting type/data-type definitions (`DataType`, `QuantileMethod`, `RankOptions`, `RankMethod`, `ExprSortOptions`).
+
+- **Rust ABI helpers added:** ABI functions `phs_expr_cast`, `phs_expr_unary`, `phs_expr_unary_i64`, `phs_expr_binary_function`, `phs_expr_ternary`, `phs_expr_slice`, `phs_expr_sort_by`, and `phs_expr_over` are implemented in `rust/polars-hs-ffi/src/expr.rs` and exposed through `include/polars_hs.h`. Opcode constants cover all core expression families.
+
+- **Haskell compiler support added:** `Polars.Internal.Expr` compiles new `Expr` constructors (`Cast`, `UnaryExpr`, `BinaryFunctionExpr`, `TernaryExpr`, `StdExpr`, `VarExpr`, `QuantileExpr`, `RankExpr`, `SliceExpr`, `SortByExpr`, `OverExpr`) to the corresponding Rust ABI helpers. Raw FFI bindings are declared in `Polars.Internal.Raw`.
+
+- **Hspec/Rust coverage:** Hspec core Expression DSL tests exercise `select` over `test/data/values.csv` and `test/data/sales.csv`. Rust ABI tests in `rust/polars-hs-ffi` cover opcode dispatch, error propagation, and edge cases (null inputs, empty partition lists, invalid dtype codes).
+
+### Verification results (so far)
+
+```text
+cargo test --manifest-path rust/polars-hs-ffi/Cargo.toml: 55 passed
+stack test --fast: 55 examples, 0 failures
+```
+
+### Notes
+
+Final full verification (including `hlint src app test` and `cargo clippy`) is performed in Task 6.
