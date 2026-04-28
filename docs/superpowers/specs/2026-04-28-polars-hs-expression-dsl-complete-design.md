@@ -309,7 +309,7 @@ Deliverables:
 
 ```haskell
 Pl.select
-  [ Pl.alias "age_filled" (Pl.fillNull (Pl.col "age") (Pl.litInt 0))
+  [ Pl.alias "age_filled" (Pl.fillNull (Pl.litInt 0) (Pl.col "age"))
   , Pl.alias "score_rank" (Pl.rank Pl.defaultRankOptions (Pl.col "score"))
   ]
 ```
@@ -358,14 +358,16 @@ Phase 1 delivers complete Foundation/Core expression coverage as specified in th
 
 - **Haskell compiler support added:** `Polars.Internal.Expr` compiles new `Expr` constructors (`Cast`, `UnaryExpr`, `BinaryFunctionExpr`, `TernaryExpr`, `StdExpr`, `VarExpr`, `QuantileExpr`, `RankExpr`, `SliceExpr`, `SortByExpr`, `OverExpr`) to the corresponding Rust ABI helpers. Raw FFI bindings are declared in `Polars.Internal.Raw`.
 
-- **Hspec/Rust coverage:** Hspec core Expression DSL tests exercise `select` over `test/data/values.csv` and `test/data/sales.csv`. Rust ABI tests in `rust/polars-hs-ffi` cover opcode dispatch, error propagation, and edge cases (null inputs, empty partition lists, invalid dtype codes).
+- **Hspec/Rust coverage:** Hspec core Expression DSL tests exercise `select` over `test/data/values.csv` and `test/data/sales.csv`. Rust ABI tests in `rust/polars-hs-ffi` cover opcode dispatch, error propagation, and edge cases (invalid dtype codes).
+
+- **Final review additions:** Expanded Hspec result-level coverage for strict casts, NaN predicates and fill, std/var/nUnique, cumulative variants (cumCount/cumProd/cumMin/cumMax with reverse cumSum), and additional quantile methods (QuantileLower, QuantileHigher, QuantileMidpoint, QuantileLinear). Removed unused future-looking Polars Cargo features and corrected `fillNull` example argument order.
 
 ### Verification results (final, Task 6)
 
 ```text
 cargo test --manifest-path rust/polars-hs-ffi/Cargo.toml: 55 passed, 0 failed
 cargo clippy --manifest-path rust/polars-hs-ffi/Cargo.toml -- -D warnings: passed (no warnings)
-stack test --fast: 55 examples, 0 failures
+stack test --fast: 60 examples, 0 failures
 hlint src app test: No hints
 stack runghc test/NYCTaxi.hs: passed (no errors)
 stack runghc examples/iris.hs: passed

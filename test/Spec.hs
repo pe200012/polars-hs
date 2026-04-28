@@ -7,6 +7,7 @@ import Prelude hiding (filter, head)
 
 import qualified Data.ByteString as BS
 import Data.Int (Int64)
+import Data.Foldable (forM_)
 import Data.Maybe (isJust)
 import qualified Data.Text as T
 import qualified Data.Vector as V
@@ -16,6 +17,29 @@ import Test.Hspec
 
 import ArrowRecordBatch (withAgeArray, withPeopleRecordBatch)
 import qualified Polars as Pl
+
+-- | Compare two vectors of Maybe Double with approximate tolerance for
+-- finite values, exact comparison for Nothing, and sign-sensitivity for
+-- infinities. NaN is matched via isNaN.
+shouldApproximate :: Double -> V.Vector (Maybe Double) -> V.Vector (Maybe Double) -> IO ()
+shouldApproximate tolerance expected actual = do
+    V.length actual `shouldBe` V.length expected
+    V.zip actual expected `forM_` \(actualVal, expectedVal) ->
+        case (actualVal, expectedVal) of
+            (Just a, Just e)
+                | aIsNaN a && aIsNaN e -> pure ()
+                | aIsNaN a || aIsNaN e ->
+                    expectationFailure ("NaN mismatch: " <> show actualVal <> " vs " <> show expectedVal)
+                | aIsInfinite a || aIsInfinite e ->
+                    if a == e then pure ()
+                    else expectationFailure ("Inf mismatch: " <> show actualVal <> " vs " <> show expectedVal)
+                | otherwise ->
+                    abs (a - e) `shouldSatisfy` (<= tolerance)
+            (Nothing, Nothing) -> pure ()
+            _ -> expectationFailure ("null mismatch: " <> show actualVal <> " vs " <> show expectedVal)
+  where
+    aIsNaN d = d /= d
+    aIsInfinite = isInfinite
 
 fixtureCsv :: FilePath
 fixtureCsv = "test/data/people.csv"
@@ -34,6 +58,9 @@ valuesCsv = "test/data/values.csv"
 
 polarsIrisCsv :: FilePath
 polarsIrisCsv = "test/data/generated/polars_iris.csv"
+
+floatSpecialsCsv :: FilePath
+floatSpecialsCsv = "test/data/float_specials.csv"
 
 metasynPeopleCsv :: FilePath
 metasynPeopleCsv = "test/data/generated/metasyn_people.csv"
@@ -941,6 +968,145 @@ main = hspec $ do
                                 Right df -> do
                                     Pl.shape df `shouldReturn` Right (2, 1)
                                     Pl.column @T.Text df "top_names" `shouldReturn` Right (V.fromList [Just "Bob", Just "Dave"])
+
+        it "uses strictCast with typed extraction" $ do
+            scanResult <- Pl.scanCsv valuesCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    projected <-
+                        Pl.select
+                            [ Pl.alias "score_i64" (Pl.strictCast Pl.Int64 (Pl.col "score"))
+                            , Pl.alias "score_f64" (Pl.strictCast Pl.Float64 (Pl.col "score"))
+                            ]
+                            lf0
+                    case projected of
+                        Left err -> expectationFailure (show err)
+                        Right lf1 -> do
+                            collected <- Pl.collect lf1
+                            case collected of
+                                Left err -> expectationFailure (show err)
+                                Right df -> do
+                                    Pl.shape df `shouldReturn` Right (3, 2)
+                                    Pl.column @Int64 df "score_i64" `shouldReturn` Right (V.fromList [Just 9, Just 8, Nothing])
+                                    Pl.column @Double df "score_f64" `shouldReturn` Right (V.fromList [Just 9.5, Just 8.25, Nothing])
+
+        it "uses fillNan, isNan, isNotNan, isFinite, and isInfinite" $ do
+            scanResult <- Pl.scanCsv floatSpecialsCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    projected <-
+                        Pl.select
+                            [ Pl.alias "is_nan" (Pl.isNan (Pl.col "value"))
+                            , Pl.alias "is_not_nan" (Pl.isNotNan (Pl.col "value"))
+                            , Pl.alias "is_finite" (Pl.isFinite (Pl.col "value"))
+                            , Pl.alias "is_infinite" (Pl.isInfinite (Pl.col "value"))
+                            , Pl.alias "filled_nan" (Pl.fillNan (Pl.litDouble 0.0) (Pl.col "value"))
+                            ]
+                            lf0
+                    case projected of
+                        Left err -> expectationFailure (show err)
+                        Right lf1 -> do
+                            collected <- Pl.collect lf1
+                            case collected of
+                                Left err -> expectationFailure (show err)
+                                Right df -> do
+                                    Pl.shape df `shouldReturn` Right (4, 5)
+                                    Pl.column @Bool df "is_nan" `shouldReturn` Right (V.fromList [Just False, Just True, Just False, Just False])
+                                    Pl.column @Bool df "is_not_nan" `shouldReturn` Right (V.fromList [Just True, Just False, Just True, Just True])
+                                    Pl.column @Bool df "is_finite" `shouldReturn` Right (V.fromList [Just True, Just False, Just False, Just False])
+                                    Pl.column @Bool df "is_infinite" `shouldReturn` Right (V.fromList [Just False, Just False, Just True, Just True])
+                                    actualFilled <- Pl.column @Double df "filled_nan"
+                                    case actualFilled of
+                                        Left err -> expectationFailure (show err)
+                                        Right filled -> do
+                                            let expected = V.fromList [Just 1.0, Just 0.0, Just (1.0 / 0.0), Just (negate (1.0 / 0.0))]
+                                            shouldApproximate 1e-12 expected filled
+
+        it "computes std, var, and nUnique over scores" $ do
+            scanResult <- Pl.scanCsv valuesCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    projected <-
+                        Pl.select
+                            [ Pl.alias "score_std" (Pl.std_ 1 (Pl.col "score"))
+                            , Pl.alias "score_var" (Pl.var_ 1 (Pl.col "score"))
+                            , Pl.alias "score_nunique" (Pl.cast Pl.Int64 (Pl.nUnique_ (Pl.col "score")))
+                            ]
+                            lf0
+                    case projected of
+                        Left err -> expectationFailure (show err)
+                        Right lf1 -> do
+                            collected <- Pl.collect lf1
+                            case collected of
+                                Left err -> expectationFailure (show err)
+                                Right df -> do
+                                    Pl.shape df `shouldReturn` Right (1, 3)
+                                    actualStd <- Pl.column @Double df "score_std"
+                                    case actualStd of
+                                        Left err -> expectationFailure (show err)
+                                        Right vd -> shouldApproximate 1e-12 (V.singleton (Just (sqrt 0.78125))) vd
+                                    actualVar <- Pl.column @Double df "score_var"
+                                    case actualVar of
+                                        Left err -> expectationFailure (show err)
+                                        Right vd -> shouldApproximate 1e-12 (V.singleton (Just 0.78125)) vd
+                                    Pl.column @Int64 df "score_nunique" `shouldReturn` Right (V.singleton (Just 3))
+
+        it "uses cumCount, cumProd, cumMin, cumMax, and reverse cumSum over salaries" $ do
+            scanResult <- Pl.scanCsv salesCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    projected <-
+                        Pl.select
+                            [ Pl.alias "cum_count" (Pl.cast Pl.Int64 (Pl.cumCount False (Pl.col "salary")))
+                            , Pl.alias "cum_prod" (Pl.cumProd False (Pl.col "salary"))
+                            , Pl.alias "cum_min" (Pl.cumMin False (Pl.col "salary"))
+                            , Pl.alias "cum_max" (Pl.cumMax False (Pl.col "salary"))
+                            , Pl.alias "rev_cum_sum" (Pl.cumSum True (Pl.col "salary"))
+                            ]
+                            lf0
+                    case projected of
+                        Left err -> expectationFailure (show err)
+                        Right lf1 -> do
+                            collected <- Pl.collect lf1
+                            case collected of
+                                Left err -> expectationFailure (show err)
+                                Right df -> do
+                                    Pl.shape df `shouldReturn` Right (4, 5)
+                                    Pl.column @Int64 df "cum_count" `shouldReturn` Right (V.fromList [Just 1, Just 2, Just 3, Just 4])
+                                    Pl.column @Int64 df "cum_prod" `shouldReturn` Right (V.fromList [Just 100, Just 15000, Just 1350000, Just 148500000])
+                                    Pl.column @Int64 df "cum_min" `shouldReturn` Right (V.fromList [Just 100, Just 100, Just 90, Just 90])
+                                    Pl.column @Int64 df "cum_max" `shouldReturn` Right (V.fromList [Just 100, Just 150, Just 150, Just 150])
+                                    Pl.column @Int64 df "rev_cum_sum" `shouldReturn` Right (V.fromList [Just 450, Just 350, Just 200, Just 110])
+
+        it "computes additional quantile methods over scores" $ do
+            scanResult <- Pl.scanCsv valuesCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    projected <-
+                        Pl.select
+                            [ Pl.alias "q_lower" (Pl.quantile_ Pl.QuantileLower (Pl.litDouble 0.5) (Pl.col "score"))
+                            , Pl.alias "q_higher" (Pl.quantile_ Pl.QuantileHigher (Pl.litDouble 0.5) (Pl.col "score"))
+                            , Pl.alias "q_midpoint" (Pl.quantile_ Pl.QuantileMidpoint (Pl.litDouble 0.5) (Pl.col "score"))
+                            , Pl.alias "q_linear" (Pl.quantile_ Pl.QuantileLinear (Pl.litDouble 0.5) (Pl.col "score"))
+                            ]
+                            lf0
+                    case projected of
+                        Left err -> expectationFailure (show err)
+                        Right lf1 -> do
+                            collected <- Pl.collect lf1
+                            case collected of
+                                Left err -> expectationFailure (show err)
+                                Right df -> do
+                                    Pl.shape df `shouldReturn` Right (1, 4)
+                                    Pl.column @Double df "q_lower" `shouldReturn` Right (V.singleton (Just 8.25))
+                                    Pl.column @Double df "q_higher" `shouldReturn` Right (V.singleton (Just 9.5))
+                                    Pl.column @Double df "q_midpoint" `shouldReturn` Right (V.singleton (Just 8.875))
+                                    Pl.column @Double df "q_linear" `shouldReturn` Right (V.singleton (Just 8.875))
 
     describe "Polars.IPC" $ do
         it "round-trips a dataframe through IPC bytes" $ do
