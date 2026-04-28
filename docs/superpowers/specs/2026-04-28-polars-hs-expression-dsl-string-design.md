@@ -172,3 +172,28 @@ Pl.alias "prefix" (Pl.strSlice (Pl.col "text") (Pl.litInt 0) (Pl.litInt 2))
 **Rust ABI:** `phs_expr_string_function` in `rust/polars-hs-ffi/src/expr.rs` dispatches 13 opcodes with arity validation and delegates to `expr.str().*` Polars methods. Rust unit tests cover all opcodes and error paths (unknown opcode, wrong arity).
 
 **Fixture and Hspec tests:** `test/data/strings.csv` provides ASCII, Greek, and Japanese text rows. Two Hspec examples test the full result pipeline for 13 string operations across all four rows, covering boolean predicates, text transformations, byte/char lengths, and character slicing.
+
+#### Full verification — 2026-04-29
+
+**Cargo tests (57 passed, 0 failed, 0 ignored):**
+- `builds_string_namespace_expressions` — all 13 opcodes
+- `string_namespace_errors_validate_opcode_and_arity` — unknown opcode + wrong arity
+- All existing tests continue to pass.
+
+**Cargo clippy:** `-D warnings` — clean, no warnings.
+
+**Stack test (62 examples, 0 failures):**
+- 2 new `Expression DSL string namespace` examples pass.
+- All existing 60 examples pass.
+
+**HLint:** `No hints` across `src`, `app`, `test`.
+
+**Example scripts:** All six exit successfully:
+- `examples/iris.hs` — OK
+- `examples/groupby.hs` — OK
+- `examples/join.hs` — OK
+- `examples/columns.hs` — OK
+- `examples/series.hs` — OK
+- `examples/construction.hs` — OK
+
+**Marker/whitespace scan:** Clean for incomplete-work markers. `git diff --check` reports no whitespace issues.
