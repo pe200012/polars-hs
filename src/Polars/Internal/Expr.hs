@@ -22,7 +22,7 @@ import Foreign.Storable (peek, poke)
 
 import qualified Data.Text as T
 import Polars.Error (PolarsError (..), PolarsErrorCode (..))
-import Polars.Expr (AggFunction (..), BinaryFunction (..), BinaryOperator (..), Expr (..), ExprSortOptions (..), QuantileMethod (..), RankMethod (..), RankOptions (..), UnaryFunction (..))
+import Polars.Expr (AggFunction (..), BinaryFunction (..), BinaryOperator (..), Expr (..), ExprSortOptions (..), QuantileMethod (..), RankMethod (..), RankOptions (..), StringFunction (..), UnaryFunction (..))
 import Polars.Schema (DataType (..))
 import Polars.Internal.CString (withTextCString)
 import Polars.Internal.Managed (ManagedExpr, mkManagedExpr, withManagedExpr)
@@ -45,6 +45,7 @@ import Polars.Internal.Raw
     , phs_expr_rank
     , phs_expr_slice
     , phs_expr_sort_by
+    , phs_expr_string_function
     , phs_expr_ternary
     , phs_expr_unary
     , phs_expr_unary_i64
@@ -201,6 +202,14 @@ compileExpr = \case
                 withCompiledExprs partition $ \partPtrs partLen ->
                     withManagedExpr exprManaged $ \ePtr ->
                         exprOut (phs_expr_over ePtr partPtrs partLen)
+    StringFunctionExpr fn input args -> do
+        inputCompiled <- compileExpr input
+        case inputCompiled of
+            Left err -> pure (Left err)
+            Right inputManaged ->
+                withCompiledExprs args $ \argPtrs argLen ->
+                    withManagedExpr inputManaged $ \inputPtr ->
+                        exprOut (phs_expr_string_function (stringFunctionCode fn) inputPtr argPtrs argLen)
 
 withCompiledExprs :: [Expr] -> (Ptr (Ptr RawExpr) -> CSize -> IO (Either PolarsError a)) -> IO (Either PolarsError a)
 withCompiledExprs exprs action = do
@@ -321,3 +330,18 @@ binaryFunctionCode :: BinaryFunction -> CInt
 binaryFunctionCode FillNull = 0
 binaryFunctionCode FillNan = 1
 binaryFunctionCode ExprFilter = 2
+
+stringFunctionCode :: StringFunction -> CInt
+stringFunctionCode StrContainsLiteral = 0
+stringFunctionCode StrStartsWith = 1
+stringFunctionCode StrEndsWith = 2
+stringFunctionCode StrStrip = 3
+stringFunctionCode StrStripStart = 4
+stringFunctionCode StrStripEnd = 5
+stringFunctionCode StrToLowercase = 6
+stringFunctionCode StrToUppercase = 7
+stringFunctionCode StrLenBytes = 8
+stringFunctionCode StrLenChars = 9
+stringFunctionCode StrSlice = 10
+stringFunctionCode StrHead = 11
+stringFunctionCode StrTail = 12

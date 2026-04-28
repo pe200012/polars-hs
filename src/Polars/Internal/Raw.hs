@@ -63,6 +63,7 @@ module Polars.Internal.Raw
     , phs_expr_rank
     , phs_expr_slice
     , phs_expr_sort_by
+    , phs_expr_string_function
     , phs_expr_ternary
     , phs_expr_unary
     , phs_expr_unary_i64
@@ -400,3 +401,6 @@ foreign import ccall unsafe "phs_expr_sort_by"
 
 foreign import ccall unsafe "phs_expr_over"
     phs_expr_over :: Ptr RawExpr -> Ptr (Ptr RawExpr) -> CSize -> Ptr (Ptr RawExpr) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_expr_string_function"
+    phs_expr_string_function :: CInt -> Ptr RawExpr -> Ptr (Ptr RawExpr) -> CSize -> Ptr (Ptr RawExpr) -> Ptr (Ptr RawError) -> IO CInt
