@@ -38,6 +38,7 @@ extra-source-files:
     test/data/departments.csv
     test/data/employees.csv
     test/data/float_specials.csv
+    test/data/horizontal.csv
     test/data/people.csv
     test/data/phrases.csv
     test/data/predicates.csv

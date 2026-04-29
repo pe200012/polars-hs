@@ -74,6 +74,9 @@ phrasesCsv = "test/data/phrases.csv"
 predicatesCsv :: FilePath
 predicatesCsv = "test/data/predicates.csv"
 
+horizontalCsv :: FilePath
+horizontalCsv = "test/data/horizontal.csv"
+
 metasynPeopleCsv :: FilePath
 metasynPeopleCsv = "test/data/generated/metasyn_people.csv"
 
@@ -1385,6 +1388,58 @@ main = hspec $ do
                                 Right df -> do
                                     Pl.shape df `shouldReturn` Right (4, 1)
                                     Pl.column @Bool df "red_in" `shouldReturn` Right (V.fromList [Just True, Just True, Just False, Just False])
+
+    describe "Expression DSL horizontal functions" $ do
+        it "computes horizontal stats and coalesce over numeric and boolean columns" $ do
+            scanResult <- Pl.scanCsv horizontalCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    let nums = [Pl.col "a", Pl.col "b", Pl.col "c"]
+                    let bools = [Pl.col "p", Pl.col "q"]
+                    projected <-
+                        Pl.select
+                            [ Pl.alias "sum_ignore" (Pl.cast Pl.Int64 (Pl.sumHorizontal True nums))
+                            , Pl.alias "sum_strict" (Pl.cast Pl.Int64 (Pl.sumHorizontal False nums))
+                            , Pl.alias "max_value" (Pl.cast Pl.Int64 (Pl.maxHorizontal nums))
+                            , Pl.alias "min_value" (Pl.cast Pl.Int64 (Pl.minHorizontal nums))
+                            , Pl.alias "mean_ignore" (Pl.meanHorizontal True nums)
+                            , Pl.alias "mean_strict" (Pl.meanHorizontal False nums)
+                            , Pl.alias "any_value" (Pl.anyHorizontal bools)
+                            , Pl.alias "all_value" (Pl.allHorizontal bools)
+                            , Pl.alias "first_non_null" (Pl.cast Pl.Int64 (Pl.coalesce nums))
+                            ]
+                            lf0
+                    case projected of
+                        Left err -> expectationFailure (show err)
+                        Right lf1 -> do
+                            collected <- Pl.collect lf1
+                            case collected of
+                                Left err -> expectationFailure (show err)
+                                Right df -> do
+                                    Pl.shape df `shouldReturn` Right (3, 9)
+                                    Pl.column @Int64 df "sum_ignore" `shouldReturn` Right (V.fromList [Just 6, Just 10, Just 17])
+                                    Pl.column @Int64 df "sum_strict" `shouldReturn` Right (V.fromList [Just 6, Nothing, Nothing])
+                                    Pl.column @Int64 df "max_value" `shouldReturn` Right (V.fromList [Just 3, Just 6, Just 9])
+                                    Pl.column @Int64 df "min_value" `shouldReturn` Right (V.fromList [Just 1, Just 4, Just 8])
+                                    actualMeanIgnore <- Pl.column @Double df "mean_ignore"
+                                    case actualMeanIgnore of
+                                        Left err -> expectationFailure (show err)
+                                        Right vd -> shouldApproximate 1e-12 (V.fromList [Just 2.0, Just 5.0, Just 8.5]) vd
+                                    Pl.column @Double df "mean_strict" `shouldReturn` Right (V.fromList [Just 2.0, Nothing, Nothing])
+                                    Pl.column @Bool df "any_value" `shouldReturn` Right (V.fromList [Just True, Just True, Just False])
+                                    Pl.column @Bool df "all_value" `shouldReturn` Right (V.fromList [Just False, Just True, Just False])
+                                    Pl.column @Int64 df "first_non_null" `shouldReturn` Right (V.fromList [Just 1, Just 4, Just 8])
+
+        it "rejects empty horizontal expression list with InvalidArgument" $ do
+            scanResult <- Pl.scanCsv horizontalCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    result <- Pl.select [Pl.alias "bad" (Pl.sumHorizontal True [])] lf0
+                    case result of
+                        Right _ -> expectationFailure "expected InvalidArgument for empty horizontal list"
+                        Left err -> Pl.polarsErrorCode err `shouldBe` Pl.InvalidArgument
 
     describe "Polars.IPC" $ do
         it "round-trips a dataframe through IPC bytes" $ do

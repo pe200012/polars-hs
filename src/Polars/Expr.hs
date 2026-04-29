@@ -15,6 +15,7 @@ module Polars.Expr
     , ClosedInterval (..)
     , Expr (..)
     , ExprSortOptions (..)
+    , HorizontalFunction (..)
     , ListFunction (..)
     , QuantileMethod (..)
     , RankMethod (..)
@@ -64,6 +65,9 @@ module Polars.Expr
     , fillNan
     , fillNull
     , first_
+    , allHorizontal
+    , anyHorizontal
+    , coalesce
     , isBetween
     , isClose
     , isDuplicated
@@ -92,8 +96,11 @@ module Polars.Expr
     , litText
     , max_
     , mean_
+    , maxHorizontal
+    , meanHorizontal
     , median_
     , min_
+    , minHorizontal
     , nUnique_
     , not_
     , over
@@ -124,6 +131,7 @@ module Polars.Expr
     , strToUppercase
     , strictCast
     , sum_
+    , sumHorizontal
     , var_
     , whenThenOtherwise
     ) where
@@ -159,6 +167,7 @@ data Expr
     | ListFunctionExpr !ListFunction !Expr ![Expr]
     | TemporalFunctionExpr !TemporalFunction !Expr
     | ScalarFunctionExpr !ScalarFunction !Expr ![Expr]
+    | HorizontalFunctionExpr !HorizontalFunction ![Expr]
     deriving stock (Eq, Show)
 
 -- | Binary operators supported by the MVP expression compiler.
@@ -266,6 +275,17 @@ data ScalarFunction
     | Clip
     | ClipMin
     | ClipMax
+    deriving stock (Eq, Show)
+
+-- | Horizontal expression functions (row-wise across columns).
+data HorizontalFunction
+    = HorizontalSum !Bool      -- ^ ignore_nulls
+    | HorizontalMean !Bool     -- ^ ignore_nulls
+    | HorizontalMax
+    | HorizontalMin
+    | HorizontalAny
+    | HorizontalAll
+    | HorizontalCoalesce
     deriving stock (Eq, Show)
 
 -- | Time unit for temporal functions.
@@ -540,3 +560,24 @@ clipMin input lower = ScalarFunctionExpr ClipMin input [lower]
 
 clipMax :: Expr -> Expr -> Expr
 clipMax input upper = ScalarFunctionExpr ClipMax input [upper]
+
+sumHorizontal :: Bool -> [Expr] -> Expr
+sumHorizontal ignore_nulls = HorizontalFunctionExpr (HorizontalSum ignore_nulls)
+
+meanHorizontal :: Bool -> [Expr] -> Expr
+meanHorizontal ignore_nulls = HorizontalFunctionExpr (HorizontalMean ignore_nulls)
+
+maxHorizontal :: [Expr] -> Expr
+maxHorizontal = HorizontalFunctionExpr HorizontalMax
+
+minHorizontal :: [Expr] -> Expr
+minHorizontal = HorizontalFunctionExpr HorizontalMin
+
+anyHorizontal :: [Expr] -> Expr
+anyHorizontal = HorizontalFunctionExpr HorizontalAny
+
+allHorizontal :: [Expr] -> Expr
+allHorizontal = HorizontalFunctionExpr HorizontalAll
+
+coalesce :: [Expr] -> Expr
+coalesce = HorizontalFunctionExpr HorizontalCoalesce

@@ -22,7 +22,7 @@ import Foreign.Storable (peek, poke)
 
 import qualified Data.Text as T
 import Polars.Error (PolarsError (..), PolarsErrorCode (..))
-import Polars.Expr (AggFunction (..), BinaryFunction (..), BinaryOperator (..), ClosedInterval (..), Expr (..), ExprSortOptions (..), ListFunction (..), QuantileMethod (..), RankMethod (..), RankOptions (..), ScalarFunction (..), StringFunction (..), TemporalFunction (..), TimeUnit (..), UnaryFunction (..))
+import Polars.Expr (AggFunction (..), BinaryFunction (..), BinaryOperator (..), ClosedInterval (..), Expr (..), ExprSortOptions (..), HorizontalFunction (..), ListFunction (..), QuantileMethod (..), RankMethod (..), RankOptions (..), ScalarFunction (..), StringFunction (..), TemporalFunction (..), TimeUnit (..), UnaryFunction (..))
 import Polars.Schema (DataType (..))
 import Polars.Internal.CString (withTextCString)
 import Polars.Internal.Managed (ManagedExpr, mkManagedExpr, withManagedExpr)
@@ -59,6 +59,7 @@ import Polars.Internal.Raw
     , phs_expr_is_close
     , phs_expr_is_in
     , phs_expr_clip
+    , phs_expr_horizontal_function
     )
 import Polars.Internal.Result (consumeError, nullPointerError)
 
@@ -344,6 +345,12 @@ compileExpr = \case
                                                 withArray [upperPtr] $ \argsArrayPtr ->
                                                     exprOut (phs_expr_clip 2 inputPtr argsArrayPtr 1)
                                 _ -> pure (Left (PolarsError InvalidArgument "clip_max expects one upper argument"))
+    HorizontalFunctionExpr fn exprs -> do
+        if null exprs
+            then pure (Left (PolarsError InvalidArgument "horizontal function requires at least one expression"))
+            else
+                withCompiledExprs exprs $ \exprPtrs exprLen ->
+                    exprOut (phs_expr_horizontal_function (horizontalFunctionCode fn) (toCBool (horizontalFunctionFlag fn)) exprPtrs exprLen)
 
 withCompiledExprs :: [Expr] -> (Ptr (Ptr RawExpr) -> CSize -> IO (Either PolarsError a)) -> IO (Either PolarsError a)
 withCompiledExprs exprs action = do
@@ -538,3 +545,17 @@ closedIntervalCode ClosedBoth = 0
 closedIntervalCode ClosedLeft = 1
 closedIntervalCode ClosedRight = 2
 closedIntervalCode ClosedNone = 3
+
+horizontalFunctionCode :: HorizontalFunction -> CInt
+horizontalFunctionCode (HorizontalSum _) = 0
+horizontalFunctionCode (HorizontalMean _) = 1
+horizontalFunctionCode HorizontalMax = 2
+horizontalFunctionCode HorizontalMin = 3
+horizontalFunctionCode HorizontalAny = 4
+horizontalFunctionCode HorizontalAll = 5
+horizontalFunctionCode HorizontalCoalesce = 6
+
+horizontalFunctionFlag :: HorizontalFunction -> Bool
+horizontalFunctionFlag (HorizontalSum ignore_nulls) = ignore_nulls
+horizontalFunctionFlag (HorizontalMean ignore_nulls) = ignore_nulls
+horizontalFunctionFlag _ = False

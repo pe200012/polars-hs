@@ -324,6 +324,13 @@ int phs_expr_clip(int op,
                   struct phs_expr **out,
                   struct phs_error **err);
 
+int phs_expr_horizontal_function(int op,
+                                 bool flag,
+                                 const struct phs_expr *const *exprs,
+                                 uintptr_t len,
+                                 struct phs_expr **out,
+                                 struct phs_error **err);
+
 void phs_dataframe_free(struct phs_dataframe *ptr);
 
 void phs_lazyframe_free(struct phs_lazyframe *ptr);

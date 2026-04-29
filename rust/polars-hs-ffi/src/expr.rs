@@ -2,6 +2,10 @@ use std::os::raw::{c_char, c_double, c_int};
 use std::ptr;
 
 use polars::prelude::*;
+use polars_plan::dsl::functions::{
+    all_horizontal, any_horizontal, coalesce as polars_coalesce, max_horizontal, mean_horizontal,
+    min_horizontal, sum_horizontal,
+};
 
 use crate::error::{c_str_to_str, ffi_boundary, phs_error, required_mut, PhsError, PhsResult};
 use crate::handles::{expr_into_raw, expr_ref, phs_expr};
@@ -988,6 +992,43 @@ pub unsafe extern "C" fn phs_expr_clip(
             _ => {
                 return Err(PhsError::invalid_argument(format!(
                     "unknown clip opcode {op}"
+                )))
+            }
+        };
+        *out = expr_into_raw(result);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_expr_horizontal_function(
+    op: c_int,
+    flag: bool,
+    exprs: *const *const phs_expr,
+    len: usize,
+    out: *mut *mut phs_expr,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let exprs = expr_args(exprs, len)?;
+        if exprs.is_empty() {
+            return Err(PhsError::invalid_argument(
+                "horizontal function requires at least one expression",
+            ));
+        }
+        let result = match op {
+            0 => sum_horizontal(&exprs, flag).map_err(PhsError::from)?,
+            1 => mean_horizontal(&exprs, flag).map_err(PhsError::from)?,
+            2 => max_horizontal(&exprs).map_err(PhsError::from)?,
+            3 => min_horizontal(&exprs).map_err(PhsError::from)?,
+            4 => any_horizontal(&exprs).map_err(PhsError::from)?,
+            5 => all_horizontal(&exprs).map_err(PhsError::from)?,
+            6 => polars_coalesce(&exprs),
+            _ => {
+                return Err(PhsError::invalid_argument(format!(
+                    "unknown horizontal function opcode {op}"
                 )))
             }
         };
@@ -2244,5 +2285,102 @@ mod tests {
             crate::handles::phs_expr_free(hi_expr);
             crate::error::phs_error_free(err);
         }
+    }
+
+    #[test]
+    fn builds_horizontal_function_expressions() {
+        let name_a = std::ffi::CString::new("a").unwrap();
+        let name_b = std::ffi::CString::new("b").unwrap();
+        let mut col_a = ptr::null_mut();
+        let mut col_b = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_expr_col(name_a.as_ptr(), &mut col_a, &mut err) },
+            PHS_OK
+        );
+        assert_eq!(
+            unsafe { phs_expr_col(name_b.as_ptr(), &mut col_b, &mut err) },
+            PHS_OK
+        );
+        let exprs = [col_a as *const phs_expr, col_b as *const phs_expr];
+        // sum_horizontal (op 0, ignore_nulls=true)
+        for op in 0..=6 {
+            let mut out = ptr::null_mut();
+            assert_eq!(
+                unsafe {
+                    phs_expr_horizontal_function(
+                        op,
+                        true,
+                        exprs.as_ptr(),
+                        2,
+                        &mut out,
+                        &mut err,
+                    )
+                },
+                PHS_OK,
+                "horizontal op {op} should succeed"
+            );
+            assert!(!out.is_null());
+            unsafe { crate::handles::phs_expr_free(out) };
+        }
+        unsafe {
+            crate::handles::phs_expr_free(col_a);
+            crate::handles::phs_expr_free(col_b);
+        }
+    }
+
+    #[test]
+    fn horizontal_function_empty_exprs_rejected() {
+        for op in 0..=6 {
+            let mut out: *mut phs_expr = ptr::null_mut();
+            let mut err = ptr::null_mut();
+            let result = unsafe {
+                phs_expr_horizontal_function(op, false, ptr::null(), 0, &mut out, &mut err)
+            };
+            assert_eq!(result, PHS_INVALID_ARGUMENT, "horizontal op {op} empty should fail");
+            assert!(out.is_null());
+            assert!(!err.is_null());
+            unsafe { crate::error::phs_error_free(err) };
+        }
+    }
+
+    #[test]
+    fn horizontal_function_unknown_opcode_rejected() {
+        let name_a = std::ffi::CString::new("a").unwrap();
+        let mut col_a = ptr::null_mut();
+        let mut out: *mut phs_expr = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_expr_col(name_a.as_ptr(), &mut col_a, &mut err) },
+            PHS_OK
+        );
+        let exprs = [col_a as *const phs_expr];
+        assert_eq!(
+            unsafe {
+                phs_expr_horizontal_function(99, false, exprs.as_ptr(), 1, &mut out, &mut err)
+            },
+            PHS_INVALID_ARGUMENT
+        );
+        assert!(out.is_null());
+        assert!(!err.is_null());
+        unsafe {
+            crate::handles::phs_expr_free(col_a);
+            crate::error::phs_error_free(err);
+        }
+    }
+
+    #[test]
+    fn horizontal_function_null_pointer_with_positive_len_rejected() {
+        let mut out: *mut phs_expr = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(
+            unsafe {
+                phs_expr_horizontal_function(0, false, ptr::null(), 1, &mut out, &mut err)
+            },
+            PHS_INVALID_ARGUMENT
+        );
+        assert!(out.is_null());
+        assert!(!err.is_null());
+        unsafe { crate::error::phs_error_free(err) };
     }
 }
