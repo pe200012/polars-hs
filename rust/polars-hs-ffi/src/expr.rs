@@ -619,6 +619,22 @@ pub unsafe extern "C" fn phs_expr_string_function(
                 require_expr_arity("string", op, &args, 1)?;
                 expr.str().split_inclusive(args[0].clone())
             }
+            26 => {
+                require_expr_arity("string", op, &args, 1)?;
+                expr.str().strip_prefix(args[0].clone())
+            }
+            27 => {
+                require_expr_arity("string", op, &args, 1)?;
+                expr.str().strip_suffix(args[0].clone())
+            }
+            28 => {
+                require_expr_arity("string", op, &args, 0)?;
+                expr.str().escape_regex()
+            }
+            29 => {
+                require_expr_arity("string", op, &args, 1)?;
+                expr.str().extract_all(args[0].clone())
+            }
             _ => {
                 return Err(PhsError::invalid_argument(format!(
                     "unknown string expression opcode {op}"
@@ -1641,7 +1657,7 @@ mod tests {
             PHS_OK
         );
         let args = [pat_expr as *const phs_expr];
-        for op in [0, 1, 2, 3, 4, 5, 11, 12, 13, 14, 15, 16, 17, 18, 19, 24, 25] {
+        for op in [0, 1, 2, 3, 4, 5, 11, 12, 13, 14, 15, 16, 17, 18, 19, 24, 25, 26, 27, 29] {
             let mut out = ptr::null_mut();
             assert_eq!(
                 unsafe {
@@ -1652,7 +1668,7 @@ mod tests {
             assert!(!out.is_null());
             unsafe { crate::handles::phs_expr_free(out) };
         }
-        for op in [6, 7, 8, 9] {
+        for op in [6, 7, 8, 9, 28] {
             let mut out = ptr::null_mut();
             assert_eq!(
                 unsafe {
@@ -2962,6 +2978,113 @@ mod tests {
         assert!(!err.is_null());
         unsafe {
             crate::handles::phs_expr_free(col_first);
+            crate::error::phs_error_free(err);
+        }
+    }
+
+    #[test]
+    fn builds_string_more_expressions() {
+        let name = std::ffi::CString::new("text").unwrap();
+        let arg_str = std::ffi::CString::new(" ").unwrap();
+        let mut col_expr = ptr::null_mut();
+        let mut arg_expr = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_expr_col(name.as_ptr(), &mut col_expr, &mut err) },
+            PHS_OK
+        );
+        assert_eq!(
+            unsafe { phs_expr_lit_text(arg_str.as_ptr(), &mut arg_expr, &mut err) },
+            PHS_OK
+        );
+        let args = [arg_expr as *const phs_expr];
+        // strip_prefix (op 26) - arity 1
+        let mut out = ptr::null_mut();
+        assert_eq!(
+            unsafe {
+                phs_expr_string_function(26, col_expr, args.as_ptr(), 1, &mut out, &mut err)
+            },
+            PHS_OK
+        );
+        assert!(!out.is_null());
+        unsafe { crate::handles::phs_expr_free(out) };
+        // strip_suffix (op 27) - arity 1
+        out = ptr::null_mut();
+        assert_eq!(
+            unsafe {
+                phs_expr_string_function(27, col_expr, args.as_ptr(), 1, &mut out, &mut err)
+            },
+            PHS_OK
+        );
+        assert!(!out.is_null());
+        unsafe { crate::handles::phs_expr_free(out) };
+        // escape_regex (op 28) - arity 0
+        out = ptr::null_mut();
+        assert_eq!(
+            unsafe {
+                phs_expr_string_function(28, col_expr, ptr::null(), 0, &mut out, &mut err)
+            },
+            PHS_OK
+        );
+        assert!(!out.is_null());
+        unsafe { crate::handles::phs_expr_free(out) };
+        // extract_all (op 29) - arity 1
+        let pattern = std::ffi::CString::new("[A-Z]").unwrap();
+        let mut pat_expr = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_expr_lit_text(pattern.as_ptr(), &mut pat_expr, &mut err) },
+            PHS_OK
+        );
+        let pat_args = [pat_expr as *const phs_expr];
+        out = ptr::null_mut();
+        assert_eq!(
+            unsafe {
+                phs_expr_string_function(29, col_expr, pat_args.as_ptr(), 1, &mut out, &mut err)
+            },
+            PHS_OK
+        );
+        assert!(!out.is_null());
+        unsafe {
+            crate::handles::phs_expr_free(col_expr);
+            crate::handles::phs_expr_free(arg_expr);
+            crate::handles::phs_expr_free(pat_expr);
+            crate::handles::phs_expr_free(out);
+        }
+    }
+
+    #[test]
+    fn string_more_arity_errors() {
+        let name = std::ffi::CString::new("text").unwrap();
+        let mut col_expr = ptr::null_mut();
+        let mut out: *mut phs_expr = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_expr_col(name.as_ptr(), &mut col_expr, &mut err) },
+            PHS_OK
+        );
+        // strip_prefix (op 26) expects 1 arg, give 0
+        assert_eq!(
+            unsafe {
+                phs_expr_string_function(26, col_expr, ptr::null(), 0, &mut out, &mut err)
+            },
+            PHS_INVALID_ARGUMENT
+        );
+        assert!(out.is_null());
+        assert!(!err.is_null());
+        unsafe { crate::error::phs_error_free(err) };
+        err = ptr::null_mut();
+        out = ptr::null_mut();
+        // escape_regex (op 28) expects 0 args, give 1
+        assert_eq!(
+            unsafe {
+                phs_expr_string_function(28, col_expr, ptr::null(), 1, &mut out, &mut err)
+            },
+            PHS_INVALID_ARGUMENT
+        );
+        assert!(out.is_null());
+        assert!(!err.is_null());
+        unsafe {
+            crate::handles::phs_expr_free(col_expr);
             crate::error::phs_error_free(err);
         }
     }

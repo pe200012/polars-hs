@@ -45,6 +45,7 @@ extra-source-files:
     test/data/phrases.csv
     test/data/predicates.csv
     test/data/sales.csv
+    test/data/string_more.csv
     test/data/strings.csv
     test/data/temporal.csv
     test/data/values.csv

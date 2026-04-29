@@ -130,12 +130,16 @@ module Polars.Expr
     , strLenBytes
     , strLenChars
     , strSlice
+    , strEscapeRegex
+    , strExtractAll
     , strSplit
     , strSplitInclusive
     , strStartsWith
     , strStrip
     , strStripEnd
+    , strStripPrefix
     , strStripStart
+    , strStripSuffix
     , strTail
     , strToLowercase
     , strToUppercase
@@ -258,6 +262,10 @@ data StringFunction
     | StrTail
     | StrSplit
     | StrSplitInclusive
+    | StrStripPrefix
+    | StrStripSuffix
+    | StrEscapeRegex
+    | StrExtractAll
     deriving stock (Eq, Show)
 
 -- | List namespace expression functions.
@@ -513,6 +521,16 @@ strReplaceAll literal input pat value = StringFunctionExpr (StrReplaceAll litera
 strSplit, strSplitInclusive :: Expr -> Expr -> Expr
 strSplit input by = StringFunctionExpr StrSplit input [by]
 strSplitInclusive input by = StringFunctionExpr StrSplitInclusive input [by]
+
+strStripPrefix, strStripSuffix :: Expr -> Expr -> Expr
+strStripPrefix input prefix = StringFunctionExpr StrStripPrefix input [prefix]
+strStripSuffix input suffix = StringFunctionExpr StrStripSuffix input [suffix]
+
+strEscapeRegex :: Expr -> Expr
+strEscapeRegex input = StringFunctionExpr StrEscapeRegex input []
+
+strExtractAll :: Expr -> Expr -> Expr
+strExtractAll input pat = StringFunctionExpr StrExtractAll input [pat]
 
 listLen, listFirst, listLast :: Expr -> Expr
 listLen input = ListFunctionExpr ListLen input []

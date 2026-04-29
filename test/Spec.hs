@@ -83,6 +83,9 @@ nameOpsCsv = "test/data/name_ops.csv"
 concatCsv :: FilePath
 concatCsv = "test/data/concat.csv"
 
+stringMoreCsv :: FilePath
+stringMoreCsv = "test/data/string_more.csv"
+
 metasynPeopleCsv :: FilePath
 metasynPeopleCsv = "test/data/generated/metasyn_people.csv"
 
@@ -1479,6 +1482,36 @@ main = hspec $ do
                                             let types = map Pl.fieldType schema
                                             fields `shouldBe` ["Camel", "pre_score_value", "Camel_suf", "camel", "SCORE_VALUE", "points_value"]
                                             types `shouldBe` [Pl.Int64, Pl.Int64, Pl.Int64, Pl.Int64, Pl.Int64, Pl.Int64]
+
+    describe "Expression DSL string more helpers" $ do
+        it "uses strip_prefix, strip_suffix, escape_regex, and extract_all" $ do
+            scanResult <- Pl.scanCsv stringMoreCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    let caps = Pl.strExtractAll (Pl.col "text") (Pl.litText "[A-Z]")
+                    projected <-
+                        Pl.select
+                            [ Pl.alias "no_prefix_space" (Pl.strStripPrefix (Pl.col "text") (Pl.litText " "))
+                            , Pl.alias "no_suffix_space" (Pl.strStripSuffix (Pl.col "text") (Pl.litText " "))
+                            , Pl.alias "escaped" (Pl.strEscapeRegex (Pl.col "text"))
+                            , Pl.alias "caps_join" (Pl.listJoin True caps (Pl.litText ""))
+                            , Pl.alias "caps_len" (Pl.cast Pl.Int64 (Pl.listLen caps))
+                            ]
+                            lf0
+                    case projected of
+                        Left err -> expectationFailure (show err)
+                        Right lf1 -> do
+                            collected <- Pl.collect lf1
+                            case collected of
+                                Left err -> expectationFailure (show err)
+                                Right df -> do
+                                    Pl.shape df `shouldReturn` Right (5, 5)
+                                    Pl.column @T.Text df "no_prefix_space" `shouldReturn` Right (V.fromList [Just "Alice ", Just "βeta", Just "CAROL", Just "日本語", Just "a.b+c"])
+                                    Pl.column @T.Text df "no_suffix_space" `shouldReturn` Right (V.fromList [Just " Alice", Just "βeta", Just "CAROL", Just "日本語", Just "a.b+c"])
+                                    Pl.column @T.Text df "escaped" `shouldReturn` Right (V.fromList [Just " Alice ", Just "βeta", Just "CAROL", Just "日本語", Just "a\\.b\\+c"])
+                                    Pl.column @T.Text df "caps_join" `shouldReturn` Right (V.fromList [Just "A", Just "", Just "CAROL", Just "", Just ""])
+                                    Pl.column @Int64 df "caps_len" `shouldReturn` Right (V.fromList [Just 1, Just 0, Just 5, Just 0, Just 0])
 
     describe "Expression DSL string concat functions" $ do
         it "concatenates and formats string columns with null handling" $ do

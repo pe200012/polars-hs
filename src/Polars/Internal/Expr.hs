@@ -519,6 +519,10 @@ stringFunctionCode StrHead = 11
 stringFunctionCode StrTail = 12
 stringFunctionCode StrSplit = 24
 stringFunctionCode StrSplitInclusive = 25
+stringFunctionCode StrStripPrefix = 26
+stringFunctionCode StrStripSuffix = 27
+stringFunctionCode StrEscapeRegex = 28
+stringFunctionCode StrExtractAll = 29
 stringFunctionCode (StrExtract _) = 0  -- not used; dispatched via _i64 ABI
 
 listFunctionCode :: ListFunction -> CInt

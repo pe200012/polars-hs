@@ -33,7 +33,7 @@ and this project adheres to the
 - Dataset-driven lazy query smoke tests for generated CSV fixtures.
 - Opt-in NYC Taxi Parquet real-world test script with lazy grouped query coverage.
 - Core Expression DSL coverage for casts, predicates, fills, conditionals, statistics, cumulative expressions, ranking, expression sorting/filtering/slicing, and window `over`.
-- String Expression DSL helpers for literal contains, starts/ends predicates, strip variants, case conversion, byte/character lengths, character slicing/head/tail, regex contains/find/extract/count, and replace/replaceAll.
+- String Expression DSL helpers for literal contains, starts/ends predicates, strip variants (strip, stripStart, stripEnd, stripPrefix, stripSuffix), regex escape, extractAll, case conversion, byte/character lengths, character slicing/head/tail, regex contains/find/extract/count, and replace/replaceAll.
 - Temporal Expression DSL helpers for datetime component extraction (year, month, day, hour, …), timestamp conversion, strftime formatting, millennium/century/days-in-month, and leap-year detection.
 - String split helpers (`strSplit`, `strSplitInclusive`) returning `List[String]` expressions.
 - List Expression DSL helpers for list length, first/last element, indexed get, string join, element contains, and count matches on string splits.
