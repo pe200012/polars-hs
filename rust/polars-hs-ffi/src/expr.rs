@@ -679,6 +679,113 @@ fn require_string_arity(op: c_int, args: &[Expr], expected: usize) -> PhsResult<
     }
 }
 
+fn time_unit_from_code(code: c_int) -> PhsResult<TimeUnit> {
+    match code {
+        0 => Ok(TimeUnit::Milliseconds),
+        1 => Ok(TimeUnit::Microseconds),
+        2 => Ok(TimeUnit::Nanoseconds),
+        value => Err(PhsError::invalid_argument(format!(
+            "unknown time unit code {value}"
+        ))),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_expr_temporal_function(
+    op: c_int,
+    expr: *const phs_expr,
+    out: *mut *mut phs_expr,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let expr = unsafe { expr_ref(expr) }?.value.clone();
+        let dt = expr.dt();
+        let result = match op {
+            0 => dt.year(),
+            1 => dt.iso_year(),
+            2 => dt.quarter(),
+            3 => dt.month(),
+            4 => dt.week(),
+            5 => dt.weekday(),
+            6 => dt.day(),
+            7 => dt.ordinal_day(),
+            8 => dt.hour(),
+            9 => dt.minute(),
+            10 => dt.second(),
+            11 => dt.millisecond(),
+            12 => dt.microsecond(),
+            13 => dt.nanosecond(),
+            14 => dt.millennium(),
+            15 => dt.century(),
+            16 => dt.days_in_month(),
+            17 => dt.is_leap_year(),
+            value => {
+                return Err(PhsError::invalid_argument(format!(
+                    "unknown temporal function opcode {value}"
+                )))
+            }
+        };
+        *out = expr_into_raw(result);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_expr_temporal_time_unit(
+    op: c_int,
+    time_unit: c_int,
+    expr: *const phs_expr,
+    out: *mut *mut phs_expr,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let expr = unsafe { expr_ref(expr) }?.value.clone();
+        match op {
+            0 => {
+                let tu = time_unit_from_code(time_unit)?;
+                *out = expr_into_raw(expr.dt().timestamp(tu));
+            }
+            _ => {
+                return Err(PhsError::invalid_argument(format!(
+                    "unknown temporal time_unit opcode {op}"
+                )))
+            }
+        }
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_expr_temporal_string(
+    op: c_int,
+    value: *const c_char,
+    expr: *const phs_expr,
+    out: *mut *mut phs_expr,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let expr = unsafe { expr_ref(expr) }?.value.clone();
+        match op {
+            0 => {
+                let format = unsafe { c_str_to_str(value, "format") }?;
+                *out = expr_into_raw(expr.dt().to_string(format));
+            }
+            _ => {
+                return Err(PhsError::invalid_argument(format!(
+                    "unknown temporal string opcode {op}"
+                )))
+            }
+        }
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1373,6 +1480,115 @@ mod tests {
         unsafe {
             crate::handles::phs_expr_free(col_expr);
             crate::handles::phs_expr_free(pat_expr);
+            crate::error::phs_error_free(err);
+        }
+    }
+
+    #[test]
+    fn builds_temporal_function_expressions() {
+        let name = std::ffi::CString::new("ts").unwrap();
+        let mut col_expr = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_expr_col(name.as_ptr(), &mut col_expr, &mut err) },
+            PHS_OK
+        );
+        // Test all 18 temporal function opcodes (0-17)
+        for op in 0..=17 {
+            let mut out = ptr::null_mut();
+            assert_eq!(
+                unsafe { phs_expr_temporal_function(op, col_expr, &mut out, &mut err) },
+                PHS_OK,
+                "temporal op {op} should succeed"
+            );
+            assert!(!out.is_null());
+            unsafe { crate::handles::phs_expr_free(out) };
+        }
+        // timestamp (time_unit op 0) with all three time units
+        for tu in 0..=2 {
+            let mut out = ptr::null_mut();
+            assert_eq!(
+                unsafe { phs_expr_temporal_time_unit(0, tu, col_expr, &mut out, &mut err) },
+                PHS_OK,
+                "temporal time_unit op 0 with time unit {tu} should succeed"
+            );
+            assert!(!out.is_null());
+            unsafe { crate::handles::phs_expr_free(out) };
+        }
+        // to_string (temporal string op 0)
+        let fmt = std::ffi::CString::new("%Y-%m-%d").unwrap();
+        let mut out = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_expr_temporal_string(0, fmt.as_ptr(), col_expr, &mut out, &mut err) },
+            PHS_OK
+        );
+        assert!(!out.is_null());
+        unsafe {
+            crate::handles::phs_expr_free(col_expr);
+            crate::handles::phs_expr_free(out);
+        }
+    }
+
+    #[test]
+    fn temporal_function_errors_validate_opcodes() {
+        let name = std::ffi::CString::new("ts").unwrap();
+        let mut col_expr = ptr::null_mut();
+        let mut out: *mut phs_expr = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_expr_col(name.as_ptr(), &mut col_expr, &mut err) },
+            PHS_OK
+        );
+        // unknown temporal function opcode
+        assert_eq!(
+            unsafe { phs_expr_temporal_function(99, col_expr, &mut out, &mut err) },
+            PHS_INVALID_ARGUMENT
+        );
+        assert!(out.is_null());
+        assert!(!err.is_null());
+        unsafe { crate::error::phs_error_free(err) };
+        err = ptr::null_mut();
+        out = ptr::null_mut();
+        // unknown temporal time_unit opcode
+        assert_eq!(
+            unsafe { phs_expr_temporal_time_unit(99, 0, col_expr, &mut out, &mut err) },
+            PHS_INVALID_ARGUMENT
+        );
+        assert!(out.is_null());
+        assert!(!err.is_null());
+        unsafe { crate::error::phs_error_free(err) };
+        err = ptr::null_mut();
+        out = ptr::null_mut();
+        // unknown time unit code
+        assert_eq!(
+            unsafe { phs_expr_temporal_time_unit(0, 99, col_expr, &mut out, &mut err) },
+            PHS_INVALID_ARGUMENT
+        );
+        assert!(out.is_null());
+        assert!(!err.is_null());
+        unsafe { crate::error::phs_error_free(err) };
+        err = ptr::null_mut();
+        out = ptr::null_mut();
+        // unknown temporal string opcode
+        let fmt = std::ffi::CString::new("").unwrap();
+        assert_eq!(
+            unsafe { phs_expr_temporal_string(99, fmt.as_ptr(), col_expr, &mut out, &mut err) },
+            PHS_INVALID_ARGUMENT
+        );
+        assert!(out.is_null());
+        assert!(!err.is_null());
+        unsafe { crate::error::phs_error_free(err) };
+        err = ptr::null_mut();
+        out = ptr::null_mut();
+        // null format string
+        assert_eq!(
+            unsafe { phs_expr_temporal_string(0, ptr::null(), col_expr, &mut out, &mut err) },
+            PHS_INVALID_ARGUMENT
+        );
+        assert!(out.is_null());
+        assert!(!err.is_null());
+        unsafe {
+            crate::handles::phs_expr_free(col_expr);
             crate::error::phs_error_free(err);
         }
     }

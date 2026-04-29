@@ -267,6 +267,23 @@ int phs_expr_string_function_i64(int op,
                                  struct phs_expr **out,
                                  struct phs_error **err);
 
+int phs_expr_temporal_function(int op,
+                               const struct phs_expr *expr,
+                               struct phs_expr **out,
+                               struct phs_error **err);
+
+int phs_expr_temporal_time_unit(int op,
+                                int time_unit,
+                                const struct phs_expr *expr,
+                                struct phs_expr **out,
+                                struct phs_error **err);
+
+int phs_expr_temporal_string(int op,
+                             const char *value,
+                             const struct phs_expr *expr,
+                             struct phs_expr **out,
+                             struct phs_error **err);
+
 void phs_dataframe_free(struct phs_dataframe *ptr);
 
 void phs_lazyframe_free(struct phs_lazyframe *ptr);

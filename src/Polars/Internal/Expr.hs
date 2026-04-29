@@ -22,7 +22,7 @@ import Foreign.Storable (peek, poke)
 
 import qualified Data.Text as T
 import Polars.Error (PolarsError (..), PolarsErrorCode (..))
-import Polars.Expr (AggFunction (..), BinaryFunction (..), BinaryOperator (..), Expr (..), ExprSortOptions (..), QuantileMethod (..), RankMethod (..), RankOptions (..), StringFunction (..), UnaryFunction (..))
+import Polars.Expr (AggFunction (..), BinaryFunction (..), BinaryOperator (..), Expr (..), ExprSortOptions (..), QuantileMethod (..), RankMethod (..), RankOptions (..), StringFunction (..), TemporalFunction (..), TimeUnit (..), UnaryFunction (..))
 import Polars.Schema (DataType (..))
 import Polars.Internal.CString (withTextCString)
 import Polars.Internal.Managed (ManagedExpr, mkManagedExpr, withManagedExpr)
@@ -47,6 +47,9 @@ import Polars.Internal.Raw
     , phs_expr_sort_by
     , phs_expr_string_function
     , phs_expr_string_function_i64
+    , phs_expr_temporal_function
+    , phs_expr_temporal_string
+    , phs_expr_temporal_time_unit
     , phs_expr_ternary
     , phs_expr_unary
     , phs_expr_unary_i64
@@ -217,6 +220,17 @@ compileExpr = \case
                                     exprOut (phs_expr_string_function_i64 0 (fromIntegral groupIndex :: CLLong) inputPtr argPtrs argLen)
                             _ ->
                                 exprOut (phs_expr_string_function (stringFunctionCode fn) inputPtr argPtrs argLen)
+    TemporalFunctionExpr fn expr -> do
+        compiled <- compileExpr expr
+        case compiled of
+            Left err -> pure (Left err)
+            Right managed -> withManagedExpr managed $ \ptr ->
+                case fn of
+                    DtTimestamp unit -> exprOut (phs_expr_temporal_time_unit 0 (timeUnitCode unit) ptr)
+                    DtToString format -> withTextCString format $ \cFormat -> exprOut (phs_expr_temporal_string 0 cFormat ptr)
+                    _ -> case temporalFunctionCode fn of
+                        Left err -> pure (Left err)
+                        Right code -> exprOut (phs_expr_temporal_function code ptr)
 
 withCompiledExprs :: [Expr] -> (Ptr (Ptr RawExpr) -> CSize -> IO (Either PolarsError a)) -> IO (Either PolarsError a)
 withCompiledExprs exprs action = do
@@ -364,3 +378,30 @@ stringFunctionCode StrSlice = 10
 stringFunctionCode StrHead = 11
 stringFunctionCode StrTail = 12
 stringFunctionCode (StrExtract _) = 0  -- not used; dispatched via _i64 ABI
+
+temporalFunctionCode :: TemporalFunction -> Either PolarsError CInt
+temporalFunctionCode DtYear = Right 0
+temporalFunctionCode DtIsoYear = Right 1
+temporalFunctionCode DtQuarter = Right 2
+temporalFunctionCode DtMonth = Right 3
+temporalFunctionCode DtWeek = Right 4
+temporalFunctionCode DtWeekday = Right 5
+temporalFunctionCode DtDay = Right 6
+temporalFunctionCode DtOrdinalDay = Right 7
+temporalFunctionCode DtHour = Right 8
+temporalFunctionCode DtMinute = Right 9
+temporalFunctionCode DtSecond = Right 10
+temporalFunctionCode DtMillisecond = Right 11
+temporalFunctionCode DtMicrosecond = Right 12
+temporalFunctionCode DtNanosecond = Right 13
+temporalFunctionCode DtMillennium = Right 14
+temporalFunctionCode DtCentury = Right 15
+temporalFunctionCode DtDaysInMonth = Right 16
+temporalFunctionCode DtIsLeapYear = Right 17
+temporalFunctionCode (DtTimestamp _) = Left (PolarsError InvalidArgument "timestamp temporal op uses the time-unit ABI")
+temporalFunctionCode (DtToString _) = Left (PolarsError InvalidArgument "to-string temporal op uses the string ABI")
+
+timeUnitCode :: TimeUnit -> CInt
+timeUnitCode Milliseconds = 0
+timeUnitCode Microseconds = 1
+timeUnitCode Nanoseconds = 2

@@ -259,7 +259,7 @@ stack runghc examples/construction.hs
 - `Polars.LazyFrame` provides scan, filter, select, withColumns, sort, limit, and collect.
 - `Polars.GroupBy` provides grouped lazy aggregation through groupBy, groupByStable, and agg.
 - `Polars.Join` provides lazy inner, left, right, and full joins with optional suffix configuration.
-- `Polars.Expr` and `Polars.Operators` build a pure Haskell expression AST including core Expression DSL support for casts, predicates, fills, conditionals, statistics, cumulative expressions, ranking, expression sorting/filtering/slicing, window `over`, and string namespace helpers.
+- `Polars.Expr` and `Polars.Operators` build a pure Haskell expression AST including core Expression DSL support for casts, predicates, fills, conditionals, statistics, cumulative expressions, ranking, expression sorting/filtering/slicing, window `over`, string namespace helpers, and temporal namespace helpers.
 - `Polars.Error` defines `PolarsError` and `PolarsErrorCode`.
 - `Polars.Schema` defines schema field and datatype values.
 - `Polars.IPC` provides IPC byte and file helpers.

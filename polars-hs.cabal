@@ -41,6 +41,7 @@ extra-source-files:
     test/data/people.csv
     test/data/sales.csv
     test/data/strings.csv
+    test/data/temporal.csv
     test/data/values.csv
     scripts/generate_dataset_fixtures.py
     scripts/run-nyc-taxi-test.sh

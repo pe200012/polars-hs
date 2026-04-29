@@ -18,6 +18,8 @@ module Polars.Expr
     , RankMethod (..)
     , RankOptions (..)
     , StringFunction (..)
+    , TemporalFunction (..)
+    , TimeUnit (..)
     , UnaryFunction (..)
     , alias
     , cast
@@ -30,6 +32,26 @@ module Polars.Expr
     , cumSum
     , defaultExprSortOptions
     , defaultRankOptions
+    , dtYear
+    , dtIsoYear
+    , dtQuarter
+    , dtMonth
+    , dtWeek
+    , dtWeekday
+    , dtDay
+    , dtOrdinalDay
+    , dtHour
+    , dtMinute
+    , dtSecond
+    , dtMillisecond
+    , dtMicrosecond
+    , dtNanosecond
+    , dtMillennium
+    , dtCentury
+    , dtDaysInMonth
+    , dtIsLeapYear
+    , dtTimestamp
+    , dtToString
     , exprFilter
     , exprSlice
     , exprSortBy
@@ -112,6 +134,7 @@ data Expr
     | SortByExpr !ExprSortOptions ![Expr] !Expr
     | OverExpr ![Expr] !Expr
     | StringFunctionExpr !StringFunction !Expr ![Expr]
+    | TemporalFunctionExpr !TemporalFunction !Expr
     deriving stock (Eq, Show)
 
 -- | Binary operators supported by the MVP expression compiler.
@@ -188,6 +211,20 @@ data StringFunction
     | StrSlice
     | StrHead
     | StrTail
+    deriving stock (Eq, Show)
+
+-- | Time unit for temporal functions.
+data TimeUnit = Milliseconds | Microseconds | Nanoseconds
+    deriving stock (Eq, Show)
+
+-- | Temporal namespace expression functions.
+data TemporalFunction
+    = DtYear | DtIsoYear | DtQuarter | DtMonth | DtWeek | DtWeekday
+    | DtDay | DtOrdinalDay | DtHour | DtMinute | DtSecond
+    | DtMillisecond | DtMicrosecond | DtNanosecond
+    | DtMillennium | DtCentury | DtDaysInMonth | DtIsLeapYear
+    | DtTimestamp !TimeUnit
+    | DtToString !Text
     deriving stock (Eq, Show)
 
 -- | Method for computing quantiles.
@@ -370,3 +407,33 @@ strReplace literal input pat value = StringFunctionExpr (StrReplace literal) inp
 
 strReplaceAll :: Bool -> Expr -> Expr -> Expr -> Expr
 strReplaceAll literal input pat value = StringFunctionExpr (StrReplaceAll literal) input [pat, value]
+
+dtYear, dtIsoYear, dtQuarter, dtMonth, dtWeek, dtWeekday, dtDay, dtOrdinalDay, dtHour, dtMinute, dtSecond :: Expr -> Expr
+dtYear = TemporalFunctionExpr DtYear
+dtIsoYear = TemporalFunctionExpr DtIsoYear
+dtQuarter = TemporalFunctionExpr DtQuarter
+dtMonth = TemporalFunctionExpr DtMonth
+dtWeek = TemporalFunctionExpr DtWeek
+dtWeekday = TemporalFunctionExpr DtWeekday
+dtDay = TemporalFunctionExpr DtDay
+dtOrdinalDay = TemporalFunctionExpr DtOrdinalDay
+dtHour = TemporalFunctionExpr DtHour
+dtMinute = TemporalFunctionExpr DtMinute
+dtSecond = TemporalFunctionExpr DtSecond
+
+dtMillisecond, dtMicrosecond, dtNanosecond :: Expr -> Expr
+dtMillisecond = TemporalFunctionExpr DtMillisecond
+dtMicrosecond = TemporalFunctionExpr DtMicrosecond
+dtNanosecond = TemporalFunctionExpr DtNanosecond
+
+dtMillennium, dtCentury, dtDaysInMonth, dtIsLeapYear :: Expr -> Expr
+dtMillennium = TemporalFunctionExpr DtMillennium
+dtCentury = TemporalFunctionExpr DtCentury
+dtDaysInMonth = TemporalFunctionExpr DtDaysInMonth
+dtIsLeapYear = TemporalFunctionExpr DtIsLeapYear
+
+dtTimestamp :: TimeUnit -> Expr -> Expr
+dtTimestamp unit = TemporalFunctionExpr (DtTimestamp unit)
+
+dtToString :: Text -> Expr -> Expr
+dtToString format = TemporalFunctionExpr (DtToString format)

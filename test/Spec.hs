@@ -65,6 +65,9 @@ floatSpecialsCsv = "test/data/float_specials.csv"
 stringsCsv :: FilePath
 stringsCsv = "test/data/strings.csv"
 
+temporalCsv :: FilePath
+temporalCsv = "test/data/temporal.csv"
+
 metasynPeopleCsv :: FilePath
 metasynPeopleCsv = "test/data/generated/metasyn_people.csv"
 
@@ -1221,6 +1224,62 @@ main = hspec $ do
                             case collected of
                                 Right _ -> expectationFailure "expected strict regex find to report invalid pattern"
                                 Left err -> Pl.polarsErrorCode err `shouldBe` Pl.PolarsFailure
+
+    describe "Expression DSL temporal namespace" $ do
+        it "extracts datetime components from a temporal CSV" $ do
+            scanResult <- Pl.scanCsv temporalCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    let ts = Pl.cast Pl.Datetime (Pl.col "ts_ms")
+                    projected <-
+                        Pl.select
+                            [ Pl.alias "year" (Pl.cast Pl.Int64 (Pl.dtYear ts))
+                            , Pl.alias "iso_year" (Pl.cast Pl.Int64 (Pl.dtIsoYear ts))
+                            , Pl.alias "quarter" (Pl.cast Pl.Int64 (Pl.dtQuarter ts))
+                            , Pl.alias "month" (Pl.cast Pl.Int64 (Pl.dtMonth ts))
+                            , Pl.alias "week" (Pl.cast Pl.Int64 (Pl.dtWeek ts))
+                            , Pl.alias "weekday" (Pl.cast Pl.Int64 (Pl.dtWeekday ts))
+                            , Pl.alias "day" (Pl.cast Pl.Int64 (Pl.dtDay ts))
+                            , Pl.alias "ordinal_day" (Pl.cast Pl.Int64 (Pl.dtOrdinalDay ts))
+                            , Pl.alias "hour" (Pl.cast Pl.Int64 (Pl.dtHour ts))
+                            , Pl.alias "minute" (Pl.cast Pl.Int64 (Pl.dtMinute ts))
+                            , Pl.alias "second" (Pl.cast Pl.Int64 (Pl.dtSecond ts))
+                            , Pl.alias "millisecond" (Pl.cast Pl.Int64 (Pl.dtMillisecond ts))
+                            , Pl.alias "microsecond" (Pl.cast Pl.Int64 (Pl.dtMicrosecond ts))
+                            , Pl.alias "nanosecond" (Pl.cast Pl.Int64 (Pl.dtNanosecond ts))
+                            , Pl.alias "timestamp_ms" (Pl.dtTimestamp Pl.Milliseconds ts)
+                            , Pl.alias "fmt" (Pl.dtToString "%Y-%m-%d %H:%M:%S%.3f" ts)
+                            , Pl.alias "leap" (Pl.dtIsLeapYear ts)
+                            , Pl.alias "days_in_month" (Pl.cast Pl.Int64 (Pl.dtDaysInMonth ts))
+                            ]
+                            lf0
+                    case projected of
+                        Left err -> expectationFailure (show err)
+                        Right lf1 -> do
+                            collected <- Pl.collect lf1
+                            case collected of
+                                Left err -> expectationFailure (show err)
+                                Right df -> do
+                                    Pl.shape df `shouldReturn` Right (4, 18)
+                                    Pl.column @Int64 df "year" `shouldReturn` Right (V.fromList [Just 2024, Just 2024, Nothing, Just 1970])
+                                    Pl.column @Int64 df "iso_year" `shouldReturn` Right (V.fromList [Just 2024, Just 2024, Nothing, Just 1970])
+                                    Pl.column @Int64 df "quarter" `shouldReturn` Right (V.fromList [Just 1, Just 2, Nothing, Just 1])
+                                    Pl.column @Int64 df "month" `shouldReturn` Right (V.fromList [Just 1, Just 6, Nothing, Just 1])
+                                    Pl.column @Int64 df "week" `shouldReturn` Right (V.fromList [Just 1, Just 22, Nothing, Just 1])
+                                    Pl.column @Int64 df "weekday" `shouldReturn` Right (V.fromList [Just 1, Just 6, Nothing, Just 4])
+                                    Pl.column @Int64 df "day" `shouldReturn` Right (V.fromList [Just 1, Just 1, Nothing, Just 1])
+                                    Pl.column @Int64 df "ordinal_day" `shouldReturn` Right (V.fromList [Just 1, Just 153, Nothing, Just 1])
+                                    Pl.column @Int64 df "hour" `shouldReturn` Right (V.fromList [Just 0, Just 12, Nothing, Just 0])
+                                    Pl.column @Int64 df "minute" `shouldReturn` Right (V.fromList [Just 0, Just 34, Nothing, Just 0])
+                                    Pl.column @Int64 df "second" `shouldReturn` Right (V.fromList [Just 0, Just 56, Nothing, Just 0])
+                                    Pl.column @Int64 df "millisecond" `shouldReturn` Right (V.fromList [Just 123, Just 789, Nothing, Just 0])
+                                    Pl.column @Int64 df "microsecond" `shouldReturn` Right (V.fromList [Just 123000, Just 789000, Nothing, Just 0])
+                                    Pl.column @Int64 df "nanosecond" `shouldReturn` Right (V.fromList [Just 123000000, Just 789000000, Nothing, Just 0])
+                                    Pl.column @Int64 df "timestamp_ms" `shouldReturn` Right (V.fromList [Just 1704067200123, Just 1717245296789, Nothing, Just 0])
+                                    Pl.column @T.Text df "fmt" `shouldReturn` Right (V.fromList [Just "2024-01-01 00:00:00.123", Just "2024-06-01 12:34:56.789", Nothing, Just "1970-01-01 00:00:00.000"])
+                                    Pl.column @Bool df "leap" `shouldReturn` Right (V.fromList [Just True, Just True, Nothing, Just False])
+                                    Pl.column @Int64 df "days_in_month" `shouldReturn` Right (V.fromList [Just 31, Just 30, Nothing, Just 31])
 
     describe "Polars.IPC" $ do
         it "round-trips a dataframe through IPC bytes" $ do
