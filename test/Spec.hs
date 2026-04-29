@@ -80,6 +80,9 @@ horizontalCsv = "test/data/horizontal.csv"
 nameOpsCsv :: FilePath
 nameOpsCsv = "test/data/name_ops.csv"
 
+concatCsv :: FilePath
+concatCsv = "test/data/concat.csv"
+
 metasynPeopleCsv :: FilePath
 metasynPeopleCsv = "test/data/generated/metasyn_people.csv"
 
@@ -1476,6 +1479,52 @@ main = hspec $ do
                                             let types = map Pl.fieldType schema
                                             fields `shouldBe` ["Camel", "pre_score_value", "Camel_suf", "camel", "SCORE_VALUE", "points_value"]
                                             types `shouldBe` [Pl.Int64, Pl.Int64, Pl.Int64, Pl.Int64, Pl.Int64, Pl.Int64]
+
+    describe "Expression DSL string concat functions" $ do
+        it "concatenates and formats string columns with null handling" $ do
+            scanResult <- Pl.scanCsv concatCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    let fullName = [Pl.col "first", Pl.col "last"]
+                    projected <-
+                        Pl.select
+                            [ Pl.alias "full_ignore" (Pl.concatStr True " " fullName)
+                            , Pl.alias "full_strict" (Pl.concatStr False " " fullName)
+                            , Pl.alias "formatted" (Pl.formatStr "{}:{}" [Pl.col "first", Pl.cast Pl.Utf8 (Pl.col "age")])
+                            ]
+                            lf0
+                    case projected of
+                        Left err -> expectationFailure (show err)
+                        Right lf1 -> do
+                            collected <- Pl.collect lf1
+                            case collected of
+                                Left err -> expectationFailure (show err)
+                                Right df -> do
+                                    Pl.shape df `shouldReturn` Right (3, 3)
+                                    Pl.column @T.Text df "full_ignore" `shouldReturn` Right (V.fromList [Just "Alice Smith", Just "Bob", Just "Carol Jones"])
+                                    Pl.column @T.Text df "full_strict" `shouldReturn` Right (V.fromList [Just "Alice Smith", Nothing, Just "Carol Jones"])
+                                    Pl.column @T.Text df "formatted" `shouldReturn` Right (V.fromList [Just "Alice:34", Just "Bob:45", Nothing])
+
+        it "rejects empty expression list for concatStr with InvalidArgument" $ do
+            scanResult <- Pl.scanCsv concatCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    result <- Pl.select [Pl.alias "bad" (Pl.concatStr True " " [])] lf0
+                    case result of
+                        Right _ -> expectationFailure "expected InvalidArgument for empty concatStr expression list"
+                        Left err -> Pl.polarsErrorCode err `shouldBe` Pl.InvalidArgument
+
+        it "rejects formatStr with mismatched placeholders" $ do
+            scanResult <- Pl.scanCsv concatCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    result <- Pl.select [Pl.alias "bad" (Pl.formatStr "{}:{}" [Pl.col "first"])] lf0
+                    case result of
+                        Right _ -> expectationFailure "expected PolarsFailure for format placeholder mismatch"
+                        Left err -> Pl.polarsErrorCode err `shouldBe` Pl.PolarsFailure
 
     describe "Polars.IPC" $ do
         it "round-trips a dataframe through IPC bytes" $ do

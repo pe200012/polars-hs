@@ -339,6 +339,14 @@ int phs_expr_name_function(int op,
                            struct phs_expr **out,
                            struct phs_error **err);
 
+int phs_expr_string_nary_function(int op,
+                                  const char *text,
+                                  bool flag,
+                                  const struct phs_expr *const *exprs,
+                                  uintptr_t len,
+                                  struct phs_expr **out,
+                                  struct phs_error **err);
+
 void phs_dataframe_free(struct phs_dataframe *ptr);
 
 void phs_lazyframe_free(struct phs_lazyframe *ptr);

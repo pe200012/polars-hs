@@ -22,7 +22,7 @@ import Foreign.Storable (peek, poke)
 
 import qualified Data.Text as T
 import Polars.Error (PolarsError (..), PolarsErrorCode (..))
-import Polars.Expr (AggFunction (..), BinaryFunction (..), BinaryOperator (..), ClosedInterval (..), Expr (..), ExprSortOptions (..), HorizontalFunction (..), ListFunction (..), NameFunction (..), QuantileMethod (..), RankMethod (..), RankOptions (..), ScalarFunction (..), StringFunction (..), TemporalFunction (..), TimeUnit (..), UnaryFunction (..))
+import Polars.Expr (AggFunction (..), BinaryFunction (..), BinaryOperator (..), ClosedInterval (..), Expr (..), ExprSortOptions (..), HorizontalFunction (..), ListFunction (..), NameFunction (..), QuantileMethod (..), RankMethod (..), RankOptions (..), ScalarFunction (..), StringFunction (..), StringNaryFunction (..), TemporalFunction (..), TimeUnit (..), UnaryFunction (..))
 import Polars.Schema (DataType (..))
 import Polars.Internal.CString (withTextCString)
 import Polars.Internal.Managed (ManagedExpr, mkManagedExpr, withManagedExpr)
@@ -47,6 +47,7 @@ import Polars.Internal.Raw
     , phs_expr_sort_by
     , phs_expr_string_function
     , phs_expr_string_function_i64
+    , phs_expr_string_nary_function
     , phs_expr_list_function
     , phs_expr_temporal_function
     , phs_expr_temporal_string
@@ -358,6 +359,18 @@ compileExpr = \case
             else
                 withCompiledExprs exprs $ \exprPtrs exprLen ->
                     exprOut (phs_expr_horizontal_function (horizontalFunctionCode fn) (toCBool (horizontalFunctionFlag fn)) exprPtrs exprLen)
+    StringNaryFunctionExpr fn exprs -> do
+        if null exprs
+            then pure (Left (PolarsError InvalidArgument "string n-ary function requires at least one expression"))
+            else case fn of
+                ConcatStr ignore_nulls separator ->
+                    withTextCString separator $ \cSep ->
+                        withCompiledExprs exprs $ \exprPtrs exprLen ->
+                            exprOut (phs_expr_string_nary_function 0 cSep (toCBool ignore_nulls) exprPtrs exprLen)
+                FormatStr format ->
+                    withTextCString format $ \cFmt ->
+                        withCompiledExprs exprs $ \exprPtrs exprLen ->
+                            exprOut (phs_expr_string_nary_function 1 cFmt (toCBool False) exprPtrs exprLen)
 
 withCompiledExprs :: [Expr] -> (Ptr (Ptr RawExpr) -> CSize -> IO (Either PolarsError a)) -> IO (Either PolarsError a)
 withCompiledExprs exprs action = do

@@ -23,6 +23,7 @@ module Polars.Expr
     , RankOptions (..)
     , ScalarFunction (..)
     , StringFunction (..)
+    , StringNaryFunction (..)
     , TemporalFunction (..)
     , TimeUnit (..)
     , UnaryFunction (..)
@@ -32,6 +33,7 @@ module Polars.Expr
     , clipMax
     , clipMin
     , col
+    , concatStr
     , count_
     , cumCount
     , cumMax
@@ -66,6 +68,7 @@ module Polars.Expr
     , fillNan
     , fillNull
     , first_
+    , formatStr
     , allHorizontal
     , anyHorizontal
     , coalesce
@@ -176,6 +179,7 @@ data Expr
     | ScalarFunctionExpr !ScalarFunction !Expr ![Expr]
     | HorizontalFunctionExpr !HorizontalFunction ![Expr]
     | NameFunctionExpr !NameFunction !Expr
+    | StringNaryFunctionExpr !StringNaryFunction ![Expr]
     deriving stock (Eq, Show)
 
 -- | Binary operators supported by the MVP expression compiler.
@@ -304,6 +308,12 @@ data NameFunction
     | NameReplace !Bool !Text !Text  -- ^ literal -> pattern -> value
     | NameToLowercase
     | NameToUppercase
+    deriving stock (Eq, Show)
+
+-- | String n-ary expression functions (concat_str, format_str).
+data StringNaryFunction
+    = ConcatStr !Bool !Text  -- ^ ignore_nulls, separator
+    | FormatStr !Text        -- ^ format string with `{}` placeholders
     deriving stock (Eq, Show)
 
 -- | Time unit for temporal functions.
@@ -599,6 +609,14 @@ allHorizontal = HorizontalFunctionExpr HorizontalAll
 
 coalesce :: [Expr] -> Expr
 coalesce = HorizontalFunctionExpr HorizontalCoalesce
+
+-- String n-ary
+
+concatStr :: Bool -> Text -> [Expr] -> Expr
+concatStr ignore_nulls separator = StringNaryFunctionExpr (ConcatStr ignore_nulls separator)
+
+formatStr :: Text -> [Expr] -> Expr
+formatStr = StringNaryFunctionExpr . FormatStr
 
 -- Name namespace
 

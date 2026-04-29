@@ -3,8 +3,9 @@ use std::ptr;
 
 use polars::prelude::*;
 use polars_plan::dsl::functions::{
-    all_horizontal, any_horizontal, coalesce as polars_coalesce, max_horizontal, mean_horizontal,
-    min_horizontal, sum_horizontal,
+    all_horizontal, any_horizontal, coalesce as polars_coalesce, concat_str,
+    format_str, max_horizontal, mean_horizontal, min_horizontal,
+    sum_horizontal,
 };
 
 use crate::error::{c_str_to_str, ffi_boundary, phs_error, required_mut, PhsError, PhsResult};
@@ -1083,6 +1084,47 @@ pub unsafe extern "C" fn phs_expr_name_function(
             _ => {
                 return Err(PhsError::invalid_argument(format!(
                     "unknown name expression opcode {op}"
+                )))
+            }
+        };
+        *out = expr_into_raw(result);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_expr_string_nary_function(
+    op: c_int,
+    text: *const c_char,
+    flag: bool,
+    exprs: *const *const phs_expr,
+    len: usize,
+    out: *mut *mut phs_expr,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let exprs = expr_args(exprs, len)?;
+        if exprs.is_empty() {
+            return Err(PhsError::invalid_argument(
+                "string nary function requires at least one expression",
+            ));
+        }
+        let result = match op {
+            0 => {
+                // concat_str(exprs, separator, ignore_nulls)
+                let separator = unsafe { c_str_to_str(text, "text") }?;
+                concat_str(&exprs, separator, flag)
+            }
+            1 => {
+                // format_str(format, exprs) — ignore flag
+                let format = unsafe { c_str_to_str(text, "text") }?;
+                format_str(format, &exprs).map_err(PhsError::from)?
+            }
+            _ => {
+                return Err(PhsError::invalid_argument(format!(
+                    "unknown string nary function opcode {op}"
                 )))
             }
         };
@@ -2706,6 +2748,255 @@ mod tests {
         unsafe {
             crate::handles::phs_expr_free(col_expr);
             crate::error::phs_error_free(err);
+        }
+    }
+
+    #[test]
+    fn builds_string_nary_concat_str_expression() {
+        let first = std::ffi::CString::new("first").unwrap();
+        let last = std::ffi::CString::new("last").unwrap();
+        let sep = std::ffi::CString::new(" ").unwrap();
+        let mut col_first = ptr::null_mut();
+        let mut col_last = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_expr_col(first.as_ptr(), &mut col_first, &mut err) },
+            PHS_OK
+        );
+        assert_eq!(
+            unsafe { phs_expr_col(last.as_ptr(), &mut col_last, &mut err) },
+            PHS_OK
+        );
+        let exprs = [col_first as *const phs_expr, col_last as *const phs_expr];
+        // concat_str (op 0, ignore_nulls=false)
+        let mut out = ptr::null_mut();
+        assert_eq!(
+            unsafe {
+                phs_expr_string_nary_function(
+                    0,
+                    sep.as_ptr(),
+                    false,
+                    exprs.as_ptr(),
+                    2,
+                    &mut out,
+                    &mut err,
+                )
+            },
+            PHS_OK
+        );
+        assert!(!out.is_null());
+        unsafe { crate::handles::phs_expr_free(out) };
+        // concat_str (op 0, ignore_nulls=true)
+        let mut out = ptr::null_mut();
+        assert_eq!(
+            unsafe {
+                phs_expr_string_nary_function(
+                    0,
+                    sep.as_ptr(),
+                    true,
+                    exprs.as_ptr(),
+                    2,
+                    &mut out,
+                    &mut err,
+                )
+            },
+            PHS_OK
+        );
+        assert!(!out.is_null());
+        unsafe { crate::handles::phs_expr_free(out) };
+        unsafe {
+            crate::handles::phs_expr_free(col_first);
+            crate::handles::phs_expr_free(col_last);
+        }
+    }
+
+    #[test]
+    fn builds_string_nary_format_str_expression() {
+        let first = std::ffi::CString::new("first").unwrap();
+        let age = std::ffi::CString::new("age").unwrap();
+        let fmt = std::ffi::CString::new("{}:{}").unwrap();
+        let mut col_first = ptr::null_mut();
+        let mut col_age = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_expr_col(first.as_ptr(), &mut col_first, &mut err) },
+            PHS_OK
+        );
+        assert_eq!(
+            unsafe { phs_expr_col(age.as_ptr(), &mut col_age, &mut err) },
+            PHS_OK
+        );
+        let exprs = [col_first as *const phs_expr, col_age as *const phs_expr];
+        // format_str (op 1)
+        let mut out = ptr::null_mut();
+        assert_eq!(
+            unsafe {
+                phs_expr_string_nary_function(
+                    1,
+                    fmt.as_ptr(),
+                    false,
+                    exprs.as_ptr(),
+                    2,
+                    &mut out,
+                    &mut err,
+                )
+            },
+            PHS_OK
+        );
+        assert!(!out.is_null());
+        unsafe {
+            crate::handles::phs_expr_free(col_first);
+            crate::handles::phs_expr_free(col_age);
+            crate::handles::phs_expr_free(out);
+        }
+    }
+
+    #[test]
+    fn string_nary_function_errors_unknown_opcode_empty_list_null_text() {
+        let first = std::ffi::CString::new("first").unwrap();
+        let sep = std::ffi::CString::new(" ").unwrap();
+        let mut col_first = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_expr_col(first.as_ptr(), &mut col_first, &mut err) },
+            PHS_OK
+        );
+        let exprs = [col_first as *const phs_expr];
+        // unknown opcode
+        let mut out: *mut phs_expr = ptr::null_mut();
+        assert_eq!(
+            unsafe {
+                phs_expr_string_nary_function(
+                    99,
+                    sep.as_ptr(),
+                    false,
+                    exprs.as_ptr(),
+                    1,
+                    &mut out,
+                    &mut err,
+                )
+            },
+            PHS_INVALID_ARGUMENT
+        );
+        assert!(out.is_null());
+        assert!(!err.is_null());
+        unsafe { crate::error::phs_error_free(err) };
+        err = ptr::null_mut();
+        out = ptr::null_mut();
+        // null text pointer for concat_str (op 0)
+        assert_eq!(
+            unsafe {
+                phs_expr_string_nary_function(
+                    0,
+                    ptr::null(),
+                    false,
+                    exprs.as_ptr(),
+                    1,
+                    &mut out,
+                    &mut err,
+                )
+            },
+            PHS_INVALID_ARGUMENT
+        );
+        assert!(out.is_null());
+        assert!(!err.is_null());
+        unsafe { crate::error::phs_error_free(err) };
+        err = ptr::null_mut();
+        out = ptr::null_mut();
+        // null text pointer for format_str (op 1)
+        assert_eq!(
+            unsafe {
+                phs_expr_string_nary_function(
+                    1,
+                    ptr::null(),
+                    false,
+                    exprs.as_ptr(),
+                    1,
+                    &mut out,
+                    &mut err,
+                )
+            },
+            PHS_INVALID_ARGUMENT
+        );
+        assert!(out.is_null());
+        assert!(!err.is_null());
+        unsafe { crate::error::phs_error_free(err) };
+        err = ptr::null_mut();
+        out = ptr::null_mut();
+        // empty exprs list for concat_str (op 0)
+        assert_eq!(
+            unsafe {
+                phs_expr_string_nary_function(
+                    0,
+                    sep.as_ptr(),
+                    false,
+                    ptr::null(),
+                    0,
+                    &mut out,
+                    &mut err,
+                )
+            },
+            PHS_INVALID_ARGUMENT
+        );
+        assert!(out.is_null());
+        assert!(!err.is_null());
+        unsafe { crate::error::phs_error_free(err) };
+        err = ptr::null_mut();
+        out = ptr::null_mut();
+        // empty exprs list for format_str (op 1)
+        assert_eq!(
+            unsafe {
+                phs_expr_string_nary_function(
+                    1,
+                    sep.as_ptr(),
+                    false,
+                    ptr::null(),
+                    0,
+                    &mut out,
+                    &mut err,
+                )
+            },
+            PHS_INVALID_ARGUMENT
+        );
+        assert!(out.is_null());
+        assert!(!err.is_null());
+        unsafe {
+            crate::handles::phs_expr_free(col_first);
+            crate::error::phs_error_free(err);
+        }
+    }
+
+    #[test]
+    fn string_nary_format_placeholder_mismatch_returns_error() {
+        let first = std::ffi::CString::new("first").unwrap();
+        let fmt = std::ffi::CString::new("{}:{}").unwrap();
+        let mut col_first = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_expr_col(first.as_ptr(), &mut col_first, &mut err) },
+            PHS_OK
+        );
+        let exprs = [col_first as *const phs_expr];
+        // 2 placeholders but only 1 expression -> should error
+        let mut out: *mut phs_expr = ptr::null_mut();
+        let result = unsafe {
+            phs_expr_string_nary_function(
+                1,
+                fmt.as_ptr(),
+                false,
+                exprs.as_ptr(),
+                1,
+                &mut out,
+                &mut err,
+            )
+        };
+        assert_ne!(result, PHS_OK, "format_str with mismatched placeholders should error");
+        assert!(out.is_null());
+        if !err.is_null() {
+            unsafe { crate::error::phs_error_free(err) };
+        }
+        unsafe {
+            crate::handles::phs_expr_free(col_first);
         }
     }
 }

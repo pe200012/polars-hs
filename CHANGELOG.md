@@ -41,5 +41,6 @@ and this project adheres to the
 - Horizontal and coalesce Expression DSL helpers for row-wise operations (`sumHorizontal`, `meanHorizontal`, `maxHorizontal`, `minHorizontal`, `anyHorizontal`, `allHorizontal`, `coalesce`).
 
 - Name Expression DSL helpers for column name manipulation (`nameKeep`, `namePrefix`, `nameSuffix`, `nameReplace`, `nameToLowercase`, `nameToUppercase`).
+- String n-ary Expression DSL helpers for horizontal string concatenation (`concatStr`) with separator and null handling, and format-string interpolation (`formatStr`) with `{}` placeholders.
 
 ## 0.1.0.0 - YYYY-MM-DD
