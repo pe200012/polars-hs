@@ -77,6 +77,9 @@ predicatesCsv = "test/data/predicates.csv"
 horizontalCsv :: FilePath
 horizontalCsv = "test/data/horizontal.csv"
 
+nameOpsCsv :: FilePath
+nameOpsCsv = "test/data/name_ops.csv"
+
 metasynPeopleCsv :: FilePath
 metasynPeopleCsv = "test/data/generated/metasyn_people.csv"
 
@@ -1440,6 +1443,39 @@ main = hspec $ do
                     case result of
                         Right _ -> expectationFailure "expected InvalidArgument for empty horizontal list"
                         Left err -> Pl.polarsErrorCode err `shouldBe` Pl.InvalidArgument
+
+    describe "Expression DSL name namespace" $ do
+        it "keeps, prefixes, suffixes, and transforms column names" $ do
+            scanResult <- Pl.scanCsv nameOpsCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    projected <-
+                        Pl.select
+                            [ Pl.nameKeep (Pl.alias "renamed" (Pl.col "Camel"))
+                            , Pl.namePrefix "pre_" (Pl.col "score_value")
+                            , Pl.nameSuffix "_suf" (Pl.col "Camel")
+                            , Pl.nameToLowercase (Pl.col "Camel")
+                            , Pl.nameToUppercase (Pl.col "score_value")
+                            , Pl.nameReplace True "score" "points" (Pl.col "score_value")
+                            ]
+                            lf0
+                    case projected of
+                        Left err -> expectationFailure (show err)
+                        Right lf1 -> do
+                            collected <- Pl.collect lf1
+                            case collected of
+                                Left err -> expectationFailure (show err)
+                                Right df -> do
+                                    Pl.shape df `shouldReturn` Right (2, 6)
+                                    schemaResult <- Pl.schema df
+                                    case schemaResult of
+                                        Left err -> expectationFailure (show err)
+                                        Right schema -> do
+                                            let fields = map Pl.fieldName schema
+                                            let types = map Pl.fieldType schema
+                                            fields `shouldBe` ["Camel", "pre_score_value", "Camel_suf", "camel", "SCORE_VALUE", "points_value"]
+                                            types `shouldBe` [Pl.Int64, Pl.Int64, Pl.Int64, Pl.Int64, Pl.Int64, Pl.Int64]
 
     describe "Polars.IPC" $ do
         it "round-trips a dataframe through IPC bytes" $ do

@@ -59,6 +59,7 @@ module Polars.Internal.Raw
     , phs_expr_is_between
     , phs_expr_is_close
     , phs_expr_is_in
+    , phs_expr_name_function
     , phs_expr_lit_bool
     , phs_expr_lit_double
     , phs_expr_lit_int
@@ -448,3 +449,6 @@ foreign import ccall unsafe "phs_expr_is_in"
 
 foreign import ccall unsafe "phs_expr_clip"
     phs_expr_clip :: CInt -> Ptr RawExpr -> Ptr (Ptr RawExpr) -> CSize -> Ptr (Ptr RawExpr) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_expr_name_function"
+    phs_expr_name_function :: CInt -> CString -> CString -> CBool -> Ptr RawExpr -> Ptr (Ptr RawExpr) -> Ptr (Ptr RawError) -> IO CInt

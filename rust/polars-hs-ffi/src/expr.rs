@@ -1037,6 +1037,60 @@ pub unsafe extern "C" fn phs_expr_horizontal_function(
     })
 }
 
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_expr_name_function(
+    op: c_int,
+    first: *const c_char,
+    second: *const c_char,
+    flag: bool,
+    expr: *const phs_expr,
+    out: *mut *mut phs_expr,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let expr = unsafe { expr_ref(expr) }?.value.clone();
+        let result = match op {
+            0 => {
+                // keep — ignores strings and flag
+                expr.name().keep()
+            }
+            1 => {
+                // prefix — requires `first`
+                let prefix = unsafe { c_str_to_str(first, "first") }?;
+                expr.name().prefix(prefix)
+            }
+            2 => {
+                // suffix — requires `first`
+                let suffix = unsafe { c_str_to_str(first, "first") }?;
+                expr.name().suffix(suffix)
+            }
+            3 => {
+                // replace — requires `first` pattern and `second` value; `flag` is literal
+                let pattern = unsafe { c_str_to_str(first, "first") }?;
+                let value = unsafe { c_str_to_str(second, "second") }?;
+                expr.name().replace(pattern, value, flag)
+            }
+            4 => {
+                // to_lowercase — ignores strings and flag
+                expr.name().to_lowercase()
+            }
+            5 => {
+                // to_uppercase — ignores strings and flag
+                expr.name().to_uppercase()
+            }
+            _ => {
+                return Err(PhsError::invalid_argument(format!(
+                    "unknown name expression opcode {op}"
+                )))
+            }
+        };
+        *out = expr_into_raw(result);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2382,5 +2436,276 @@ mod tests {
         assert!(out.is_null());
         assert!(!err.is_null());
         unsafe { crate::error::phs_error_free(err) };
+    }
+
+    #[test]
+    fn builds_name_function_expressions() {
+        let name = std::ffi::CString::new("value").unwrap();
+        let prefix = std::ffi::CString::new("pre_").unwrap();
+        let suffix = std::ffi::CString::new("_suf").unwrap();
+        let pattern = std::ffi::CString::new("score").unwrap();
+        let replace = std::ffi::CString::new("points").unwrap();
+        let mut col_expr = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_expr_col(name.as_ptr(), &mut col_expr, &mut err) },
+            PHS_OK
+        );
+        // op 0: keep
+        let mut out = ptr::null_mut();
+        assert_eq!(
+            unsafe {
+                phs_expr_name_function(
+                    0,
+                    ptr::null(),
+                    ptr::null(),
+                    false,
+                    col_expr,
+                    &mut out,
+                    &mut err,
+                )
+            },
+            PHS_OK
+        );
+        assert!(!out.is_null());
+        unsafe { crate::handles::phs_expr_free(out) };
+        // op 1: prefix
+        let mut out = ptr::null_mut();
+        assert_eq!(
+            unsafe {
+                phs_expr_name_function(
+                    1,
+                    prefix.as_ptr(),
+                    ptr::null(),
+                    false,
+                    col_expr,
+                    &mut out,
+                    &mut err,
+                )
+            },
+            PHS_OK
+        );
+        assert!(!out.is_null());
+        unsafe { crate::handles::phs_expr_free(out) };
+        // op 2: suffix
+        let mut out = ptr::null_mut();
+        assert_eq!(
+            unsafe {
+                phs_expr_name_function(
+                    2,
+                    suffix.as_ptr(),
+                    ptr::null(),
+                    false,
+                    col_expr,
+                    &mut out,
+                    &mut err,
+                )
+            },
+            PHS_OK
+        );
+        assert!(!out.is_null());
+        unsafe { crate::handles::phs_expr_free(out) };
+        // op 3: replace (literal=true)
+        let mut out = ptr::null_mut();
+        assert_eq!(
+            unsafe {
+                phs_expr_name_function(
+                    3,
+                    pattern.as_ptr(),
+                    replace.as_ptr(),
+                    true,
+                    col_expr,
+                    &mut out,
+                    &mut err,
+                )
+            },
+            PHS_OK
+        );
+        assert!(!out.is_null());
+        unsafe { crate::handles::phs_expr_free(out) };
+        // op 3: replace (literal=false, regex)
+        let mut out = ptr::null_mut();
+        assert_eq!(
+            unsafe {
+                phs_expr_name_function(
+                    3,
+                    pattern.as_ptr(),
+                    replace.as_ptr(),
+                    false,
+                    col_expr,
+                    &mut out,
+                    &mut err,
+                )
+            },
+            PHS_OK
+        );
+        assert!(!out.is_null());
+        unsafe { crate::handles::phs_expr_free(out) };
+        // op 4: to_lowercase
+        let mut out = ptr::null_mut();
+        assert_eq!(
+            unsafe {
+                phs_expr_name_function(
+                    4,
+                    ptr::null(),
+                    ptr::null(),
+                    false,
+                    col_expr,
+                    &mut out,
+                    &mut err,
+                )
+            },
+            PHS_OK
+        );
+        assert!(!out.is_null());
+        unsafe { crate::handles::phs_expr_free(out) };
+        // op 5: to_uppercase
+        let mut out = ptr::null_mut();
+        assert_eq!(
+            unsafe {
+                phs_expr_name_function(
+                    5,
+                    ptr::null(),
+                    ptr::null(),
+                    false,
+                    col_expr,
+                    &mut out,
+                    &mut err,
+                )
+            },
+            PHS_OK
+        );
+        assert!(!out.is_null());
+        unsafe {
+            crate::handles::phs_expr_free(col_expr);
+            crate::handles::phs_expr_free(out);
+        }
+    }
+
+    #[test]
+    fn name_function_unknown_opcode_returns_error() {
+        let name = std::ffi::CString::new("value").unwrap();
+        let mut col_expr = ptr::null_mut();
+        let mut out: *mut phs_expr = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_expr_col(name.as_ptr(), &mut col_expr, &mut err) },
+            PHS_OK
+        );
+        assert_eq!(
+            unsafe {
+                phs_expr_name_function(
+                    99,
+                    ptr::null(),
+                    ptr::null(),
+                    false,
+                    col_expr,
+                    &mut out,
+                    &mut err,
+                )
+            },
+            PHS_INVALID_ARGUMENT
+        );
+        assert!(out.is_null());
+        assert!(!err.is_null());
+        unsafe {
+            crate::handles::phs_expr_free(col_expr);
+            crate::error::phs_error_free(err);
+        }
+    }
+
+    #[test]
+    fn name_function_missing_required_string_returns_error() {
+        let name = std::ffi::CString::new("value").unwrap();
+        let mut col_expr = ptr::null_mut();
+        let mut out: *mut phs_expr = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_expr_col(name.as_ptr(), &mut col_expr, &mut err) },
+            PHS_OK
+        );
+        // prefix (op 1) with null first string
+        assert_eq!(
+            unsafe {
+                phs_expr_name_function(
+                    1,
+                    ptr::null(),
+                    ptr::null(),
+                    false,
+                    col_expr,
+                    &mut out,
+                    &mut err,
+                )
+            },
+            PHS_INVALID_ARGUMENT
+        );
+        assert!(out.is_null());
+        assert!(!err.is_null());
+        unsafe { crate::error::phs_error_free(err) };
+        err = ptr::null_mut();
+        out = ptr::null_mut();
+        // suffix (op 2) with null first string
+        assert_eq!(
+            unsafe {
+                phs_expr_name_function(
+                    2,
+                    ptr::null(),
+                    ptr::null(),
+                    false,
+                    col_expr,
+                    &mut out,
+                    &mut err,
+                )
+            },
+            PHS_INVALID_ARGUMENT
+        );
+        assert!(out.is_null());
+        assert!(!err.is_null());
+        unsafe { crate::error::phs_error_free(err) };
+        err = ptr::null_mut();
+        out = ptr::null_mut();
+        // replace (op 3) with null first string
+        let second = std::ffi::CString::new("points").unwrap();
+        assert_eq!(
+            unsafe {
+                phs_expr_name_function(
+                    3,
+                    ptr::null(),
+                    second.as_ptr(),
+                    false,
+                    col_expr,
+                    &mut out,
+                    &mut err,
+                )
+            },
+            PHS_INVALID_ARGUMENT
+        );
+        assert!(out.is_null());
+        assert!(!err.is_null());
+        unsafe { crate::error::phs_error_free(err) };
+        err = ptr::null_mut();
+        out = ptr::null_mut();
+        // replace (op 3) with null second string
+        let first = std::ffi::CString::new("score").unwrap();
+        assert_eq!(
+            unsafe {
+                phs_expr_name_function(
+                    3,
+                    first.as_ptr(),
+                    ptr::null(),
+                    false,
+                    col_expr,
+                    &mut out,
+                    &mut err,
+                )
+            },
+            PHS_INVALID_ARGUMENT
+        );
+        assert!(out.is_null());
+        assert!(!err.is_null());
+        unsafe {
+            crate::handles::phs_expr_free(col_expr);
+            crate::error::phs_error_free(err);
+        }
     }
 }

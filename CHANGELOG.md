@@ -40,4 +40,6 @@ and this project adheres to the
 - Scalar predicate Expression DSL helpers for deduplication (`isDuplicated`, `isUnique`, `isFirstDistinct`, `isLastDistinct`), range checks (`isBetween` with interval variants), floating-point closeness (`isClose`), set membership (`isIn`), and value clipping (`clip`, `clipMin`, `clipMax`).
 - Horizontal and coalesce Expression DSL helpers for row-wise operations (`sumHorizontal`, `meanHorizontal`, `maxHorizontal`, `minHorizontal`, `anyHorizontal`, `allHorizontal`, `coalesce`).
 
+- Name Expression DSL helpers for column name manipulation (`nameKeep`, `namePrefix`, `nameSuffix`, `nameReplace`, `nameToLowercase`, `nameToUppercase`).
+
 ## 0.1.0.0 - YYYY-MM-DD

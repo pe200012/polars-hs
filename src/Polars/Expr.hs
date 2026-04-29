@@ -17,6 +17,7 @@ module Polars.Expr
     , ExprSortOptions (..)
     , HorizontalFunction (..)
     , ListFunction (..)
+    , NameFunction (..)
     , QuantileMethod (..)
     , RankMethod (..)
     , RankOptions (..)
@@ -101,6 +102,12 @@ module Polars.Expr
     , median_
     , min_
     , minHorizontal
+    , nameKeep
+    , namePrefix
+    , nameSuffix
+    , nameReplace
+    , nameToLowercase
+    , nameToUppercase
     , nUnique_
     , not_
     , over
@@ -168,6 +175,7 @@ data Expr
     | TemporalFunctionExpr !TemporalFunction !Expr
     | ScalarFunctionExpr !ScalarFunction !Expr ![Expr]
     | HorizontalFunctionExpr !HorizontalFunction ![Expr]
+    | NameFunctionExpr !NameFunction !Expr
     deriving stock (Eq, Show)
 
 -- | Binary operators supported by the MVP expression compiler.
@@ -286,6 +294,16 @@ data HorizontalFunction
     | HorizontalAny
     | HorizontalAll
     | HorizontalCoalesce
+    deriving stock (Eq, Show)
+
+-- | Name namespace expression functions.
+data NameFunction
+    = NameKeep
+    | NamePrefix !Text
+    | NameSuffix !Text
+    | NameReplace !Bool !Text !Text  -- ^ literal -> pattern -> value
+    | NameToLowercase
+    | NameToUppercase
     deriving stock (Eq, Show)
 
 -- | Time unit for temporal functions.
@@ -581,3 +599,23 @@ allHorizontal = HorizontalFunctionExpr HorizontalAll
 
 coalesce :: [Expr] -> Expr
 coalesce = HorizontalFunctionExpr HorizontalCoalesce
+
+-- Name namespace
+
+nameKeep :: Expr -> Expr
+nameKeep = NameFunctionExpr NameKeep
+
+namePrefix :: Text -> Expr -> Expr
+namePrefix prefix = NameFunctionExpr (NamePrefix prefix)
+
+nameSuffix :: Text -> Expr -> Expr
+nameSuffix suffix = NameFunctionExpr (NameSuffix suffix)
+
+nameReplace :: Bool -> Text -> Text -> Expr -> Expr
+nameReplace literal pat value = NameFunctionExpr (NameReplace literal pat value)
+
+nameToLowercase :: Expr -> Expr
+nameToLowercase = NameFunctionExpr NameToLowercase
+
+nameToUppercase :: Expr -> Expr
+nameToUppercase = NameFunctionExpr NameToUppercase

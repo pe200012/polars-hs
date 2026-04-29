@@ -22,7 +22,7 @@ import Foreign.Storable (peek, poke)
 
 import qualified Data.Text as T
 import Polars.Error (PolarsError (..), PolarsErrorCode (..))
-import Polars.Expr (AggFunction (..), BinaryFunction (..), BinaryOperator (..), ClosedInterval (..), Expr (..), ExprSortOptions (..), HorizontalFunction (..), ListFunction (..), QuantileMethod (..), RankMethod (..), RankOptions (..), ScalarFunction (..), StringFunction (..), TemporalFunction (..), TimeUnit (..), UnaryFunction (..))
+import Polars.Expr (AggFunction (..), BinaryFunction (..), BinaryOperator (..), ClosedInterval (..), Expr (..), ExprSortOptions (..), HorizontalFunction (..), ListFunction (..), NameFunction (..), QuantileMethod (..), RankMethod (..), RankOptions (..), ScalarFunction (..), StringFunction (..), TemporalFunction (..), TimeUnit (..), UnaryFunction (..))
 import Polars.Schema (DataType (..))
 import Polars.Internal.CString (withTextCString)
 import Polars.Internal.Managed (ManagedExpr, mkManagedExpr, withManagedExpr)
@@ -60,6 +60,7 @@ import Polars.Internal.Raw
     , phs_expr_is_in
     , phs_expr_clip
     , phs_expr_horizontal_function
+    , phs_expr_name_function
     )
 import Polars.Internal.Result (consumeError, nullPointerError)
 
@@ -345,6 +346,12 @@ compileExpr = \case
                                                 withArray [upperPtr] $ \argsArrayPtr ->
                                                     exprOut (phs_expr_clip 2 inputPtr argsArrayPtr 1)
                                 _ -> pure (Left (PolarsError InvalidArgument "clip_max expects one upper argument"))
+    NameFunctionExpr fn expr -> do
+        compiled <- compileExpr expr
+        case compiled of
+            Left err -> pure (Left err)
+            Right managed -> withManagedExpr managed $ \ptr ->
+                nameFunctionExpr (nameFunctionCode fn) fn ptr
     HorizontalFunctionExpr fn exprs -> do
         if null exprs
             then pure (Left (PolarsError InvalidArgument "horizontal function requires at least one expression"))
@@ -559,3 +566,30 @@ horizontalFunctionFlag :: HorizontalFunction -> Bool
 horizontalFunctionFlag (HorizontalSum ignore_nulls) = ignore_nulls
 horizontalFunctionFlag (HorizontalMean ignore_nulls) = ignore_nulls
 horizontalFunctionFlag _ = False
+
+nameFunctionCode :: NameFunction -> CInt
+nameFunctionCode NameKeep = 0
+nameFunctionCode (NamePrefix _) = 1
+nameFunctionCode (NameSuffix _) = 2
+nameFunctionCode NameReplace{} = 3
+nameFunctionCode NameToLowercase = 4
+nameFunctionCode NameToUppercase = 5
+
+nameFunctionExpr :: CInt -> NameFunction -> Ptr RawExpr -> IO (Either PolarsError ManagedExpr)
+nameFunctionExpr op fn ptr = case fn of
+    NameKeep ->
+        exprOut (phs_expr_name_function op nullPtr nullPtr (toCBool False) ptr)
+    NamePrefix prefix ->
+        withTextCString prefix $ \cPrefix ->
+            exprOut (phs_expr_name_function op cPrefix nullPtr (toCBool False) ptr)
+    NameSuffix suffix ->
+        withTextCString suffix $ \cSuffix ->
+            exprOut (phs_expr_name_function op cSuffix nullPtr (toCBool False) ptr)
+    NameReplace literal pat value ->
+        withTextCString pat $ \cPattern ->
+            withTextCString value $ \cValue ->
+                exprOut (phs_expr_name_function op cPattern cValue (toCBool literal) ptr)
+    NameToLowercase ->
+        exprOut (phs_expr_name_function op nullPtr nullPtr (toCBool False) ptr)
+    NameToUppercase ->
+        exprOut (phs_expr_name_function op nullPtr nullPtr (toCBool False) ptr)
