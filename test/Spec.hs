@@ -68,6 +68,9 @@ stringsCsv = "test/data/strings.csv"
 temporalCsv :: FilePath
 temporalCsv = "test/data/temporal.csv"
 
+phrasesCsv :: FilePath
+phrasesCsv = "test/data/phrases.csv"
+
 metasynPeopleCsv :: FilePath
 metasynPeopleCsv = "test/data/generated/metasyn_people.csv"
 
@@ -1280,6 +1283,40 @@ main = hspec $ do
                                     Pl.column @T.Text df "fmt" `shouldReturn` Right (V.fromList [Just "2024-01-01 00:00:00.123", Just "2024-06-01 12:34:56.789", Nothing, Just "1970-01-01 00:00:00.000"])
                                     Pl.column @Bool df "leap" `shouldReturn` Right (V.fromList [Just True, Just True, Nothing, Just False])
                                     Pl.column @Int64 df "days_in_month" `shouldReturn` Right (V.fromList [Just 31, Just 30, Nothing, Just 31])
+
+    describe "Expression DSL list namespace" $ do
+        it "splits strings into lists and applies list helpers" $ do
+            scanResult <- Pl.scanCsv phrasesCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    let split = Pl.strSplit (Pl.col "phrase") (Pl.litText " ")
+                    projected <-
+                        Pl.select
+                            [ Pl.alias "len" (Pl.cast Pl.Int64 (Pl.listLen split))
+                            , Pl.alias "first" (Pl.listFirst split)
+                            , Pl.alias "last" (Pl.listLast split)
+                            , Pl.alias "get1" (Pl.listGet True split (Pl.litInt 1))
+                            , Pl.alias "joined" (Pl.listJoin True split (Pl.litText "-"))
+                            , Pl.alias "has_red" (Pl.listContains False split (Pl.litText "red"))
+                            , Pl.alias "red_count" (Pl.cast Pl.Int64 (Pl.listCountMatches split (Pl.litText "red")))
+                            ]
+                            lf0
+                    case projected of
+                        Left err -> expectationFailure (show err)
+                        Right lf1 -> do
+                            collected <- Pl.collect lf1
+                            case collected of
+                                Left err -> expectationFailure (show err)
+                                Right df -> do
+                                    Pl.shape df `shouldReturn` Right (4, 7)
+                                    Pl.column @Int64 df "len" `shouldReturn` Right (V.fromList [Just 3, Just 2, Just 2, Just 1])
+                                    Pl.column @T.Text df "first" `shouldReturn` Right (V.fromList [Just "red", Just "red", Just "日本", Just "solo"])
+                                    Pl.column @T.Text df "last" `shouldReturn` Right (V.fromList [Just "blue", Just "red", Just "語", Just "solo"])
+                                    Pl.column @T.Text df "get1" `shouldReturn` Right (V.fromList [Just "green", Just "red", Just "語", Nothing])
+                                    Pl.column @T.Text df "joined" `shouldReturn` Right (V.fromList [Just "red-green-blue", Just "red-red", Just "日本-語", Just "solo"])
+                                    Pl.column @Bool df "has_red" `shouldReturn` Right (V.fromList [Just True, Just True, Just False, Just False])
+                                    Pl.column @Int64 df "red_count" `shouldReturn` Right (V.fromList [Just 1, Just 2, Just 0, Just 0])
 
     describe "Polars.IPC" $ do
         it "round-trips a dataframe through IPC bytes" $ do

@@ -14,6 +14,7 @@ module Polars.Expr
     , BinaryOperator (..)
     , Expr (..)
     , ExprSortOptions (..)
+    , ListFunction (..)
     , QuantileMethod (..)
     , RankMethod (..)
     , RankOptions (..)
@@ -66,6 +67,13 @@ module Polars.Expr
     , isNull
     , last_
     , len_
+    , listContains
+    , listCountMatches
+    , listFirst
+    , listGet
+    , listJoin
+    , listLast
+    , listLen
     , litBool
     , litDouble
     , litInt
@@ -93,6 +101,8 @@ module Polars.Expr
     , strLenBytes
     , strLenChars
     , strSlice
+    , strSplit
+    , strSplitInclusive
     , strStartsWith
     , strStrip
     , strStripEnd
@@ -134,6 +144,7 @@ data Expr
     | SortByExpr !ExprSortOptions ![Expr] !Expr
     | OverExpr ![Expr] !Expr
     | StringFunctionExpr !StringFunction !Expr ![Expr]
+    | ListFunctionExpr !ListFunction !Expr ![Expr]
     | TemporalFunctionExpr !TemporalFunction !Expr
     deriving stock (Eq, Show)
 
@@ -211,6 +222,19 @@ data StringFunction
     | StrSlice
     | StrHead
     | StrTail
+    | StrSplit
+    | StrSplitInclusive
+    deriving stock (Eq, Show)
+
+-- | List namespace expression functions.
+data ListFunction
+    = ListLen
+    | ListFirst
+    | ListLast
+    | ListGet !Bool
+    | ListJoin !Bool
+    | ListContains !Bool
+    | ListCountMatches
     deriving stock (Eq, Show)
 
 -- | Time unit for temporal functions.
@@ -227,7 +251,6 @@ data TemporalFunction
     | DtToString !Text
     deriving stock (Eq, Show)
 
--- | Method for computing quantiles.
 data QuantileMethod
     = QuantileNearest
     | QuantileLower
@@ -407,6 +430,27 @@ strReplace literal input pat value = StringFunctionExpr (StrReplace literal) inp
 
 strReplaceAll :: Bool -> Expr -> Expr -> Expr -> Expr
 strReplaceAll literal input pat value = StringFunctionExpr (StrReplaceAll literal) input [pat, value]
+
+strSplit, strSplitInclusive :: Expr -> Expr -> Expr
+strSplit input by = StringFunctionExpr StrSplit input [by]
+strSplitInclusive input by = StringFunctionExpr StrSplitInclusive input [by]
+
+listLen, listFirst, listLast :: Expr -> Expr
+listLen input = ListFunctionExpr ListLen input []
+listFirst input = ListFunctionExpr ListFirst input []
+listLast input = ListFunctionExpr ListLast input []
+
+listGet :: Bool -> Expr -> Expr -> Expr
+listGet nullOnOob input index = ListFunctionExpr (ListGet nullOnOob) input [index]
+
+listJoin :: Bool -> Expr -> Expr -> Expr
+listJoin ignoreNulls input separator = ListFunctionExpr (ListJoin ignoreNulls) input [separator]
+
+listContains :: Bool -> Expr -> Expr -> Expr
+listContains nullsEqual input element = ListFunctionExpr (ListContains nullsEqual) input [element]
+
+listCountMatches :: Expr -> Expr -> Expr
+listCountMatches input element = ListFunctionExpr ListCountMatches input [element]
 
 dtYear, dtIsoYear, dtQuarter, dtMonth, dtWeek, dtWeekday, dtDay, dtOrdinalDay, dtHour, dtMinute, dtSecond :: Expr -> Expr
 dtYear = TemporalFunctionExpr DtYear

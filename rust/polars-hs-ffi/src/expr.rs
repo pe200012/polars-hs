@@ -508,103 +508,111 @@ pub unsafe extern "C" fn phs_expr_string_function(
         let out = unsafe { required_mut(out, "out") }?;
         *out = ptr::null_mut();
         let expr = unsafe { expr_ref(expr) }?.value.clone();
-        let args = string_args(args, arg_len)?;
+        let args = expr_args(args, arg_len)?;
         let result = match op {
             0 => {
-                require_string_arity(op, &args, 1)?;
+                require_expr_arity("string", op, &args, 1)?;
                 expr.str().contains_literal(args[0].clone())
             }
             1 => {
-                require_string_arity(op, &args, 1)?;
+                require_expr_arity("string", op, &args, 1)?;
                 expr.str().starts_with(args[0].clone())
             }
             2 => {
-                require_string_arity(op, &args, 1)?;
+                require_expr_arity("string", op, &args, 1)?;
                 expr.str().ends_with(args[0].clone())
             }
             3 => {
-                require_string_arity(op, &args, 1)?;
+                require_expr_arity("string", op, &args, 1)?;
                 expr.str().strip_chars(args[0].clone())
             }
             4 => {
-                require_string_arity(op, &args, 1)?;
+                require_expr_arity("string", op, &args, 1)?;
                 expr.str().strip_chars_start(args[0].clone())
             }
             5 => {
-                require_string_arity(op, &args, 1)?;
+                require_expr_arity("string", op, &args, 1)?;
                 expr.str().strip_chars_end(args[0].clone())
             }
             6 => {
-                require_string_arity(op, &args, 0)?;
+                require_expr_arity("string", op, &args, 0)?;
                 expr.str().to_lowercase()
             }
             7 => {
-                require_string_arity(op, &args, 0)?;
+                require_expr_arity("string", op, &args, 0)?;
                 expr.str().to_uppercase()
             }
             8 => {
-                require_string_arity(op, &args, 0)?;
+                require_expr_arity("string", op, &args, 0)?;
                 expr.str().len_bytes()
             }
             9 => {
-                require_string_arity(op, &args, 0)?;
+                require_expr_arity("string", op, &args, 0)?;
                 expr.str().len_chars()
             }
             10 => {
-                require_string_arity(op, &args, 2)?;
+                require_expr_arity("string", op, &args, 2)?;
                 expr.str().slice(args[0].clone(), args[1].clone())
             }
             11 => {
-                require_string_arity(op, &args, 1)?;
+                require_expr_arity("string", op, &args, 1)?;
                 expr.str().head(args[0].clone())
             }
             12 => {
-                require_string_arity(op, &args, 1)?;
+                require_expr_arity("string", op, &args, 1)?;
                 expr.str().tail(args[0].clone())
             }
             13 => {
-                require_string_arity(op, &args, 1)?;
+                require_expr_arity("string", op, &args, 1)?;
                 expr.str().contains(args[0].clone(), false)
             }
             14 => {
-                require_string_arity(op, &args, 1)?;
+                require_expr_arity("string", op, &args, 1)?;
                 expr.str().contains(args[0].clone(), true)
             }
             15 => {
-                require_string_arity(op, &args, 1)?;
+                require_expr_arity("string", op, &args, 1)?;
                 expr.str().find_literal(args[0].clone())
             }
             16 => {
-                require_string_arity(op, &args, 1)?;
+                require_expr_arity("string", op, &args, 1)?;
                 expr.str().find(args[0].clone(), false)
             }
             17 => {
-                require_string_arity(op, &args, 1)?;
+                require_expr_arity("string", op, &args, 1)?;
                 expr.str().find(args[0].clone(), true)
             }
             18 => {
-                require_string_arity(op, &args, 1)?;
+                require_expr_arity("string", op, &args, 1)?;
                 expr.str().count_matches(args[0].clone(), false)
             }
             19 => {
-                require_string_arity(op, &args, 1)?;
+                require_expr_arity("string", op, &args, 1)?;
                 expr.str().count_matches(args[0].clone(), true)
             }
             20 => {
-                require_string_arity(op, &args, 2)?;
+                require_expr_arity("string", op, &args, 2)?;
                 expr.str().replace(args[0].clone(), args[1].clone(), false)
             }
             21 => {
-                require_string_arity(op, &args, 2)?;
+                require_expr_arity("string", op, &args, 2)?;
                 expr.str().replace(args[0].clone(), args[1].clone(), true)
             }
             22 => {
-                require_string_arity(op, &args, 2)?;
+                require_expr_arity("string", op, &args, 2)?;
                 expr.str().replace_all(args[0].clone(), args[1].clone(), false)
             }
             23 => {
-                require_string_arity(op, &args, 2)?;
+                require_expr_arity("string", op, &args, 2)?;
                 expr.str().replace_all(args[0].clone(), args[1].clone(), true)
+            }
+            24 => {
+                require_expr_arity("string", op, &args, 1)?;
+                expr.str().split(args[0].clone())
+            }
+            25 => {
+                require_expr_arity("string", op, &args, 1)?;
+                expr.str().split_inclusive(args[0].clone())
             }
             _ => {
                 return Err(PhsError::invalid_argument(format!(
@@ -631,10 +639,10 @@ pub unsafe extern "C" fn phs_expr_string_function_i64(
         let out = unsafe { required_mut(out, "out") }?;
         *out = ptr::null_mut();
         let expr = unsafe { expr_ref(expr) }?.value.clone();
-        let args = string_args(args, arg_len)?;
+        let args = expr_args(args, arg_len)?;
         let result = match op {
             0 => {
-                require_string_arity(op, &args, 1)?;
+                require_expr_arity("string", op, &args, 1)?;
                 if arg < 0 {
                     return Err(PhsError::invalid_argument(format!(
                         "string extract group index {arg} is negative"
@@ -653,9 +661,75 @@ pub unsafe extern "C" fn phs_expr_string_function_i64(
     })
 }
 
-fn string_args(args: *const *const phs_expr, len: usize) -> PhsResult<Vec<Expr>> {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_expr_list_function(
+    op: c_int,
+    expr: *const phs_expr,
+    args: *const *const phs_expr,
+    arg_len: usize,
+    out: *mut *mut phs_expr,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let expr = unsafe { expr_ref(expr) }?.value.clone();
+        let args = expr_args(args, arg_len)?;
+        let result = match op {
+            0 => {
+                require_expr_arity("list", op, &args, 0)?;
+                expr.list().len()
+            }
+            1 => {
+                require_expr_arity("list", op, &args, 0)?;
+                expr.list().first()
+            }
+            2 => {
+                require_expr_arity("list", op, &args, 0)?;
+                expr.list().last()
+            }
+            3 => {
+                require_expr_arity("list", op, &args, 1)?;
+                expr.list().get(args[0].clone(), false)
+            }
+            4 => {
+                require_expr_arity("list", op, &args, 1)?;
+                expr.list().get(args[0].clone(), true)
+            }
+            5 => {
+                require_expr_arity("list", op, &args, 1)?;
+                expr.list().join(args[0].clone(), false)
+            }
+            6 => {
+                require_expr_arity("list", op, &args, 1)?;
+                expr.list().join(args[0].clone(), true)
+            }
+            7 => {
+                require_expr_arity("list", op, &args, 1)?;
+                expr.list().contains(args[0].clone(), false)
+            }
+            8 => {
+                require_expr_arity("list", op, &args, 1)?;
+                expr.list().contains(args[0].clone(), true)
+            }
+            9 => {
+                require_expr_arity("list", op, &args, 1)?;
+                expr.list().count_matches(args[0].clone())
+            }
+            _ => {
+                return Err(PhsError::invalid_argument(format!(
+                    "unknown list expression opcode {op}"
+                )))
+            }
+        };
+        *out = expr_into_raw(result);
+        Ok(())
+    })
+}
+
+fn expr_args(args: *const *const phs_expr, len: usize) -> PhsResult<Vec<Expr>> {
     if args.is_null() && len > 0 {
-        return Err(PhsError::invalid_argument("string args pointer was null"));
+        return Err(PhsError::invalid_argument("expression args pointer was null"));
     }
     let slice = if len == 0 {
         &[]
@@ -668,12 +742,12 @@ fn string_args(args: *const *const phs_expr, len: usize) -> PhsResult<Vec<Expr>>
         .collect()
 }
 
-fn require_string_arity(op: c_int, args: &[Expr], expected: usize) -> PhsResult<()> {
+fn require_expr_arity(namespace: &str, op: c_int, args: &[Expr], expected: usize) -> PhsResult<()> {
     if args.len() == expected {
         Ok(())
     } else {
         Err(PhsError::invalid_argument(format!(
-            "string expression opcode {op} expected {expected} args, got {}",
+            "{namespace} expression opcode {op} expected {expected} args, got {}",
             args.len()
         )))
     }
@@ -1294,7 +1368,7 @@ mod tests {
             PHS_OK
         );
         let args = [pat_expr as *const phs_expr];
-        for op in [0, 1, 2, 3, 4, 5, 11, 12, 13, 14, 15, 16, 17, 18, 19] {
+        for op in [0, 1, 2, 3, 4, 5, 11, 12, 13, 14, 15, 16, 17, 18, 19, 24, 25] {
             let mut out = ptr::null_mut();
             assert_eq!(
                 unsafe {
@@ -1583,6 +1657,136 @@ mod tests {
         // null format string
         assert_eq!(
             unsafe { phs_expr_temporal_string(0, ptr::null(), col_expr, &mut out, &mut err) },
+            PHS_INVALID_ARGUMENT
+        );
+        assert!(out.is_null());
+        assert!(!err.is_null());
+        unsafe {
+            crate::handles::phs_expr_free(col_expr);
+            crate::error::phs_error_free(err);
+        }
+    }
+
+    #[test]
+    fn builds_string_split_expressions() {
+        let name = std::ffi::CString::new("text").unwrap();
+        let by_str = std::ffi::CString::new(" ").unwrap();
+        let mut col_expr = ptr::null_mut();
+        let mut by_expr = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_expr_col(name.as_ptr(), &mut col_expr, &mut err) },
+            PHS_OK
+        );
+        assert_eq!(
+            unsafe { phs_expr_lit_text(by_str.as_ptr(), &mut by_expr, &mut err) },
+            PHS_OK
+        );
+        let args = [by_expr as *const phs_expr];
+        // split (op 24)
+        let mut out = ptr::null_mut();
+        assert_eq!(
+            unsafe {
+                phs_expr_string_function(24, col_expr, args.as_ptr(), 1, &mut out, &mut err)
+            },
+            PHS_OK
+        );
+        assert!(!out.is_null());
+        unsafe { crate::handles::phs_expr_free(out) };
+        // split_inclusive (op 25)
+        let mut out = ptr::null_mut();
+        assert_eq!(
+            unsafe {
+                phs_expr_string_function(25, col_expr, args.as_ptr(), 1, &mut out, &mut err)
+            },
+            PHS_OK
+        );
+        assert!(!out.is_null());
+        unsafe {
+            crate::handles::phs_expr_free(col_expr);
+            crate::handles::phs_expr_free(by_expr);
+            crate::handles::phs_expr_free(out);
+        }
+    }
+
+    #[test]
+    fn builds_list_expression_ops() {
+        let name = std::ffi::CString::new("text").unwrap();
+        let separator = std::ffi::CString::new("-").unwrap();
+        let mut col_expr = ptr::null_mut();
+        let mut sep_expr = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_expr_col(name.as_ptr(), &mut col_expr, &mut err) },
+            PHS_OK
+        );
+        assert_eq!(
+            unsafe { phs_expr_lit_text(separator.as_ptr(), &mut sep_expr, &mut err) },
+            PHS_OK
+        );
+        let args = [sep_expr as *const phs_expr];
+        // arity 0 ops: len (0), first (1), last (2)
+        for op in 0..=2 {
+            let mut out = ptr::null_mut();
+            assert_eq!(
+                unsafe {
+                    phs_expr_list_function(op, col_expr, ptr::null(), 0, &mut out, &mut err)
+                },
+                PHS_OK,
+                "list op {op} should succeed"
+            );
+            assert!(!out.is_null());
+            unsafe { crate::handles::phs_expr_free(out) };
+        }
+        // arity 1 ops: get null_on_oob=false (3), get null_on_oob=true (4),
+        // join ignore_nulls=false (5), join ignore_nulls=true (6),
+        // contains nulls_equal=false (7), contains nulls_equal=true (8),
+        // count_matches (9)
+        for op in 3..=9 {
+            let mut out = ptr::null_mut();
+            assert_eq!(
+                unsafe {
+                    phs_expr_list_function(op, col_expr, args.as_ptr(), 1, &mut out, &mut err)
+                },
+                PHS_OK,
+                "list op {op} should succeed"
+            );
+            assert!(!out.is_null());
+            unsafe { crate::handles::phs_expr_free(out) };
+        }
+        unsafe {
+            crate::handles::phs_expr_free(col_expr);
+            crate::handles::phs_expr_free(sep_expr);
+        }
+    }
+
+    #[test]
+    fn list_expression_errors_validate_opcode_and_arity() {
+        let name = std::ffi::CString::new("text").unwrap();
+        let mut col_expr = ptr::null_mut();
+        let mut out: *mut phs_expr = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_expr_col(name.as_ptr(), &mut col_expr, &mut err) },
+            PHS_OK
+        );
+        // unknown opcode
+        assert_eq!(
+            unsafe {
+                phs_expr_list_function(99, col_expr, ptr::null(), 0, &mut out, &mut err)
+            },
+            PHS_INVALID_ARGUMENT
+        );
+        assert!(out.is_null());
+        assert!(!err.is_null());
+        unsafe { crate::error::phs_error_free(err) };
+        err = ptr::null_mut();
+        out = ptr::null_mut();
+        // wrong arity (len expects 0 args)
+        assert_eq!(
+            unsafe {
+                phs_expr_list_function(0, col_expr, ptr::null(), 1, &mut out, &mut err)
+            },
             PHS_INVALID_ARGUMENT
         );
         assert!(out.is_null());

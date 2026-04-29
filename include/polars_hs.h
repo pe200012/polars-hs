@@ -267,6 +267,13 @@ int phs_expr_string_function_i64(int op,
                                  struct phs_expr **out,
                                  struct phs_error **err);
 
+int phs_expr_list_function(int op,
+                           const struct phs_expr *expr,
+                           const struct phs_expr *const *args,
+                           uintptr_t arg_len,
+                           struct phs_expr **out,
+                           struct phs_error **err);
+
 int phs_expr_temporal_function(int op,
                                const struct phs_expr *expr,
                                struct phs_expr **out,

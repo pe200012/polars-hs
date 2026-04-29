@@ -39,6 +39,7 @@ extra-source-files:
     test/data/employees.csv
     test/data/float_specials.csv
     test/data/people.csv
+    test/data/phrases.csv
     test/data/sales.csv
     test/data/strings.csv
     test/data/temporal.csv

@@ -22,7 +22,7 @@ import Foreign.Storable (peek, poke)
 
 import qualified Data.Text as T
 import Polars.Error (PolarsError (..), PolarsErrorCode (..))
-import Polars.Expr (AggFunction (..), BinaryFunction (..), BinaryOperator (..), Expr (..), ExprSortOptions (..), QuantileMethod (..), RankMethod (..), RankOptions (..), StringFunction (..), TemporalFunction (..), TimeUnit (..), UnaryFunction (..))
+import Polars.Expr (AggFunction (..), BinaryFunction (..), BinaryOperator (..), Expr (..), ExprSortOptions (..), ListFunction (..), QuantileMethod (..), RankMethod (..), RankOptions (..), StringFunction (..), TemporalFunction (..), TimeUnit (..), UnaryFunction (..))
 import Polars.Schema (DataType (..))
 import Polars.Internal.CString (withTextCString)
 import Polars.Internal.Managed (ManagedExpr, mkManagedExpr, withManagedExpr)
@@ -47,6 +47,7 @@ import Polars.Internal.Raw
     , phs_expr_sort_by
     , phs_expr_string_function
     , phs_expr_string_function_i64
+    , phs_expr_list_function
     , phs_expr_temporal_function
     , phs_expr_temporal_string
     , phs_expr_temporal_time_unit
@@ -91,7 +92,7 @@ compileExpr = \case
                         withManagedExpr leftManaged $ \leftPtr ->
                             withManagedExpr rightManaged $ \rightPtr ->
                                 exprOut (phs_expr_binary (operatorCode op) leftPtr rightPtr)
-    Cast strict dtype expr -> 
+    Cast strict dtype expr ->
         case dtypeCode dtype of
             Left err -> pure (Left err)
             Right dtypeC -> do
@@ -220,6 +221,14 @@ compileExpr = \case
                                     exprOut (phs_expr_string_function_i64 0 (fromIntegral groupIndex :: CLLong) inputPtr argPtrs argLen)
                             _ ->
                                 exprOut (phs_expr_string_function (stringFunctionCode fn) inputPtr argPtrs argLen)
+    ListFunctionExpr fn input args -> do
+        inputCompiled <- compileExpr input
+        case inputCompiled of
+            Left err -> pure (Left err)
+            Right inputManaged ->
+                withCompiledExprs args $ \argPtrs argLen ->
+                    withManagedExpr inputManaged $ \inputPtr ->
+                        exprOut (phs_expr_list_function (listFunctionCode fn) inputPtr argPtrs argLen)
     TemporalFunctionExpr fn expr -> do
         compiled <- compileExpr expr
         case compiled of
@@ -377,7 +386,21 @@ stringFunctionCode StrLenChars = 9
 stringFunctionCode StrSlice = 10
 stringFunctionCode StrHead = 11
 stringFunctionCode StrTail = 12
+stringFunctionCode StrSplit = 24
+stringFunctionCode StrSplitInclusive = 25
 stringFunctionCode (StrExtract _) = 0  -- not used; dispatched via _i64 ABI
+
+listFunctionCode :: ListFunction -> CInt
+listFunctionCode ListLen = 0
+listFunctionCode ListFirst = 1
+listFunctionCode ListLast = 2
+listFunctionCode (ListGet False) = 3
+listFunctionCode (ListGet True) = 4
+listFunctionCode (ListJoin False) = 5
+listFunctionCode (ListJoin True) = 6
+listFunctionCode (ListContains False) = 7
+listFunctionCode (ListContains True) = 8
+listFunctionCode ListCountMatches = 9
 
 temporalFunctionCode :: TemporalFunction -> Either PolarsError CInt
 temporalFunctionCode DtYear = Right 0

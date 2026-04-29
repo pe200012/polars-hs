@@ -65,6 +65,7 @@ module Polars.Internal.Raw
     , phs_expr_sort_by
     , phs_expr_string_function
     , phs_expr_string_function_i64
+    , phs_expr_list_function
     , phs_expr_temporal_function
     , phs_expr_temporal_time_unit
     , phs_expr_temporal_string
@@ -411,6 +412,9 @@ foreign import ccall unsafe "phs_expr_string_function"
 
 foreign import ccall unsafe "phs_expr_string_function_i64"
     phs_expr_string_function_i64 :: CInt -> CLLong -> Ptr RawExpr -> Ptr (Ptr RawExpr) -> CSize -> Ptr (Ptr RawExpr) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_expr_list_function"
+    phs_expr_list_function :: CInt -> Ptr RawExpr -> Ptr (Ptr RawExpr) -> CSize -> Ptr (Ptr RawExpr) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_expr_temporal_function"
     phs_expr_temporal_function :: CInt -> Ptr RawExpr -> Ptr (Ptr RawExpr) -> Ptr (Ptr RawError) -> IO CInt
