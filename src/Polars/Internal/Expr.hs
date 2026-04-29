@@ -22,7 +22,7 @@ import Foreign.Storable (peek, poke)
 
 import qualified Data.Text as T
 import Polars.Error (PolarsError (..), PolarsErrorCode (..))
-import Polars.Expr (AggFunction (..), BinaryFunction (..), BinaryOperator (..), Expr (..), ExprSortOptions (..), ListFunction (..), QuantileMethod (..), RankMethod (..), RankOptions (..), StringFunction (..), TemporalFunction (..), TimeUnit (..), UnaryFunction (..))
+import Polars.Expr (AggFunction (..), BinaryFunction (..), BinaryOperator (..), ClosedInterval (..), Expr (..), ExprSortOptions (..), ListFunction (..), QuantileMethod (..), RankMethod (..), RankOptions (..), ScalarFunction (..), StringFunction (..), TemporalFunction (..), TimeUnit (..), UnaryFunction (..))
 import Polars.Schema (DataType (..))
 import Polars.Internal.CString (withTextCString)
 import Polars.Internal.Managed (ManagedExpr, mkManagedExpr, withManagedExpr)
@@ -54,6 +54,11 @@ import Polars.Internal.Raw
     , phs_expr_ternary
     , phs_expr_unary
     , phs_expr_unary_i64
+    , phs_expr_boolean_unary
+    , phs_expr_is_between
+    , phs_expr_is_close
+    , phs_expr_is_in
+    , phs_expr_clip
     )
 import Polars.Internal.Result (consumeError, nullPointerError)
 
@@ -240,6 +245,105 @@ compileExpr = \case
                     _ -> case temporalFunctionCode fn of
                         Left err -> pure (Left err)
                         Right code -> exprOut (phs_expr_temporal_function code ptr)
+    ScalarFunctionExpr fn input args -> do
+        inputCompiled <- compileExpr input
+        case inputCompiled of
+            Left err -> pure (Left err)
+            Right inputManaged ->
+                withManagedExpr inputManaged $ \inputPtr ->
+                    case fn of
+                        -- Boolean unary ops (is_duplicated, is_unique, is_first_distinct, is_last_distinct)
+                        IsDuplicated
+                            | not (null args) -> pure (Left (PolarsError InvalidArgument "is_duplicated takes no arguments"))
+                            | otherwise -> exprOut (phs_expr_boolean_unary 0 inputPtr)
+                        IsUnique
+                            | not (null args) -> pure (Left (PolarsError InvalidArgument "is_unique takes no arguments"))
+                            | otherwise -> exprOut (phs_expr_boolean_unary 1 inputPtr)
+                        IsFirstDistinct
+                            | not (null args) -> pure (Left (PolarsError InvalidArgument "is_first_distinct takes no arguments"))
+                            | otherwise -> exprOut (phs_expr_boolean_unary 2 inputPtr)
+                        IsLastDistinct
+                            | not (null args) -> pure (Left (PolarsError InvalidArgument "is_last_distinct takes no arguments"))
+                            | otherwise -> exprOut (phs_expr_boolean_unary 3 inputPtr)
+                        -- is_between: receiver expr with lower and upper args
+                        IsBetween closed ->
+                            case args of
+                                [lower, upper] -> do
+                                    lowerCompiled <- compileExpr lower
+                                    case lowerCompiled of
+                                        Left err -> pure (Left err)
+                                        Right lowerManaged -> do
+                                            upperCompiled <- compileExpr upper
+                                            case upperCompiled of
+                                                Left err -> pure (Left err)
+                                                Right upperManaged ->
+                                                    withManagedExpr lowerManaged $ \lowerPtr ->
+                                                        withManagedExpr upperManaged $ \upperPtr ->
+                                                            exprOut (phs_expr_is_between (closedIntervalCode closed) inputPtr lowerPtr upperPtr)
+                                _ -> pure (Left (PolarsError InvalidArgument "is_between expects lower and upper arguments"))
+                        -- is_close: receiver expr with other arg
+                        IsClose absTol relTol nansEqual ->
+                            case args of
+                                [other] -> do
+                                    otherCompiled <- compileExpr other
+                                    case otherCompiled of
+                                        Left err -> pure (Left err)
+                                        Right otherManaged ->
+                                            withManagedExpr otherManaged $ \otherPtr ->
+                                                exprOut (phs_expr_is_close (CDouble absTol) (CDouble relTol) (toCBool nansEqual) inputPtr otherPtr)
+                                _ -> pure (Left (PolarsError InvalidArgument "is_close expects one other argument"))
+                        -- is_in: receiver expr with list expr arg
+                        IsIn nullsEqual ->
+                            case args of
+                                [listExprArg] -> do
+                                    listCompiled <- compileExpr listExprArg
+                                    case listCompiled of
+                                        Left err -> pure (Left err)
+                                        Right listManaged ->
+                                            withManagedExpr listManaged $ \listPtr ->
+                                                exprOut (phs_expr_is_in (toCBool nullsEqual) inputPtr listPtr)
+                                _ -> pure (Left (PolarsError InvalidArgument "is_in expects one list expression argument"))
+                        -- clip: receiver expr with lower, upper args
+                        Clip ->
+                            case args of
+                                [lower, upper] -> do
+                                    lowerCompiled <- compileExpr lower
+                                    case lowerCompiled of
+                                        Left err -> pure (Left err)
+                                        Right lowerManaged -> do
+                                            upperCompiled <- compileExpr upper
+                                            case upperCompiled of
+                                                Left err -> pure (Left err)
+                                                Right upperManaged ->
+                                                    withManagedExpr lowerManaged $ \lowerPtr ->
+                                                        withManagedExpr upperManaged $ \upperPtr ->
+                                                            withArray [lowerPtr, upperPtr] $ \argsArrayPtr ->
+                                                                exprOut (phs_expr_clip 0 inputPtr argsArrayPtr 2)
+                                _ -> pure (Left (PolarsError InvalidArgument "clip expects lower and upper arguments"))
+                        -- clip_min: receiver expr with lower arg
+                        ClipMin ->
+                            case args of
+                                [lower] -> do
+                                    lowerCompiled <- compileExpr lower
+                                    case lowerCompiled of
+                                        Left err -> pure (Left err)
+                                        Right lowerManaged ->
+                                            withManagedExpr lowerManaged $ \lowerPtr ->
+                                                withArray [lowerPtr] $ \argsArrayPtr ->
+                                                    exprOut (phs_expr_clip 1 inputPtr argsArrayPtr 1)
+                                _ -> pure (Left (PolarsError InvalidArgument "clip_min expects one lower argument"))
+                        -- clip_max: receiver expr with upper arg
+                        ClipMax ->
+                            case args of
+                                [upper] -> do
+                                    upperCompiled <- compileExpr upper
+                                    case upperCompiled of
+                                        Left err -> pure (Left err)
+                                        Right upperManaged ->
+                                            withManagedExpr upperManaged $ \upperPtr ->
+                                                withArray [upperPtr] $ \argsArrayPtr ->
+                                                    exprOut (phs_expr_clip 2 inputPtr argsArrayPtr 1)
+                                _ -> pure (Left (PolarsError InvalidArgument "clip_max expects one upper argument"))
 
 withCompiledExprs :: [Expr] -> (Ptr (Ptr RawExpr) -> CSize -> IO (Either PolarsError a)) -> IO (Either PolarsError a)
 withCompiledExprs exprs action = do
@@ -428,3 +532,9 @@ timeUnitCode :: TimeUnit -> CInt
 timeUnitCode Milliseconds = 0
 timeUnitCode Microseconds = 1
 timeUnitCode Nanoseconds = 2
+
+closedIntervalCode :: ClosedInterval -> CInt
+closedIntervalCode ClosedBoth = 0
+closedIntervalCode ClosedLeft = 1
+closedIntervalCode ClosedRight = 2
+closedIntervalCode ClosedNone = 3

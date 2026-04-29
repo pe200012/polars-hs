@@ -12,18 +12,23 @@ module Polars.Expr
     ( AggFunction (..)
     , BinaryFunction (..)
     , BinaryOperator (..)
+    , ClosedInterval (..)
     , Expr (..)
     , ExprSortOptions (..)
     , ListFunction (..)
     , QuantileMethod (..)
     , RankMethod (..)
     , RankOptions (..)
+    , ScalarFunction (..)
     , StringFunction (..)
     , TemporalFunction (..)
     , TimeUnit (..)
     , UnaryFunction (..)
     , alias
     , cast
+    , clip
+    , clipMax
+    , clipMin
     , col
     , count_
     , cumCount
@@ -59,12 +64,19 @@ module Polars.Expr
     , fillNan
     , fillNull
     , first_
+    , isBetween
+    , isClose
+    , isDuplicated
     , isFinite
+    , isIn
     , isInfinite
+    , isFirstDistinct
+    , isLastDistinct
     , isNan
     , isNotNan
     , isNotNull
     , isNull
+    , isUnique
     , last_
     , len_
     , listContains
@@ -146,6 +158,7 @@ data Expr
     | StringFunctionExpr !StringFunction !Expr ![Expr]
     | ListFunctionExpr !ListFunction !Expr ![Expr]
     | TemporalFunctionExpr !TemporalFunction !Expr
+    | ScalarFunctionExpr !ScalarFunction !Expr ![Expr]
     deriving stock (Eq, Show)
 
 -- | Binary operators supported by the MVP expression compiler.
@@ -235,6 +248,24 @@ data ListFunction
     | ListJoin !Bool
     | ListContains !Bool
     | ListCountMatches
+    deriving stock (Eq, Show)
+
+-- | Closed interval boundary specification for is_between.
+data ClosedInterval = ClosedBoth | ClosedLeft | ClosedRight | ClosedNone
+    deriving stock (Eq, Show)
+
+-- | Scalar predicate and clip expression functions.
+data ScalarFunction
+    = IsDuplicated
+    | IsUnique
+    | IsFirstDistinct
+    | IsLastDistinct
+    | IsBetween !ClosedInterval
+    | IsClose !Double !Double !Bool
+    | IsIn !Bool
+    | Clip
+    | ClipMin
+    | ClipMax
     deriving stock (Eq, Show)
 
 -- | Time unit for temporal functions.
@@ -481,3 +512,31 @@ dtTimestamp unit = TemporalFunctionExpr (DtTimestamp unit)
 
 dtToString :: Text -> Expr -> Expr
 dtToString format = TemporalFunctionExpr (DtToString format)
+
+isDuplicated, isUnique, isFirstDistinct, isLastDistinct :: Expr -> Expr
+isDuplicated input = ScalarFunctionExpr IsDuplicated input []
+isUnique input = ScalarFunctionExpr IsUnique input []
+isFirstDistinct input = ScalarFunctionExpr IsFirstDistinct input []
+isLastDistinct input = ScalarFunctionExpr IsLastDistinct input []
+
+isBetween :: ClosedInterval -> Expr -> Expr -> Expr -> Expr
+isBetween closed input lower upper =
+    ScalarFunctionExpr (IsBetween closed) input [lower, upper]
+
+isClose :: Double -> Double -> Bool -> Expr -> Expr -> Expr
+isClose absTol relTol nansEqual input other =
+    ScalarFunctionExpr (IsClose absTol relTol nansEqual) input [other]
+
+isIn :: Bool -> Expr -> Expr -> Expr
+isIn nullsEqual input listExpr =
+    ScalarFunctionExpr (IsIn nullsEqual) input [listExpr]
+
+clip :: Expr -> Expr -> Expr -> Expr
+clip input lower upper =
+    ScalarFunctionExpr Clip input [lower, upper]
+
+clipMin :: Expr -> Expr -> Expr
+clipMin input lower = ScalarFunctionExpr ClipMin input [lower]
+
+clipMax :: Expr -> Expr -> Expr
+clipMax input upper = ScalarFunctionExpr ClipMax input [upper]

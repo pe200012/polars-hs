@@ -291,6 +291,39 @@ int phs_expr_temporal_string(int op,
                              struct phs_expr **out,
                              struct phs_error **err);
 
+int phs_expr_boolean_unary(int op,
+                           const struct phs_expr *expr,
+                           struct phs_expr **out,
+                           struct phs_error **err);
+
+int phs_expr_is_between(int closed,
+                        const struct phs_expr *expr,
+                        const struct phs_expr *lower,
+                        const struct phs_expr *upper,
+                        struct phs_expr **out,
+                        struct phs_error **err);
+
+int phs_expr_is_close(double abs_tol,
+                      double rel_tol,
+                      bool nans_equal,
+                      const struct phs_expr *expr,
+                      const struct phs_expr *other,
+                      struct phs_expr **out,
+                      struct phs_error **err);
+
+int phs_expr_is_in(bool nulls_equal,
+                   const struct phs_expr *expr,
+                   const struct phs_expr *other,
+                   struct phs_expr **out,
+                   struct phs_error **err);
+
+int phs_expr_clip(int op,
+                  const struct phs_expr *expr,
+                  const struct phs_expr *const *args,
+                  uintptr_t arg_len,
+                  struct phs_expr **out,
+                  struct phs_error **err);
+
 void phs_dataframe_free(struct phs_dataframe *ptr);
 
 void phs_lazyframe_free(struct phs_lazyframe *ptr);

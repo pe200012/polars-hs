@@ -50,9 +50,14 @@ module Polars.Internal.Raw
     , phs_expr_alias
     , phs_expr_binary
     , phs_expr_binary_function
+    , phs_expr_boolean_unary
     , phs_expr_cast
     , phs_expr_col
     , phs_expr_free_finalizer
+    , phs_expr_is_between
+    , phs_expr_is_close
+    , phs_expr_is_in
+    , phs_expr_clip
     , phs_expr_lit_bool
     , phs_expr_lit_double
     , phs_expr_lit_int
@@ -424,3 +429,18 @@ foreign import ccall unsafe "phs_expr_temporal_time_unit"
 
 foreign import ccall unsafe "phs_expr_temporal_string"
     phs_expr_temporal_string :: CInt -> CString -> Ptr RawExpr -> Ptr (Ptr RawExpr) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_expr_boolean_unary"
+    phs_expr_boolean_unary :: CInt -> Ptr RawExpr -> Ptr (Ptr RawExpr) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_expr_is_between"
+    phs_expr_is_between :: CInt -> Ptr RawExpr -> Ptr RawExpr -> Ptr RawExpr -> Ptr (Ptr RawExpr) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_expr_is_close"
+    phs_expr_is_close :: CDouble -> CDouble -> CBool -> Ptr RawExpr -> Ptr RawExpr -> Ptr (Ptr RawExpr) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_expr_is_in"
+    phs_expr_is_in :: CBool -> Ptr RawExpr -> Ptr RawExpr -> Ptr (Ptr RawExpr) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_expr_clip"
+    phs_expr_clip :: CInt -> Ptr RawExpr -> Ptr (Ptr RawExpr) -> CSize -> Ptr (Ptr RawExpr) -> Ptr (Ptr RawError) -> IO CInt

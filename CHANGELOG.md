@@ -37,5 +37,6 @@ and this project adheres to the
 - Temporal Expression DSL helpers for datetime component extraction (year, month, day, hour, …), timestamp conversion, strftime formatting, millennium/century/days-in-month, and leap-year detection.
 - String split helpers (`strSplit`, `strSplitInclusive`) returning `List[String]` expressions.
 - List Expression DSL helpers for list length, first/last element, indexed get, string join, element contains, and count matches on string splits.
+- Scalar predicate Expression DSL helpers for deduplication (`isDuplicated`, `isUnique`, `isFirstDistinct`, `isLastDistinct`), range checks (`isBetween` with interval variants), floating-point closeness (`isClose`), set membership (`isIn`), and value clipping (`clip`, `clipMin`, `clipMax`).
 
 ## 0.1.0.0 - YYYY-MM-DD

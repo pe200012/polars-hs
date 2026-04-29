@@ -860,6 +860,142 @@ pub unsafe extern "C" fn phs_expr_temporal_string(
     })
 }
 
+fn closed_interval_from_code(code: c_int) -> PhsResult<ClosedInterval> {
+    match code {
+        0 => Ok(ClosedInterval::Both),
+        1 => Ok(ClosedInterval::Left),
+        2 => Ok(ClosedInterval::Right),
+        3 => Ok(ClosedInterval::None),
+        _ => Err(PhsError::invalid_argument(format!(
+            "unknown closed interval code {code}"
+        ))),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_expr_boolean_unary(
+    op: c_int,
+    expr: *const phs_expr,
+    out: *mut *mut phs_expr,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let expr = unsafe { expr_ref(expr) }?.value.clone();
+        let result = match op {
+            0 => expr.is_duplicated(),
+            1 => expr.is_unique(),
+            2 => expr.is_first_distinct(),
+            3 => expr.is_last_distinct(),
+            _ => {
+                return Err(PhsError::invalid_argument(format!(
+                    "unknown boolean unary opcode {op}"
+                )))
+            }
+        };
+        *out = expr_into_raw(result);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_expr_is_between(
+    closed: c_int,
+    expr: *const phs_expr,
+    lower: *const phs_expr,
+    upper: *const phs_expr,
+    out: *mut *mut phs_expr,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let expr = unsafe { expr_ref(expr) }?.value.clone();
+        let lower = unsafe { expr_ref(lower) }?.value.clone();
+        let upper = unsafe { expr_ref(upper) }?.value.clone();
+        let closed = closed_interval_from_code(closed)?;
+        *out = expr_into_raw(expr.is_between(lower, upper, closed));
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_expr_is_close(
+    abs_tol: c_double,
+    rel_tol: c_double,
+    nans_equal: bool,
+    expr: *const phs_expr,
+    other: *const phs_expr,
+    out: *mut *mut phs_expr,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let expr = unsafe { expr_ref(expr) }?.value.clone();
+        let other = unsafe { expr_ref(other) }?.value.clone();
+        *out = expr_into_raw(expr.is_close(other, abs_tol, rel_tol, nans_equal));
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_expr_is_in(
+    nulls_equal: bool,
+    expr: *const phs_expr,
+    other: *const phs_expr,
+    out: *mut *mut phs_expr,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let expr = unsafe { expr_ref(expr) }?.value.clone();
+        let other = unsafe { expr_ref(other) }?.value.clone();
+        *out = expr_into_raw(expr.is_in(other, nulls_equal));
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_expr_clip(
+    op: c_int,
+    expr: *const phs_expr,
+    args: *const *const phs_expr,
+    arg_len: usize,
+    out: *mut *mut phs_expr,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let expr = unsafe { expr_ref(expr) }?.value.clone();
+        let args = expr_args(args, arg_len)?;
+        let result = match op {
+            0 => {
+                require_expr_arity("clip", op, &args, 2)?;
+                expr.clip(args[0].clone(), args[1].clone())
+            }
+            1 => {
+                require_expr_arity("clip_min", op, &args, 1)?;
+                expr.clip_min(args[0].clone())
+            }
+            2 => {
+                require_expr_arity("clip_max", op, &args, 1)?;
+                expr.clip_max(args[0].clone())
+            }
+            _ => {
+                return Err(PhsError::invalid_argument(format!(
+                    "unknown clip opcode {op}"
+                )))
+            }
+        };
+        *out = expr_into_raw(result);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1793,6 +1929,319 @@ mod tests {
         assert!(!err.is_null());
         unsafe {
             crate::handles::phs_expr_free(col_expr);
+            crate::error::phs_error_free(err);
+        }
+    }
+
+    #[test]
+    fn builds_boolean_unary_expressions() {
+        let name = std::ffi::CString::new("value").unwrap();
+        let mut col_expr = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_expr_col(name.as_ptr(), &mut col_expr, &mut err) },
+            PHS_OK
+        );
+        for op in 0..=3 {
+            let mut out = ptr::null_mut();
+            assert_eq!(
+                unsafe {
+                    phs_expr_boolean_unary(op, col_expr, &mut out, &mut err)
+                },
+                PHS_OK,
+                "boolean_unary op {op} should succeed"
+            );
+            assert!(!out.is_null());
+            unsafe { crate::handles::phs_expr_free(out) };
+        }
+        unsafe {
+            crate::handles::phs_expr_free(col_expr);
+        }
+    }
+
+    #[test]
+    fn boolean_unary_unknown_opcode_returns_error() {
+        let name = std::ffi::CString::new("value").unwrap();
+        let mut col_expr = ptr::null_mut();
+        let mut out: *mut phs_expr = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_expr_col(name.as_ptr(), &mut col_expr, &mut err) },
+            PHS_OK
+        );
+        assert_eq!(
+            unsafe { phs_expr_boolean_unary(99, col_expr, &mut out, &mut err) },
+            PHS_INVALID_ARGUMENT
+        );
+        assert!(out.is_null());
+        assert!(!err.is_null());
+        unsafe {
+            crate::handles::phs_expr_free(col_expr);
+            crate::error::phs_error_free(err);
+        }
+    }
+
+    #[test]
+    fn builds_is_between_expression() {
+        let name = std::ffi::CString::new("value").unwrap();
+        let mut col_expr = ptr::null_mut();
+        let mut low_expr = ptr::null_mut();
+        let mut high_expr = ptr::null_mut();
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_expr_col(name.as_ptr(), &mut col_expr, &mut err) },
+            PHS_OK
+        );
+        assert_eq!(
+            unsafe { phs_expr_lit_int(2, &mut low_expr, &mut err) },
+            PHS_OK
+        );
+        assert_eq!(
+            unsafe { phs_expr_lit_int(3, &mut high_expr, &mut err) },
+            PHS_OK
+        );
+        for closed in 0..=3 {
+            assert_eq!(
+                unsafe {
+                    phs_expr_is_between(closed, col_expr, low_expr, high_expr, &mut out, &mut err)
+                },
+                PHS_OK,
+                "is_between closed={closed} should succeed"
+            );
+            assert!(!out.is_null());
+            unsafe { crate::handles::phs_expr_free(out) };
+            out = ptr::null_mut();
+        }
+        unsafe {
+            crate::handles::phs_expr_free(col_expr);
+            crate::handles::phs_expr_free(low_expr);
+            crate::handles::phs_expr_free(high_expr);
+        }
+    }
+
+    #[test]
+    fn is_between_unknown_closed_interval_returns_error() {
+        let name = std::ffi::CString::new("value").unwrap();
+        let mut col_expr = ptr::null_mut();
+        let mut low_expr = ptr::null_mut();
+        let mut high_expr = ptr::null_mut();
+        let mut out: *mut phs_expr = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_expr_col(name.as_ptr(), &mut col_expr, &mut err) },
+            PHS_OK
+        );
+        assert_eq!(
+            unsafe { phs_expr_lit_int(2, &mut low_expr, &mut err) },
+            PHS_OK
+        );
+        assert_eq!(
+            unsafe { phs_expr_lit_int(3, &mut high_expr, &mut err) },
+            PHS_OK
+        );
+        assert_eq!(
+            unsafe {
+                phs_expr_is_between(99, col_expr, low_expr, high_expr, &mut out, &mut err)
+            },
+            PHS_INVALID_ARGUMENT
+        );
+        assert!(out.is_null());
+        assert!(!err.is_null());
+        unsafe {
+            crate::handles::phs_expr_free(col_expr);
+            crate::handles::phs_expr_free(low_expr);
+            crate::handles::phs_expr_free(high_expr);
+            crate::error::phs_error_free(err);
+        }
+    }
+
+    #[test]
+    fn builds_is_close_expression() {
+        let name = std::ffi::CString::new("value").unwrap();
+        let other_name = std::ffi::CString::new("near").unwrap();
+        let mut col_expr = ptr::null_mut();
+        let mut other_expr = ptr::null_mut();
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_expr_col(name.as_ptr(), &mut col_expr, &mut err) },
+            PHS_OK
+        );
+        assert_eq!(
+            unsafe { phs_expr_col(other_name.as_ptr(), &mut other_expr, &mut err) },
+            PHS_OK
+        );
+        assert_eq!(
+            unsafe {
+                phs_expr_is_close(
+                    0.15,
+                    0.0,
+                    false,
+                    col_expr,
+                    other_expr,
+                    &mut out,
+                    &mut err,
+                )
+            },
+            PHS_OK
+        );
+        assert!(!out.is_null());
+        unsafe {
+            crate::handles::phs_expr_free(col_expr);
+            crate::handles::phs_expr_free(other_expr);
+            crate::handles::phs_expr_free(out);
+        }
+    }
+
+    #[test]
+    fn builds_is_in_expression() {
+        let name = std::ffi::CString::new("value").unwrap();
+        let list_name = std::ffi::CString::new("items").unwrap();
+        let mut col_expr = ptr::null_mut();
+        let mut list_expr = ptr::null_mut();
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_expr_col(name.as_ptr(), &mut col_expr, &mut err) },
+            PHS_OK
+        );
+        assert_eq!(
+            unsafe { phs_expr_col(list_name.as_ptr(), &mut list_expr, &mut err) },
+            PHS_OK
+        );
+        assert_eq!(
+            unsafe { phs_expr_is_in(false, col_expr, list_expr, &mut out, &mut err) },
+            PHS_OK
+        );
+        assert!(!out.is_null());
+        assert_eq!(
+            unsafe { phs_expr_is_in(true, col_expr, list_expr, &mut out, &mut err) },
+            PHS_OK
+        );
+        assert!(!out.is_null());
+        unsafe {
+            crate::handles::phs_expr_free(col_expr);
+            crate::handles::phs_expr_free(list_expr);
+            crate::handles::phs_expr_free(out);
+        }
+    }
+
+    #[test]
+    fn builds_clip_expressions() {
+        let name = std::ffi::CString::new("value").unwrap();
+        let mut col_expr = ptr::null_mut();
+        let mut lo_expr = ptr::null_mut();
+        let mut hi_expr = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_expr_col(name.as_ptr(), &mut col_expr, &mut err) },
+            PHS_OK
+        );
+        assert_eq!(
+            unsafe { phs_expr_lit_int(2, &mut lo_expr, &mut err) },
+            PHS_OK
+        );
+        assert_eq!(
+            unsafe { phs_expr_lit_int(3, &mut hi_expr, &mut err) },
+            PHS_OK
+        );
+        // clip (op 0, arity 2)
+        let clip_args = [lo_expr as *const phs_expr, hi_expr as *const phs_expr];
+        let mut out = ptr::null_mut();
+        assert_eq!(
+            unsafe {
+                phs_expr_clip(0, col_expr, clip_args.as_ptr(), 2, &mut out, &mut err)
+            },
+            PHS_OK
+        );
+        assert!(!out.is_null());
+        unsafe { crate::handles::phs_expr_free(out) };
+        // clip_min (op 1, arity 1)
+        let mut out = ptr::null_mut();
+        assert_eq!(
+            unsafe {
+                phs_expr_clip(1, col_expr, clip_args.as_ptr(), 1, &mut out, &mut err)
+            },
+            PHS_OK
+        );
+        assert!(!out.is_null());
+        unsafe { crate::handles::phs_expr_free(out) };
+        // clip_max (op 2, arity 1)
+        let mut out = ptr::null_mut();
+        assert_eq!(
+            unsafe {
+                phs_expr_clip(2, col_expr, clip_args.as_ptr(), 1, &mut out, &mut err)
+            },
+            PHS_OK
+        );
+        assert!(!out.is_null());
+        unsafe {
+            crate::handles::phs_expr_free(col_expr);
+            crate::handles::phs_expr_free(lo_expr);
+            crate::handles::phs_expr_free(hi_expr);
+            crate::handles::phs_expr_free(out);
+        }
+    }
+
+    #[test]
+    fn clip_unknown_opcode_and_wrong_arity_return_errors() {
+        let name = std::ffi::CString::new("value").unwrap();
+        let mut col_expr = ptr::null_mut();
+        let mut lo_expr = ptr::null_mut();
+        let mut hi_expr = ptr::null_mut();
+        let mut out: *mut phs_expr = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_expr_col(name.as_ptr(), &mut col_expr, &mut err) },
+            PHS_OK
+        );
+        assert_eq!(
+            unsafe { phs_expr_lit_int(2, &mut lo_expr, &mut err) },
+            PHS_OK
+        );
+        assert_eq!(
+            unsafe { phs_expr_lit_int(3, &mut hi_expr, &mut err) },
+            PHS_OK
+        );
+        let clip_args = [lo_expr as *const phs_expr, hi_expr as *const phs_expr];
+        // unknown opcode
+        assert_eq!(
+            unsafe {
+                phs_expr_clip(99, col_expr, clip_args.as_ptr(), 2, &mut out, &mut err)
+            },
+            PHS_INVALID_ARGUMENT
+        );
+        assert!(out.is_null());
+        assert!(!err.is_null());
+        unsafe { crate::error::phs_error_free(err) };
+        err = ptr::null_mut();
+        out = ptr::null_mut();
+        // clip op 0 with wrong arity (1 instead of 2)
+        assert_eq!(
+            unsafe {
+                phs_expr_clip(0, col_expr, clip_args.as_ptr(), 1, &mut out, &mut err)
+            },
+            PHS_INVALID_ARGUMENT
+        );
+        assert!(out.is_null());
+        assert!(!err.is_null());
+        unsafe { crate::error::phs_error_free(err) };
+        err = ptr::null_mut();
+        out = ptr::null_mut();
+        // clip_min op 1 with wrong arity (2 instead of 1)
+        assert_eq!(
+            unsafe {
+                phs_expr_clip(1, col_expr, clip_args.as_ptr(), 2, &mut out, &mut err)
+            },
+            PHS_INVALID_ARGUMENT
+        );
+        assert!(out.is_null());
+        assert!(!err.is_null());
+        unsafe {
+            crate::handles::phs_expr_free(col_expr);
+            crate::handles::phs_expr_free(lo_expr);
+            crate::handles::phs_expr_free(hi_expr);
             crate::error::phs_error_free(err);
         }
     }

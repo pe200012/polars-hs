@@ -71,6 +71,9 @@ temporalCsv = "test/data/temporal.csv"
 phrasesCsv :: FilePath
 phrasesCsv = "test/data/phrases.csv"
 
+predicatesCsv :: FilePath
+predicatesCsv = "test/data/predicates.csv"
+
 metasynPeopleCsv :: FilePath
 metasynPeopleCsv = "test/data/generated/metasyn_people.csv"
 
@@ -1317,6 +1320,71 @@ main = hspec $ do
                                     Pl.column @T.Text df "joined" `shouldReturn` Right (V.fromList [Just "red-green-blue", Just "red-red", Just "日本-語", Just "solo"])
                                     Pl.column @Bool df "has_red" `shouldReturn` Right (V.fromList [Just True, Just True, Just False, Just False])
                                     Pl.column @Int64 df "red_count" `shouldReturn` Right (V.fromList [Just 1, Just 2, Just 0, Just 0])
+
+    describe "Expression DSL scalar predicates" $ do
+        it "evaluates is_between, is_duplicated, is_unique, is_first_distinct, is_last_distinct, is_close, clip, clip_min, and clip_max" $ do
+            scanResult <- Pl.scanCsv predicatesCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    let value = Pl.col "value"
+                    let near = Pl.col "near"
+                    projected <-
+                        Pl.select
+                            [ Pl.alias "between_both" (Pl.isBetween Pl.ClosedBoth value (Pl.litInt 2) (Pl.litInt 3))
+                            , Pl.alias "between_left" (Pl.isBetween Pl.ClosedLeft value (Pl.litInt 2) (Pl.litInt 3))
+                            , Pl.alias "between_right" (Pl.isBetween Pl.ClosedRight value (Pl.litInt 2) (Pl.litInt 3))
+                            , Pl.alias "between_none" (Pl.isBetween Pl.ClosedNone value (Pl.litInt 2) (Pl.litInt 3))
+                            , Pl.alias "duplicated" (Pl.isDuplicated value)
+                            , Pl.alias "unique" (Pl.isUnique value)
+                            , Pl.alias "first_distinct" (Pl.isFirstDistinct value)
+                            , Pl.alias "last_distinct" (Pl.isLastDistinct value)
+                            , Pl.alias "close" (Pl.isClose 0.15 0.0 False value near)
+                            , Pl.alias "clip" (Pl.clip value (Pl.litInt 2) (Pl.litInt 2))
+                            , Pl.alias "clip_min" (Pl.clipMin value (Pl.litInt 2))
+                            , Pl.alias "clip_max" (Pl.clipMax value (Pl.litInt 2))
+                            ]
+                            lf0
+                    case projected of
+                        Left err -> expectationFailure (show err)
+                        Right lf1 -> do
+                            collected <- Pl.collect lf1
+                            case collected of
+                                Left err -> expectationFailure (show err)
+                                Right df -> do
+                                    Pl.shape df `shouldReturn` Right (5, 12)
+                                    Pl.column @Bool df "between_both" `shouldReturn` Right (V.fromList [Just False, Just True, Just True, Just True, Nothing])
+                                    Pl.column @Bool df "between_left" `shouldReturn` Right (V.fromList [Just False, Just True, Just True, Just False, Nothing])
+                                    Pl.column @Bool df "between_right" `shouldReturn` Right (V.fromList [Just False, Just False, Just False, Just True, Nothing])
+                                    Pl.column @Bool df "between_none" `shouldReturn` Right (V.fromList [Just False, Just False, Just False, Just False, Nothing])
+                                    Pl.column @Bool df "duplicated" `shouldReturn` Right (V.fromList [Just False, Just True, Just True, Just False, Just False])
+                                    Pl.column @Bool df "unique" `shouldReturn` Right (V.fromList [Just True, Just False, Just False, Just True, Just True])
+                                    Pl.column @Bool df "first_distinct" `shouldReturn` Right (V.fromList [Just True, Just True, Just False, Just True, Just True])
+                                    Pl.column @Bool df "last_distinct" `shouldReturn` Right (V.fromList [Just True, Just False, Just True, Just True, Just True])
+                                    Pl.column @Bool df "close" `shouldReturn` Right (V.fromList [Just True, Just True, Just True, Just False, Nothing])
+                                    Pl.column @Int64 df "clip" `shouldReturn` Right (V.fromList [Just 2, Just 2, Just 2, Just 2, Nothing])
+                                    Pl.column @Int64 df "clip_min" `shouldReturn` Right (V.fromList [Just 2, Just 2, Just 2, Just 3, Nothing])
+                                    Pl.column @Int64 df "clip_max" `shouldReturn` Right (V.fromList [Just 1, Just 2, Just 2, Just 2, Nothing])
+        it "evaluates is_in with a text literal against a split list" $ do
+            scanResult <- Pl.scanCsv phrasesCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    let split = Pl.strSplit (Pl.col "phrase") (Pl.litText " ")
+                    projected <-
+                        Pl.select
+                            [ Pl.alias "red_in" (Pl.isIn False (Pl.litText "red") split)
+                            ]
+                            lf0
+                    case projected of
+                        Left err -> expectationFailure (show err)
+                        Right lf1 -> do
+                            collected <- Pl.collect lf1
+                            case collected of
+                                Left err -> expectationFailure (show err)
+                                Right df -> do
+                                    Pl.shape df `shouldReturn` Right (4, 1)
+                                    Pl.column @Bool df "red_in" `shouldReturn` Right (V.fromList [Just True, Just True, Just False, Just False])
 
     describe "Polars.IPC" $ do
         it "round-trips a dataframe through IPC bytes" $ do
