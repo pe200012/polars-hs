@@ -418,6 +418,16 @@ int phs_lazyframe_collect(const struct phs_lazyframe *lazyframe,
                           struct phs_dataframe **out,
                           struct phs_error **err);
 
+int phs_lazyframe_explain(const struct phs_lazyframe *lazyframe,
+                          bool optimized,
+                          struct phs_bytes **out,
+                          struct phs_error **err);
+
+int phs_lazyframe_profile(const struct phs_lazyframe *lazyframe,
+                          struct phs_dataframe **result_out,
+                          struct phs_dataframe **profile_out,
+                          struct phs_error **err);
+
 int phs_lazyframe_filter(const struct phs_lazyframe *lazyframe,
                          const struct phs_expr *predicate,
                          struct phs_lazyframe **out,
@@ -445,6 +455,66 @@ int phs_lazyframe_limit(const struct phs_lazyframe *lazyframe,
                         uint64_t n,
                         struct phs_lazyframe **out,
                         struct phs_error **err);
+
+int phs_lazyframe_drop(const struct phs_lazyframe *lazyframe,
+                       const char *const *names,
+                       uintptr_t len,
+                       struct phs_lazyframe **out,
+                       struct phs_error **err);
+
+int phs_lazyframe_rename(const struct phs_lazyframe *lazyframe,
+                         const char *const *existing,
+                         const char *const *new_,
+                         uintptr_t len,
+                         bool strict,
+                         struct phs_lazyframe **out,
+                         struct phs_error **err);
+
+int phs_lazyframe_slice(const struct phs_lazyframe *lazyframe,
+                        int64_t offset,
+                        uint64_t len,
+                        struct phs_lazyframe **out,
+                        struct phs_error **err);
+
+int phs_lazyframe_head(const struct phs_lazyframe *lazyframe,
+                       uint64_t n,
+                       struct phs_lazyframe **out,
+                       struct phs_error **err);
+
+int phs_lazyframe_tail(const struct phs_lazyframe *lazyframe,
+                       uint64_t n,
+                       struct phs_lazyframe **out,
+                       struct phs_error **err);
+
+int phs_lazyframe_drop_nulls(const struct phs_lazyframe *lazyframe,
+                             const char *const *names,
+                             uintptr_t len,
+                             bool has_subset,
+                             struct phs_lazyframe **out,
+                             struct phs_error **err);
+
+int phs_lazyframe_fill_null(const struct phs_lazyframe *lazyframe,
+                            const struct phs_expr *value,
+                            struct phs_lazyframe **out,
+                            struct phs_error **err);
+
+int phs_lazyframe_fill_nan(const struct phs_lazyframe *lazyframe,
+                           const struct phs_expr *value,
+                           struct phs_lazyframe **out,
+                           struct phs_error **err);
+
+int phs_lazyframe_null_count(const struct phs_lazyframe *lazyframe,
+                             struct phs_lazyframe **out,
+                             struct phs_error **err);
+
+int phs_lazyframe_unique(const struct phs_lazyframe *lazyframe,
+                         const char *const *names,
+                         uintptr_t len,
+                         bool has_subset,
+                         int keep_strategy,
+                         bool maintain_order,
+                         struct phs_lazyframe **out,
+                         struct phs_error **err);
 
 int phs_lazyframe_group_by_agg(const struct phs_lazyframe *lazyframe,
                                const struct phs_expr *const *keys,

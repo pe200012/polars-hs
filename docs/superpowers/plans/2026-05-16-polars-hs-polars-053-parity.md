@@ -106,7 +106,7 @@ jj --config signing.behavior=drop new
 - Modify: `CHANGELOG.md`
 
 **Step 1:** Add RED tests for `explain`, `drop`, `rename`, `slice`, `head`,
-`tail`, `dropNulls`, `fillNull`, `fillNan`, `nullCount`, and `unique`.
+`tail`, `dropNulls`, `fillNulls`, `fillNans`, `nullCount`, and `unique`.
 
 **Step 2:** Implement Rust ABI and Haskell wrappers.
 

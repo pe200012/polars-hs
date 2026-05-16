@@ -2,7 +2,7 @@
 
 ![CI](https://github.com/pe200012/polars-hs/actions/workflows/ci.yml/badge.svg?branch=master)
 
-`polars-hs` is a Haskell binding to the Rust Polars dataframe engine. The current MVP exposes eager CSV/Parquet readers, lazy CSV/Parquet scans, expression-based lazy filters and projections, grouped aggregations, lazy joins, typed column extraction, typed errors, Arrow C Data Interface import/export, and Arrow IPC byte round-trips.
+`polars-hs` is a Haskell binding to the Rust Polars dataframe engine. The current MVP exposes eager CSV/Parquet readers, lazy CSV/Parquet scans, expression-based lazy filters and projections, lazy plan inspection and transforms, grouped aggregations, lazy joins, typed column extraction, typed errors, Arrow C Data Interface import/export, and Arrow IPC byte round-trips.
 
 The Haskell package uses a small Rust adapter crate in `rust/polars-hs-ffi`. The adapter owns direct calls into Polars and exposes a stable `phs_*` C ABI. Haskell wraps returned handles in `ForeignPtr` finalizers and returns `Either PolarsError a` for recoverable failures.
 
@@ -125,6 +125,36 @@ Run the join example with:
 ```bash
 stack runghc examples/join.hs
 ```
+
+## LazyFrame transforms and plan inspection
+
+```haskell
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeApplications #-}
+
+import Data.Int (Int64)
+import qualified Polars as Pl
+
+main :: IO ()
+main = do
+  Right lf0 <- Pl.scanCsv "test/data/values.csv"
+  Right planText <- Pl.explain True lf0
+  Right profiled <- Pl.profile lf0
+  Right lf1 <- Pl.rename Pl.defaultRenameOptions [("age", "years")] lf0
+  Right lf2 <- Pl.dropNulls Nothing =<< Pl.lazyHead 3 lf1
+  Right df <- Pl.collect lf2
+  print planText
+  print =<< Pl.shape (fst profiled)
+  Pl.column @Int64 df "years" >>= print
+```
+
+LazyFrame helpers return `Either PolarsError` and validate empty column lists,
+empty subsets, and negative row counts at the Haskell boundary. The current
+transform set covers `dropColumns`, `rename`, `slice`, `lazyHead`, `lazyTail`,
+`dropNulls`, `fillNulls`, `fillNans`, `nullCount`, and `unique`. `profile`
+returns the collected result plus a profile frame with `node`, `start`, and
+`end` columns; the profile frame can be empty when Polars reports no executor
+timings for the plan.
 
 ## Typed column extraction and Series handles
 
@@ -261,7 +291,7 @@ stack runghc examples/construction.hs
 - `Polars.DataFrame` provides `dataFrame`, eager readers, shape/schema queries, head/tail, text rendering, and IPC byte conversion.
 - `Polars.Column` provides `column @Series` and typed scalar extraction with null preservation.
 - `Polars.Series` provides `series @xxx`, Series metadata, slicing, DataFrame conversion, scalar value readers, casts, and transforms.
-- `Polars.LazyFrame` provides scan, filter, select, withColumns, sort, limit, and collect.
+- `Polars.LazyFrame` provides scan, filter, select, withColumns, sort, limit, collect, explain, profile, dropColumns, rename, slice, lazyHead, lazyTail, dropNulls, fillNulls, fillNans, nullCount, and unique.
 - `Polars.GroupBy` provides grouped lazy aggregation through groupBy, groupByStable, and agg.
 - `Polars.Join` provides lazy inner, left, right, and full joins with optional suffix configuration.
 - `Polars.Expr` and `Polars.Operators` build a pure Haskell expression AST including core Expression DSL support for casts, predicates, fills, conditionals, statistics, cumulative expressions, ranking, expression sorting/filtering/slicing, window `over`, string namespace helpers (including stripPrefix/stripSuffix/escapeRegex/extractAll, string split, and concat/format), temporal namespace helpers, list namespace helpers, scalar predicate/clip helpers, horizontal/coalesce helpers, and name namespace helpers.

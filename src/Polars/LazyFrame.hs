@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DerivingStrategies #-}
 
 {- |
 Module      : Polars.LazyFrame
@@ -9,45 +10,109 @@ Expression inputs are compiled from pure Haskell AST nodes at each FFI boundary.
 -}
 module Polars.LazyFrame
     ( LazyFrame
+    , RenameOptions (..)
+    , UniqueKeepStrategy (..)
+    , UniqueOptions (..)
     , collect
+    , defaultRenameOptions
+    , defaultUniqueOptions
+    , dropColumns
+    , dropNulls
+    , explain
+    , fillNans
+    , fillNulls
     , filter
+    , lazyHead
+    , lazyTail
     , limit
+    , nullCount
+    , profile
+    , rename
     , scanCsv
     , scanParquet
     , select
+    , slice
     , sort
+    , unique
     , withColumns
     ) where
 
 import Prelude hiding (filter)
 
 import Data.Text (Text)
+import qualified Data.Text.Encoding as TE
+import Data.Word (Word64)
 import Foreign.C.String (CString)
-import Foreign.C.Types (CInt, CSize)
+import Foreign.C.Types (CBool (..), CInt, CSize)
 import Foreign.Marshal.Alloc (alloca)
 import Foreign.Marshal.Array (withArray)
 import Foreign.Ptr (Ptr, nullPtr)
 import Foreign.Storable (peek, poke)
 
-import Polars.Error (PolarsError)
+import Polars.Error (PolarsError (..), PolarsErrorCode (InvalidArgument))
 import Polars.Expr (Expr)
+import Polars.Internal.Bytes (copyAndFreeBytes)
 import Polars.Internal.CString (withFilePathCString, withTextCString)
 import Polars.Internal.Expr (compileExpr, withCompiledExprs)
 import Polars.Internal.Managed (DataFrame, LazyFrame, mkDataFrame, mkLazyFrame, withLazyFrame, withManagedExpr)
 import Polars.Internal.Raw
-    ( RawDataFrame
+    ( RawBytes
+    , RawDataFrame
     , RawError
+    , RawExpr
     , RawLazyFrame
     , phs_lazyframe_collect
+    , phs_lazyframe_drop
+    , phs_lazyframe_drop_nulls
+    , phs_lazyframe_explain
+    , phs_lazyframe_fill_nan
+    , phs_lazyframe_fill_null
     , phs_lazyframe_filter
+    , phs_lazyframe_head
     , phs_lazyframe_limit
+    , phs_lazyframe_null_count
+    , phs_lazyframe_profile
+    , phs_lazyframe_rename
     , phs_lazyframe_select
+    , phs_lazyframe_slice
     , phs_lazyframe_sort
+    , phs_lazyframe_tail
+    , phs_lazyframe_unique
     , phs_lazyframe_with_columns
     , phs_scan_csv
     , phs_scan_parquet
     )
 import Polars.Internal.Result (consumeError, nullPointerError)
+
+newtype RenameOptions = RenameOptions
+    { renameStrict :: Bool
+    }
+    deriving stock (Eq, Show)
+
+defaultRenameOptions :: RenameOptions
+defaultRenameOptions = RenameOptions {renameStrict = True}
+
+data UniqueKeepStrategy
+    = KeepFirst
+    | KeepLast
+    | KeepNone
+    | KeepAny
+    deriving stock (Eq, Show)
+
+data UniqueOptions = UniqueOptions
+    { uniqueSubset :: !(Maybe [Text])
+    , uniqueKeepStrategy :: !UniqueKeepStrategy
+    , uniqueMaintainOrder :: !Bool
+    }
+    deriving stock (Eq, Show)
+
+defaultUniqueOptions :: UniqueOptions
+defaultUniqueOptions =
+    UniqueOptions
+        { uniqueSubset = Nothing
+        , uniqueKeepStrategy = KeepAny
+        , uniqueMaintainOrder = False
+        }
 
 scanCsv :: FilePath -> IO (Either PolarsError LazyFrame)
 scanCsv path = withFilePathCString path $ \cPath -> lazyFrameOut (phs_scan_csv cPath)
@@ -57,6 +122,13 @@ scanParquet path = withFilePathCString path $ \cPath -> lazyFrameOut (phs_scan_p
 
 collect :: LazyFrame -> IO (Either PolarsError DataFrame)
 collect lf = withLazyFrame lf $ \ptr -> dataframeOut (phs_lazyframe_collect ptr)
+
+explain :: Bool -> LazyFrame -> IO (Either PolarsError Text)
+explain optimized lf = withLazyFrame lf $ \ptr ->
+    bytesOut (phs_lazyframe_explain ptr (toCBool optimized))
+
+profile :: LazyFrame -> IO (Either PolarsError (DataFrame, DataFrame))
+profile lf = withLazyFrame lf $ \ptr -> profileOut (phs_lazyframe_profile ptr)
 
 filter :: Expr -> LazyFrame -> IO (Either PolarsError LazyFrame)
 filter predicate lf = do
@@ -74,12 +146,78 @@ withColumns :: [Expr] -> LazyFrame -> IO (Either PolarsError LazyFrame)
 withColumns exprs lf = withLazyFrame lf $ \lfPtr ->
     withCompiledExprs exprs $ \exprArray len -> lazyFrameOut (phs_lazyframe_with_columns lfPtr exprArray len)
 
+dropColumns :: [Text] -> LazyFrame -> IO (Either PolarsError LazyFrame)
+dropColumns [] _ = pure (Left (invalidArgument "dropColumns requires at least one column name"))
+dropColumns names lf = withLazyFrame lf $ \lfPtr -> withCStringList names $ \nameArray len ->
+    lazyFrameOut (phs_lazyframe_drop lfPtr nameArray len)
+
+rename :: RenameOptions -> [(Text, Text)] -> LazyFrame -> IO (Either PolarsError LazyFrame)
+rename _ [] _ = pure (Left (invalidArgument "rename requires at least one column pair"))
+rename options pairs lf = withLazyFrame lf $ \lfPtr -> withRenamePairs pairs $ \existingArray newArray len ->
+    lazyFrameOut (phs_lazyframe_rename lfPtr existingArray newArray len (toCBool (renameStrict options)))
+
 sort :: [Text] -> LazyFrame -> IO (Either PolarsError LazyFrame)
 sort names lf = withLazyFrame lf $ \lfPtr -> withCStringList names $ \nameArray len ->
     lazyFrameOut (phs_lazyframe_sort lfPtr nameArray len)
 
 limit :: Word -> LazyFrame -> IO (Either PolarsError LazyFrame)
 limit n lf = withLazyFrame lf $ \lfPtr -> lazyFrameOut (phs_lazyframe_limit lfPtr (fromIntegral n))
+
+slice :: Int -> Int -> LazyFrame -> IO (Either PolarsError LazyFrame)
+slice offset len lf = case nonNegativeWord64 "slice length" len of
+    Left err -> pure (Left err)
+    Right lenWord -> withLazyFrame lf $ \lfPtr ->
+        lazyFrameOut (phs_lazyframe_slice lfPtr (fromIntegral offset) lenWord)
+
+lazyHead :: Int -> LazyFrame -> IO (Either PolarsError LazyFrame)
+lazyHead n lf = case nonNegativeWord64 "lazyHead count" n of
+    Left err -> pure (Left err)
+    Right nWord -> withLazyFrame lf $ \lfPtr -> lazyFrameOut (phs_lazyframe_head lfPtr nWord)
+
+lazyTail :: Int -> LazyFrame -> IO (Either PolarsError LazyFrame)
+lazyTail n lf = case nonNegativeWord64 "lazyTail count" n of
+    Left err -> pure (Left err)
+    Right nWord -> withLazyFrame lf $ \lfPtr -> lazyFrameOut (phs_lazyframe_tail lfPtr nWord)
+
+dropNulls :: Maybe [Text] -> LazyFrame -> IO (Either PolarsError LazyFrame)
+dropNulls (Just []) _ = pure (Left (invalidArgument "dropNulls subset requires at least one column name"))
+dropNulls subset lf = withLazyFrame lf $ \lfPtr -> withMaybeCStringList subset $ \nameArray len hasSubset ->
+    lazyFrameOut (phs_lazyframe_drop_nulls lfPtr nameArray len (toCBool hasSubset))
+
+fillNulls :: Expr -> LazyFrame -> IO (Either PolarsError LazyFrame)
+fillNulls value lf = lazyFrameExprOut value lf phs_lazyframe_fill_null
+
+fillNans :: Expr -> LazyFrame -> IO (Either PolarsError LazyFrame)
+fillNans value lf = lazyFrameExprOut value lf phs_lazyframe_fill_nan
+
+nullCount :: LazyFrame -> IO (Either PolarsError LazyFrame)
+nullCount lf = withLazyFrame lf $ \lfPtr -> lazyFrameOut (phs_lazyframe_null_count lfPtr)
+
+unique :: UniqueOptions -> LazyFrame -> IO (Either PolarsError LazyFrame)
+unique options lf = case uniqueSubset options of
+    Just [] -> pure (Left (invalidArgument "unique subset requires at least one column name"))
+    subset -> withLazyFrame lf $ \lfPtr -> withMaybeCStringList subset $ \nameArray len hasSubset ->
+        lazyFrameOut
+            ( phs_lazyframe_unique
+                lfPtr
+                nameArray
+                len
+                (toCBool hasSubset)
+                (keepStrategyCode (uniqueKeepStrategy options))
+                (toCBool (uniqueMaintainOrder options))
+            )
+
+lazyFrameExprOut ::
+    Expr ->
+    LazyFrame ->
+    (Ptr RawLazyFrame -> Ptr RawExpr -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt) ->
+    IO (Either PolarsError LazyFrame)
+lazyFrameExprOut expr lf action = do
+    compiled <- compileExpr expr
+    case compiled of
+        Left err -> pure (Left err)
+        Right managed -> withLazyFrame lf $ \lfPtr ->
+            withManagedExpr managed $ \exprPtr -> lazyFrameOut (action lfPtr exprPtr)
 
 lazyFrameOut :: (Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt) -> IO (Either PolarsError LazyFrame)
 lazyFrameOut action =
@@ -94,6 +232,21 @@ lazyFrameOut action =
                     if ptr == nullPtr
                         then pure (Left (nullPointerError "lazyframe output"))
                         else Right <$> mkLazyFrame ptr
+                else Left <$> (consumeError (fromIntegralStatus status) =<< peek errPtr)
+
+bytesOut :: (Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt) -> IO (Either PolarsError Text)
+bytesOut action =
+    alloca $ \outPtr ->
+        alloca $ \errPtr -> do
+            poke outPtr nullPtr
+            poke errPtr nullPtr
+            status <- action outPtr errPtr
+            if fromIntegralStatus status == 0
+                then do
+                    ptr <- peek outPtr
+                    if ptr == nullPtr
+                        then pure (Left (nullPointerError "lazyframe bytes output"))
+                        else Right . TE.decodeUtf8 <$> copyAndFreeBytes ptr
                 else Left <$> (consumeError (fromIntegralStatus status) =<< peek errPtr)
 
 dataframeOut :: (Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt) -> IO (Either PolarsError DataFrame)
@@ -111,11 +264,69 @@ dataframeOut action =
                         else Right <$> mkDataFrame ptr
                 else Left <$> (consumeError (fromIntegralStatus status) =<< peek errPtr)
 
+profileOut :: (Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt) -> IO (Either PolarsError (DataFrame, DataFrame))
+profileOut action =
+    alloca $ \resultPtr ->
+        alloca $ \profilePtr ->
+            alloca $ \errPtr -> do
+                poke resultPtr nullPtr
+                poke profilePtr nullPtr
+                poke errPtr nullPtr
+                status <- action resultPtr profilePtr errPtr
+                if fromIntegralStatus status == 0
+                    then do
+                        resultRaw <- peek resultPtr
+                        profileRaw <- peek profilePtr
+                        if resultRaw == nullPtr
+                            then pure (Left (nullPointerError "profile result output"))
+                            else
+                                if profileRaw == nullPtr
+                                    then pure (Left (nullPointerError "profile timing output"))
+                                    else do
+                                        result <- mkDataFrame resultRaw
+                                        profileFrame <- mkDataFrame profileRaw
+                                        pure (Right (result, profileFrame))
+                    else Left <$> (consumeError (fromIntegralStatus status) =<< peek errPtr)
+
 withCStringList :: [Text] -> (Ptr CString -> CSize -> IO a) -> IO a
 withCStringList values action = go values []
   where
     go [] acc = withArray (reverse acc) $ \ptr -> action ptr (fromIntegral (length acc))
     go (value : rest) acc = withTextCString value $ \ptr -> go rest (ptr : acc)
+
+withMaybeCStringList :: Maybe [Text] -> (Ptr CString -> CSize -> Bool -> IO a) -> IO a
+withMaybeCStringList Nothing action = action nullPtr 0 False
+withMaybeCStringList (Just values) action = withCStringList values $ \ptr len -> action ptr len True
+
+withRenamePairs :: [(Text, Text)] -> (Ptr CString -> Ptr CString -> CSize -> IO a) -> IO a
+withRenamePairs values action = go values [] []
+  where
+    go [] existing new =
+        withArray (reverse existing) $ \existingPtr ->
+            withArray (reverse new) $ \newPtr ->
+                action existingPtr newPtr (fromIntegral (length existing))
+    go ((existingName, newName) : rest) existing new =
+        withTextCString existingName $ \existingPtr ->
+            withTextCString newName $ \newPtr ->
+                go rest (existingPtr : existing) (newPtr : new)
+
+nonNegativeWord64 :: Text -> Int -> Either PolarsError Word64
+nonNegativeWord64 label value
+    | value < 0 = Left (invalidArgument (label <> " must be non-negative"))
+    | otherwise = Right (fromIntegral value)
+
+keepStrategyCode :: UniqueKeepStrategy -> CInt
+keepStrategyCode KeepFirst = 0
+keepStrategyCode KeepLast = 1
+keepStrategyCode KeepNone = 2
+keepStrategyCode KeepAny = 3
+
+toCBool :: Bool -> CBool
+toCBool False = CBool 0
+toCBool True = CBool 1
+
+invalidArgument :: Text -> PolarsError
+invalidArgument = PolarsError InvalidArgument
 
 fromIntegralStatus :: (Integral a) => a -> CInt
 fromIntegralStatus = fromIntegral

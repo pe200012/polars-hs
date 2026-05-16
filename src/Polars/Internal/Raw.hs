@@ -89,13 +89,25 @@ module Polars.Internal.Raw
     , phs_expr_unary
     , phs_expr_unary_i64
     , phs_lazyframe_collect
+    , phs_lazyframe_drop
+    , phs_lazyframe_drop_nulls
+    , phs_lazyframe_explain
+    , phs_lazyframe_fill_nan
+    , phs_lazyframe_fill_null
     , phs_lazyframe_filter
     , phs_lazyframe_free_finalizer
     , phs_lazyframe_group_by_agg
+    , phs_lazyframe_head
     , phs_lazyframe_join
     , phs_lazyframe_limit
+    , phs_lazyframe_null_count
+    , phs_lazyframe_profile
+    , phs_lazyframe_rename
     , phs_lazyframe_select
+    , phs_lazyframe_slice
     , phs_lazyframe_sort
+    , phs_lazyframe_tail
+    , phs_lazyframe_unique
     , phs_lazyframe_with_columns
     , phs_read_csv
     , phs_read_ipc_file
@@ -328,6 +340,12 @@ foreign import ccall unsafe "phs_scan_parquet"
 foreign import ccall unsafe "phs_lazyframe_collect"
     phs_lazyframe_collect :: Ptr RawLazyFrame -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
 
+foreign import ccall unsafe "phs_lazyframe_explain"
+    phs_lazyframe_explain :: Ptr RawLazyFrame -> CBool -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_lazyframe_profile"
+    phs_lazyframe_profile :: Ptr RawLazyFrame -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
+
 foreign import ccall unsafe "phs_lazyframe_filter"
     phs_lazyframe_filter :: Ptr RawLazyFrame -> Ptr RawExpr -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
 
@@ -342,6 +360,36 @@ foreign import ccall unsafe "phs_lazyframe_sort"
 
 foreign import ccall unsafe "phs_lazyframe_limit"
     phs_lazyframe_limit :: Ptr RawLazyFrame -> Word64 -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_lazyframe_drop"
+    phs_lazyframe_drop :: Ptr RawLazyFrame -> Ptr CString -> CSize -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_lazyframe_rename"
+    phs_lazyframe_rename :: Ptr RawLazyFrame -> Ptr CString -> Ptr CString -> CSize -> CBool -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_lazyframe_slice"
+    phs_lazyframe_slice :: Ptr RawLazyFrame -> CLLong -> Word64 -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_lazyframe_head"
+    phs_lazyframe_head :: Ptr RawLazyFrame -> Word64 -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_lazyframe_tail"
+    phs_lazyframe_tail :: Ptr RawLazyFrame -> Word64 -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_lazyframe_drop_nulls"
+    phs_lazyframe_drop_nulls :: Ptr RawLazyFrame -> Ptr CString -> CSize -> CBool -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_lazyframe_fill_null"
+    phs_lazyframe_fill_null :: Ptr RawLazyFrame -> Ptr RawExpr -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_lazyframe_fill_nan"
+    phs_lazyframe_fill_nan :: Ptr RawLazyFrame -> Ptr RawExpr -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_lazyframe_null_count"
+    phs_lazyframe_null_count :: Ptr RawLazyFrame -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_lazyframe_unique"
+    phs_lazyframe_unique :: Ptr RawLazyFrame -> Ptr CString -> CSize -> CBool -> CInt -> CBool -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_lazyframe_group_by_agg"
     phs_lazyframe_group_by_agg :: Ptr RawLazyFrame -> Ptr (Ptr RawExpr) -> CSize -> Ptr (Ptr RawExpr) -> CSize -> CBool -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt

@@ -215,6 +215,183 @@ main = hspec $ do
                                         Left err -> expectationFailure (show err)
                                         Right df -> Pl.shape df `shouldReturn` Right (1, 1)
 
+        it "explains optimized and unoptimized lazy plans" $ do
+            scanResult <- Pl.scanCsv fixtureCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    filtered <- Pl.filter (Pl.col "age" Pl..> Pl.litInt 35) lf0
+                    case filtered of
+                        Left err -> expectationFailure (show err)
+                        Right lf1 -> do
+                            optimized <- Pl.explain True lf1
+                            unoptimized <- Pl.explain False lf1
+                            fmap (T.isInfixOf "SCAN") optimized `shouldBe` Right True
+                            fmap (T.isInfixOf "FILTER") unoptimized `shouldBe` Right True
+
+        it "profiles lazy execution and returns result and timing frames" $ do
+            scanResult <- Pl.scanCsv salesCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf -> do
+                    grouped <-
+                        Pl.agg
+                            [ Pl.alias "salary_sum" (Pl.sum_ (Pl.col "salary"))
+                            , Pl.alias "age_mean" (Pl.mean_ (Pl.col "age"))
+                            ]
+                            (Pl.groupByStable [Pl.col "department"] lf)
+                    profiled <- case grouped of
+                        Left err -> pure (Left err)
+                        Right groupedLf -> Pl.profile groupedLf
+                    case profiled of
+                        Left err -> expectationFailure (show err)
+                        Right (df, profileDf) -> do
+                            Pl.shape df `shouldReturn` Right (2, 3)
+                            profileFields <- Pl.schema profileDf
+                            case profileFields of
+                                Left err -> expectationFailure (show err)
+                                Right fields -> map Pl.fieldName fields `shouldBe` ["node", "start", "end"]
+
+        it "drops and renames lazy columns" $ do
+            scanResult <- Pl.scanCsv valuesCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    dropped <- Pl.dropColumns ["score"] lf0
+                    case dropped of
+                        Left err -> expectationFailure (show err)
+                        Right lf1 -> do
+                            renamed <- Pl.rename Pl.defaultRenameOptions [("age", "years")] lf1
+                            case renamed of
+                                Left err -> expectationFailure (show err)
+                                Right lf2 -> do
+                                    collected <- Pl.collect lf2
+                                    case collected of
+                                        Left err -> expectationFailure (show err)
+                                        Right df -> do
+                                            fields <- Pl.schema df
+                                            fmap (map Pl.fieldName) fields `shouldBe` Right ["name", "years", "active"]
+                                            Pl.column @Int64 df "years" `shouldReturn` Right (V.fromList [Just 34, Nothing, Just 29])
+
+        it "slices lazy rows and takes lazy head and tail" $ do
+            scanResult <- Pl.scanCsv valuesCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    sliced <- Pl.slice 1 2 lf0
+                    headed <- Pl.lazyHead 2 lf0
+                    tailed <- Pl.lazyTail 1 lf0
+                    case (sliced, headed, tailed) of
+                        (Right sliceLf, Right headLf, Right tailLf) -> do
+                            sliceDf <- Pl.collect sliceLf
+                            headDf <- Pl.collect headLf
+                            tailDf <- Pl.collect tailLf
+                            case (sliceDf, headDf, tailDf) of
+                                (Right sDf, Right hDf, Right tDf) -> do
+                                    Pl.column @T.Text sDf "name" `shouldReturn` Right (V.fromList [Just "Bob", Just "Carol"])
+                                    Pl.column @T.Text hDf "name" `shouldReturn` Right (V.fromList [Just "Alice", Just "Bob"])
+                                    Pl.column @T.Text tDf "name" `shouldReturn` Right (V.fromList [Just "Carol"])
+                                (Left err, _, _) -> expectationFailure (show err)
+                                (_, Left err, _) -> expectationFailure (show err)
+                                (_, _, Left err) -> expectationFailure (show err)
+                        (Left err, _, _) -> expectationFailure (show err)
+                        (_, Left err, _) -> expectationFailure (show err)
+                        (_, _, Left err) -> expectationFailure (show err)
+
+        it "drops nulls and fills nulls and NaNs in lazy frames" $ do
+            valuesScan <- Pl.scanCsv valuesCsv
+            specialsScan <- Pl.scanCsv floatSpecialsCsv
+            case (valuesScan, specialsScan) of
+                (Right valuesLf, Right specialsLf) -> do
+                    dense <- Pl.dropNulls Nothing valuesLf
+                    ageOnly <- Pl.select [Pl.col "age"] valuesLf
+                    filledNulls <- case ageOnly of
+                        Left err -> pure (Left err)
+                        Right lf -> Pl.fillNulls (Pl.litInt 0) lf
+                    filledNans <- Pl.fillNans (Pl.litDouble 0.0) specialsLf
+                    case (dense, filledNulls, filledNans) of
+                        (Right denseLf, Right nullLf, Right nanLf) -> do
+                            denseDf <- Pl.collect denseLf
+                            nullDf <- Pl.collect nullLf
+                            nanDf <- Pl.collect nanLf
+                            case (denseDf, nullDf, nanDf) of
+                                (Right dDf, Right nDf, Right fDf) -> do
+                                    Pl.column @T.Text dDf "name" `shouldReturn` Right (V.fromList [Just "Alice"])
+                                    Pl.column @Int64 nDf "age" `shouldReturn` Right (V.fromList [Just 34, Just 0, Just 29])
+                                    values <- Pl.column @Double fDf "value"
+                                    case values of
+                                        Left err -> expectationFailure (show err)
+                                        Right actual -> shouldApproximate 1.0e-12 (V.fromList [Just 1.0, Just 0.0, Just (1 / 0), Just (-(1 / 0))]) actual
+                                (Left err, _, _) -> expectationFailure (show err)
+                                (_, Left err, _) -> expectationFailure (show err)
+                                (_, _, Left err) -> expectationFailure (show err)
+                        (Left err, _, _) -> expectationFailure (show err)
+                        (_, Left err, _) -> expectationFailure (show err)
+                        (_, _, Left err) -> expectationFailure (show err)
+                (Left err, _) -> expectationFailure (show err)
+                (_, Left err) -> expectationFailure (show err)
+
+        it "counts nulls and keeps unique rows by subset" $ do
+            valuesScan <- Pl.scanCsv valuesCsv
+            salesScan <- Pl.scanCsv salesCsv
+            case (valuesScan, salesScan) of
+                (Right valuesLf, Right salesLf) -> do
+                    counts <- Pl.nullCount valuesLf
+                    uniqueDepartments <-
+                        Pl.unique
+                            Pl.defaultUniqueOptions
+                                { Pl.uniqueSubset = Just ["department"]
+                                , Pl.uniqueKeepStrategy = Pl.KeepFirst
+                                , Pl.uniqueMaintainOrder = True
+                                }
+                            salesLf
+                    case (counts, uniqueDepartments) of
+                        (Right countsLf, Right uniqueLf) -> do
+                            countsDf <- Pl.collect countsLf
+                            uniqueDf <- Pl.collect uniqueLf
+                            case (countsDf, uniqueDf) of
+                                (Right cDf, Right uDf) -> do
+                                    Pl.column @Word32 cDf "age" `shouldReturn` Right (V.fromList [Just 1])
+                                    Pl.column @Word32 cDf "score" `shouldReturn` Right (V.fromList [Just 1])
+                                    Pl.column @Word32 cDf "active" `shouldReturn` Right (V.fromList [Just 1])
+                                    Pl.column @T.Text uDf "name" `shouldReturn` Right (V.fromList [Just "Alice", Just "Carol"])
+                                (Left err, _) -> expectationFailure (show err)
+                                (_, Left err) -> expectationFailure (show err)
+                        (Left err, _) -> expectationFailure (show err)
+                        (_, Left err) -> expectationFailure (show err)
+                (Left err, _) -> expectationFailure (show err)
+                (_, Left err) -> expectationFailure (show err)
+
+        it "validates lazy transform arguments" $ do
+            scanResult <- Pl.scanCsv valuesCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf -> do
+                    dropResult <- Pl.dropColumns [] lf
+                    renameResult <- Pl.rename Pl.defaultRenameOptions [] lf
+                    sliceResult <- Pl.slice 0 (-1) lf
+                    headResult <- Pl.lazyHead (-1) lf
+                    dropNullsResult <- Pl.dropNulls (Just []) lf
+                    uniqueResult <- Pl.unique Pl.defaultUniqueOptions {Pl.uniqueSubset = Just []} lf
+                    case dropResult of
+                        Right _ -> expectationFailure "expected InvalidArgument for empty dropColumns"
+                        Left err -> Pl.polarsErrorCode err `shouldBe` Pl.InvalidArgument
+                    case renameResult of
+                        Right _ -> expectationFailure "expected InvalidArgument for empty rename"
+                        Left err -> Pl.polarsErrorCode err `shouldBe` Pl.InvalidArgument
+                    case sliceResult of
+                        Right _ -> expectationFailure "expected InvalidArgument for negative slice length"
+                        Left err -> Pl.polarsErrorCode err `shouldBe` Pl.InvalidArgument
+                    case headResult of
+                        Right _ -> expectationFailure "expected InvalidArgument for negative lazyHead"
+                        Left err -> Pl.polarsErrorCode err `shouldBe` Pl.InvalidArgument
+                    case dropNullsResult of
+                        Right _ -> expectationFailure "expected InvalidArgument for empty dropNulls subset"
+                        Left err -> Pl.polarsErrorCode err `shouldBe` Pl.InvalidArgument
+                    case uniqueResult of
+                        Right _ -> expectationFailure "expected InvalidArgument for empty unique subset"
+                        Left err -> Pl.polarsErrorCode err `shouldBe` Pl.InvalidArgument
+
     describe "Polars.GroupBy" $ do
         it "groups a lazy CSV scan and aggregates columns" $ do
             scanResult <- Pl.scanCsv salesCsv

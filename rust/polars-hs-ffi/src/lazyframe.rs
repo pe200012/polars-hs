@@ -3,6 +3,7 @@ use std::ptr;
 
 use polars::prelude::*;
 
+use crate::bytes::{bytes_into_raw, phs_bytes};
 use crate::error::{PhsError, PhsResult, c_str_to_str, ffi_boundary, phs_error, required_mut};
 use crate::handles::{dataframe_into_raw, expr_ref, lazyframe_into_raw, lazyframe_ref, phs_dataframe, phs_expr, phs_lazyframe};
 
@@ -50,6 +51,16 @@ fn join_type_from_code(code: c_int) -> PhsResult<JoinType> {
     }
 }
 
+fn keep_strategy_from_code(code: c_int) -> PhsResult<UniqueKeepStrategy> {
+    match code {
+        0 => Ok(UniqueKeepStrategy::First),
+        1 => Ok(UniqueKeepStrategy::Last),
+        2 => Ok(UniqueKeepStrategy::None),
+        3 => Ok(UniqueKeepStrategy::Any),
+        _ => Err(PhsError::invalid_argument(format!("unknown unique keep strategy code {code}"))),
+    }
+}
+
 unsafe fn optional_suffix(suffix: *const c_char) -> PhsResult<Option<PlSmallStr>> {
     if suffix.is_null() {
         Ok(None)
@@ -57,6 +68,46 @@ unsafe fn optional_suffix(suffix: *const c_char) -> PhsResult<Option<PlSmallStr>
         let suffix = unsafe { c_str_to_str(suffix, "suffix") }?;
         Ok(Some(PlSmallStr::from_str(suffix)))
     }
+}
+
+fn selector_from_names(names: Vec<PlSmallStr>, label: &str) -> PhsResult<Selector> {
+    if names.is_empty() {
+        Err(PhsError::invalid_argument(format!("{label} requires at least one column name")))
+    } else {
+        Ok(by_name(names, true, false))
+    }
+}
+
+unsafe fn optional_selector(
+    names: *const *const c_char,
+    len: usize,
+    has_subset: bool,
+    label: &str,
+) -> PhsResult<Option<Selector>> {
+    if !has_subset {
+        return Ok(None);
+    }
+    let names = unsafe { name_vec(names, len) }?;
+    selector_from_names(names, label).map(Some)
+}
+
+fn idx_size_from_u64(value: u64, label: &str) -> PhsResult<IdxSize> {
+    value
+        .try_into()
+        .map_err(|_| PhsError::invalid_argument(format!("{label} exceeds Polars index size")))
+}
+
+fn empty_profile_frame() -> DataFrame {
+    let schema = Schema::from_iter([
+        Field::new(PlSmallStr::from_static("node"), DataType::String),
+        Field::new(PlSmallStr::from_static("start"), DataType::UInt64),
+        Field::new(PlSmallStr::from_static("end"), DataType::UInt64),
+    ]);
+    DataFrame::empty_with_schema(&schema)
+}
+
+fn is_empty_profile_error(error: &PolarsError) -> bool {
+    matches!(error, PolarsError::ComputeError(message) if message.as_ref() == "no data to time")
 }
 
 #[unsafe(no_mangle)]
@@ -103,6 +154,46 @@ pub unsafe extern "C" fn phs_lazyframe_collect(
         let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
         let df = lf.collect()?;
         *out = dataframe_into_raw(df);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_explain(
+    lazyframe: *const phs_lazyframe,
+    optimized: bool,
+    out: *mut *mut phs_bytes,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        *out = bytes_into_raw(lf.explain(optimized)?.into_bytes());
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_profile(
+    lazyframe: *const phs_lazyframe,
+    result_out: *mut *mut phs_dataframe,
+    profile_out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let result_out = unsafe { required_mut(result_out, "result_out") }?;
+        let profile_out = unsafe { required_mut(profile_out, "profile_out") }?;
+        *result_out = ptr::null_mut();
+        *profile_out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        let (result, profile) = match lf.clone().profile() {
+            Ok(profiled) => profiled,
+            Err(error) if is_empty_profile_error(&error) => (lf.collect()?, empty_profile_frame()),
+            Err(error) => return Err(error.into()),
+        };
+        *result_out = dataframe_into_raw(result);
+        *profile_out = dataframe_into_raw(profile);
         Ok(())
     })
 }
@@ -189,8 +280,198 @@ pub unsafe extern "C" fn phs_lazyframe_limit(
         let out = unsafe { required_mut(out, "out") }?;
         *out = ptr::null_mut();
         let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
-        let n: IdxSize = n.try_into().map_err(|_| PhsError::invalid_argument("limit exceeds Polars index size"))?;
+        let n = idx_size_from_u64(n, "limit")?;
         *out = lazyframe_into_raw(lf.limit(n));
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_drop(
+    lazyframe: *const phs_lazyframe,
+    names: *const *const c_char,
+    len: usize,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        let names = unsafe { name_vec(names, len) }?;
+        let selector = selector_from_names(names, "drop")?;
+        *out = lazyframe_into_raw(lf.drop(selector));
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_rename(
+    lazyframe: *const phs_lazyframe,
+    existing: *const *const c_char,
+    new: *const *const c_char,
+    len: usize,
+    strict: bool,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        let existing = unsafe { name_vec(existing, len) }?;
+        let new = unsafe { name_vec(new, len) }?;
+        if existing.is_empty() {
+            return Err(PhsError::invalid_argument("rename requires at least one column pair"));
+        }
+        *out = lazyframe_into_raw(lf.rename(existing, new, strict));
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_slice(
+    lazyframe: *const phs_lazyframe,
+    offset: i64,
+    len: u64,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        let len = idx_size_from_u64(len, "slice length")?;
+        *out = lazyframe_into_raw(lf.slice(offset, len));
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_head(
+    lazyframe: *const phs_lazyframe,
+    n: u64,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        let n = idx_size_from_u64(n, "head count")?;
+        *out = lazyframe_into_raw(lf.limit(n));
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_tail(
+    lazyframe: *const phs_lazyframe,
+    n: u64,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        let n = idx_size_from_u64(n, "tail count")?;
+        *out = lazyframe_into_raw(lf.tail(n));
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_drop_nulls(
+    lazyframe: *const phs_lazyframe,
+    names: *const *const c_char,
+    len: usize,
+    has_subset: bool,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        let subset = unsafe { optional_selector(names, len, has_subset, "drop_nulls subset") }?;
+        *out = lazyframe_into_raw(lf.drop_nulls(subset));
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_fill_null(
+    lazyframe: *const phs_lazyframe,
+    value: *const phs_expr,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        let value = unsafe { expr_ref(value) }?.value.clone();
+        *out = lazyframe_into_raw(lf.fill_null(value));
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_fill_nan(
+    lazyframe: *const phs_lazyframe,
+    value: *const phs_expr,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        let value = unsafe { expr_ref(value) }?.value.clone();
+        *out = lazyframe_into_raw(lf.fill_nan(value));
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_null_count(
+    lazyframe: *const phs_lazyframe,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        *out = lazyframe_into_raw(lf.null_count());
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_unique(
+    lazyframe: *const phs_lazyframe,
+    names: *const *const c_char,
+    len: usize,
+    has_subset: bool,
+    keep_strategy: c_int,
+    maintain_order: bool,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        let subset = unsafe { optional_selector(names, len, has_subset, "unique subset") }?;
+        let keep_strategy = keep_strategy_from_code(keep_strategy)?;
+        let output = if maintain_order {
+            lf.unique_stable(subset, keep_strategy)
+        } else {
+            lf.unique(subset, keep_strategy)
+        };
+        *out = lazyframe_into_raw(output);
         Ok(())
     })
 }

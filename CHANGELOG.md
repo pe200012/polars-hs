@@ -17,6 +17,7 @@ and this project adheres to the
 - DataFrame shape, schema, head, tail, and text rendering operations.
 - Pure Haskell expression AST with comparison, boolean, and arithmetic operators.
 - Lazy CSV and Parquet scans with filter, select, withColumns, sort, limit, and collect.
+- LazyFrame plan inspection, profiling, and common transforms: dropColumns, rename, slice, lazyHead, lazyTail, dropNulls, fillNulls, fillNans, nullCount, and unique.
 - Arrow IPC byte and file round-trip helpers.
 - Hspec integration tests for eager, lazy, and IPC behavior.
 - Grouped lazy aggregation helpers.
