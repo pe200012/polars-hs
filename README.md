@@ -2,7 +2,7 @@
 
 ![CI](https://github.com/pe200012/polars-hs/actions/workflows/ci.yml/badge.svg?branch=master)
 
-`polars-hs` is a Haskell binding to the Rust Polars dataframe engine. The current MVP exposes eager CSV/Parquet readers, lazy CSV/Parquet scans, expression-based lazy filters and projections, grouped aggregations, lazy joins, typed column extraction, typed errors, Arrow C Data Interface import, and Arrow IPC byte round-trips.
+`polars-hs` is a Haskell binding to the Rust Polars dataframe engine. The current MVP exposes eager CSV/Parquet readers, lazy CSV/Parquet scans, expression-based lazy filters and projections, grouped aggregations, lazy joins, typed column extraction, typed errors, Arrow C Data Interface import/export, and Arrow IPC byte round-trips.
 
 The Haskell package uses a small Rust adapter crate in `rust/polars-hs-ffi`. The adapter owns direct calls into Polars and exposes a stable `phs_*` C ABI. Haskell wraps returned handles in `ForeignPtr` finalizers and returns `Either PolarsError a` for recoverable failures.
 
@@ -155,7 +155,7 @@ main = do
       either print (print <=< Pl.seriesName) ageSeries
 ```
 
-Typed extraction returns one value per row in `Vector (Maybe a)` and preserves Polars null values as `Nothing`:
+Typed extraction returns one value per row in `Vector (Maybe a)` and preserves Polars null values as `Nothing`.
 
 ```haskell
 Right [Just "Alice",Just "Bob",Just "Carol"]
@@ -164,7 +164,9 @@ Right [Just 9.5,Just 8.25,Nothing]
 Right [Just True,Just False,Nothing]
 ```
 
-The named helpers remain available as aliases: `columnText`, `columnInt64`, `columnDouble`, and `columnBool`.
+The typed extraction matrix covers `Bool`, `Int8`, `Int16`, `Int32`, `Int64`, `Word8`, `Word16`, `Word32`, `Word64`, `Float`, `Double`, and `Text`.
+
+The named helpers remain available as aliases: `columnBool`, `columnInt8`, `columnInt16`, `columnInt32`, `columnInt64`, `columnWord8`, `columnWord16`, `columnWord32`, `columnWord64`, `columnFloat`, `columnDouble`, and `columnText`.
 
 ## Series and DataFrame construction
 
@@ -181,12 +183,15 @@ main :: IO ()
 main = do
   Right name <- Pl.series @T.Text "name" (V.fromList [Just "Alice", Just "Bob", Just "Carol"])
   Right age <- Pl.series @Int64 "age" (V.fromList [Just 34, Nothing, Just 29])
+  Right rank <- Pl.series @Int32 "rank" (V.fromList [Just 1, Nothing, Just 3])
   Right score <- Pl.series @Double "score" (V.fromList [Just 9.5, Just 8.25, Nothing])
   Right active <- Pl.series @Bool "active" (V.fromList [Just True, Just False, Nothing])
-  Right df <- Pl.dataFrame [name, age, score, active]
+  Right df <- Pl.dataFrame [name, age, rank, score, active]
   print =<< Pl.shape df
   print =<< Pl.column @Int64 df "age"
 ```
+
+`series @xxx`, `seriesCast @xxx`, `seriesInt8`, `seriesWord64`, `seriesFloat`, and related readers cover the same scalar dtype matrix as typed column extraction. Arrow RecordBatch and single Series Arrow array round-trips preserve those scalar dtypes.
 
 Run the construction example with:
 
@@ -254,8 +259,8 @@ stack runghc examples/construction.hs
 - `Polars` re-exports the MVP API.
 - `Polars.Arrow` provides Arrow C Data Interface RecordBatch and Series import/export.
 - `Polars.DataFrame` provides `dataFrame`, eager readers, shape/schema queries, head/tail, text rendering, and IPC byte conversion.
-- `Polars.Column` provides `column @Series` and typed `column @Bool/@Int64/@Double/@Text` extraction with null preservation.
-- `Polars.Series` provides `series @xxx`, Series metadata, slicing, DataFrame conversion, typed value readers, and transforms.
+- `Polars.Column` provides `column @Series` and typed scalar extraction with null preservation.
+- `Polars.Series` provides `series @xxx`, Series metadata, slicing, DataFrame conversion, scalar value readers, casts, and transforms.
 - `Polars.LazyFrame` provides scan, filter, select, withColumns, sort, limit, and collect.
 - `Polars.GroupBy` provides grouped lazy aggregation through groupBy, groupByStable, and agg.
 - `Polars.Join` provides lazy inner, left, right, and full joins with optional suffix configuration.

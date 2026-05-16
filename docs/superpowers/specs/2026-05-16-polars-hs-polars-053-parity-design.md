@@ -210,3 +210,55 @@ seriesWord8 casted `shouldReturn` Right (V.fromList [Just 1, Nothing, Just 255])
   cloud support need separate option-record design.
 - Complete Polars parity is a sequence of small verified batches. Each batch
   leaves the repository in a testable state and records implementation results.
+
+## Implementation Results
+
+### 2026-05-16: Phase 1 Data Type Matrix
+
+Implemented scalar dtype matrix coverage for:
+
+```haskell
+Int8, Int16, Int32, Word8, Word16, Word32, Word64, Float
+```
+
+Public API additions:
+- `SeriesFrom` instances for the new scalar dtypes.
+- `SeriesCast` instances aligned with the existing expression dtype code order.
+- `seriesInt8`, `seriesInt16`, `seriesInt32`, `seriesWord8`, `seriesWord16`,
+  `seriesWord32`, `seriesWord64`, and `seriesFloat`.
+- `Column` instances and named `column*` helpers for the same dtype set.
+
+Rust ABI additions:
+- `phs_series_new_i8/i16/i32/u8/u16/u32/u64/f32`.
+- `phs_series_values_i8/i16/i32/u8/u16/u32/u64/f32`.
+- `phs_dataframe_column_i8/i16/i32/u8/u16/u32/u64/f32`.
+- Updated `phs_series_cast` dtype mapping through `Float32` and `String`.
+
+Test coverage added:
+- Series construction/extraction/casting for all Phase 1 scalar dtypes.
+- DataFrame construction, schema parsing, and typed column extraction.
+- Arrow RecordBatch round-trip for all Phase 1 scalar dtypes.
+- Arrow single Series round-trip for all Phase 1 scalar dtypes.
+
+Verification:
+
+```bash
+cargo test --manifest-path rust/polars-hs-ffi/Cargo.toml
+# 85 passed
+
+PATH="$HOME/.ghcup/bin:$PATH" stack --system-ghc test --fast
+# 79 examples, 0 failures
+
+hlint src app test
+# No hints
+
+git diff --check
+# passed
+```
+
+Deviations:
+- `test/ArrowRecordBatch.hs` already supported the needed scalar Arrow arrays,
+  so the Hspec coverage landed in `test/Spec.hs`.
+- Direct DataFrame column reader ABI was added for parity with existing
+  `phs_dataframe_column_i64/f64/text/bool`, while public Haskell `column @a`
+  continues through `column @Series` plus typed Series extraction.

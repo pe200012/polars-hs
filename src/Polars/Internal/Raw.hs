@@ -30,9 +30,17 @@ module Polars.Internal.Raw
     , phs_dataframe_from_arrow_record_batch
     , phs_dataframe_to_arrow_record_batch
     , phs_dataframe_new
+    , phs_dataframe_column_f32
     , phs_dataframe_column_f64
+    , phs_dataframe_column_i8
+    , phs_dataframe_column_i16
+    , phs_dataframe_column_i32
     , phs_dataframe_column_i64
     , phs_dataframe_column_text
+    , phs_dataframe_column_u8
+    , phs_dataframe_column_u16
+    , phs_dataframe_column_u32
+    , phs_dataframe_column_u64
     , phs_dataframe_free_finalizer
     , phs_dataframe_from_ipc_bytes
     , phs_dataframe_head
@@ -103,9 +111,17 @@ module Polars.Internal.Raw
     , phs_series_len
     , phs_series_name
     , phs_series_new_bool
+    , phs_series_new_f32
     , phs_series_new_f64
+    , phs_series_new_i8
+    , phs_series_new_i16
+    , phs_series_new_i32
     , phs_series_new_i64
     , phs_series_new_text
+    , phs_series_new_u8
+    , phs_series_new_u16
+    , phs_series_new_u32
+    , phs_series_new_u64
     , phs_series_rename
     , phs_series_reverse
     , phs_series_null_count
@@ -117,9 +133,17 @@ module Polars.Internal.Raw
     , phs_series_unique
     , phs_series_unique_stable
     , phs_series_values_bool
+    , phs_series_values_f32
     , phs_series_values_f64
+    , phs_series_values_i8
+    , phs_series_values_i16
+    , phs_series_values_i32
     , phs_series_values_i64
     , phs_series_values_text
+    , phs_series_values_u8
+    , phs_series_values_u16
+    , phs_series_values_u32
+    , phs_series_values_u64
     , phs_series_from_arrow_array
     , phs_write_ipc_file
     ) where
@@ -238,6 +262,30 @@ foreign import ccall unsafe "phs_dataframe_column_bool"
 foreign import ccall unsafe "phs_dataframe_column_i64"
     phs_dataframe_column_i64 :: Ptr RawDataFrame -> CString -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt
 
+foreign import ccall unsafe "phs_dataframe_column_i8"
+    phs_dataframe_column_i8 :: Ptr RawDataFrame -> CString -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_dataframe_column_i16"
+    phs_dataframe_column_i16 :: Ptr RawDataFrame -> CString -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_dataframe_column_i32"
+    phs_dataframe_column_i32 :: Ptr RawDataFrame -> CString -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_dataframe_column_u8"
+    phs_dataframe_column_u8 :: Ptr RawDataFrame -> CString -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_dataframe_column_u16"
+    phs_dataframe_column_u16 :: Ptr RawDataFrame -> CString -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_dataframe_column_u32"
+    phs_dataframe_column_u32 :: Ptr RawDataFrame -> CString -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_dataframe_column_u64"
+    phs_dataframe_column_u64 :: Ptr RawDataFrame -> CString -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_dataframe_column_f32"
+    phs_dataframe_column_f32 :: Ptr RawDataFrame -> CString -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt
+
 foreign import ccall unsafe "phs_dataframe_column_f64"
     phs_dataframe_column_f64 :: Ptr RawDataFrame -> CString -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt
 
@@ -319,6 +367,30 @@ foreign import ccall unsafe "phs_series_new_bool"
 foreign import ccall unsafe "phs_series_new_i64"
     phs_series_new_i64 :: CString -> Ptr Word8 -> CSize -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
 
+foreign import ccall unsafe "phs_series_new_i8"
+    phs_series_new_i8 :: CString -> Ptr Word8 -> CSize -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_new_i16"
+    phs_series_new_i16 :: CString -> Ptr Word8 -> CSize -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_new_i32"
+    phs_series_new_i32 :: CString -> Ptr Word8 -> CSize -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_new_u8"
+    phs_series_new_u8 :: CString -> Ptr Word8 -> CSize -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_new_u16"
+    phs_series_new_u16 :: CString -> Ptr Word8 -> CSize -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_new_u32"
+    phs_series_new_u32 :: CString -> Ptr Word8 -> CSize -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_new_u64"
+    phs_series_new_u64 :: CString -> Ptr Word8 -> CSize -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_new_f32"
+    phs_series_new_f32 :: CString -> Ptr Word8 -> CSize -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
 foreign import ccall unsafe "phs_series_new_f64"
     phs_series_new_f64 :: CString -> Ptr Word8 -> CSize -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
 
@@ -378,6 +450,30 @@ foreign import ccall unsafe "phs_series_values_bool"
 
 foreign import ccall unsafe "phs_series_values_i64"
     phs_series_values_i64 :: Ptr RawSeries -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_values_i8"
+    phs_series_values_i8 :: Ptr RawSeries -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_values_i16"
+    phs_series_values_i16 :: Ptr RawSeries -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_values_i32"
+    phs_series_values_i32 :: Ptr RawSeries -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_values_u8"
+    phs_series_values_u8 :: Ptr RawSeries -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_values_u16"
+    phs_series_values_u16 :: Ptr RawSeries -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_values_u32"
+    phs_series_values_u32 :: Ptr RawSeries -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_values_u64"
+    phs_series_values_u64 :: Ptr RawSeries -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_values_f32"
+    phs_series_values_f32 :: Ptr RawSeries -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_series_values_f64"
     phs_series_values_f64 :: Ptr RawSeries -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt

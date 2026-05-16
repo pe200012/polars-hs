@@ -12,6 +12,8 @@
 
 ### Task 1: Data Type Matrix Phase 1
 
+Status: implemented and verified on 2026-05-16.
+
 **Files:**
 - Modify: `src/Polars/Internal/ColumnEncode.hs`
 - Modify: `src/Polars/Internal/ColumnDecode.hs`
@@ -67,6 +69,22 @@ cargo test --manifest-path rust/polars-hs-ffi/Cargo.toml
 stack test --fast
 hlint src app test
 git diff --check
+```
+
+Current verification:
+
+```bash
+cargo test --manifest-path rust/polars-hs-ffi/Cargo.toml
+# 85 passed
+
+PATH="$HOME/.ghcup/bin:$PATH" stack --system-ghc test --fast
+# 79 examples, 0 failures
+
+hlint src app test
+# No hints
+
+git diff --check
+# passed
 ```
 
 **Step 7: Commit**

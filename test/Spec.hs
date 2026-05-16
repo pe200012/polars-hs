@@ -6,11 +6,12 @@ module Main (main) where
 import Prelude hiding (filter, head)
 
 import qualified Data.ByteString as BS
-import Data.Int (Int64)
+import Data.Int (Int16, Int32, Int64, Int8)
 import Data.Foldable (forM_)
 import Data.Maybe (isJust)
 import qualified Data.Text as T
 import qualified Data.Vector as V
+import Data.Word (Word16, Word32, Word64, Word8)
 import Foreign.Ptr (nullPtr)
 import System.Mem (performGC)
 import Test.Hspec
@@ -140,6 +141,42 @@ main = hspec $ do
                 (_, Left err, _, _) -> expectationFailure (show err)
                 (_, _, Left err, _) -> expectationFailure (show err)
                 (_, _, _, Left err) -> expectationFailure (show err)
+
+        it "constructs and extracts scalar dtype matrix values" $ do
+            i8Result <- Pl.series @Int8 "i8" (V.fromList [Just (-128), Nothing, Just 127])
+            i16Result <- Pl.series @Int16 "i16" (V.fromList [Just (-32768), Nothing, Just 32767])
+            i32Result <- Pl.series @Int32 "i32" (V.fromList [Just (-2147483648), Nothing, Just 2147483647])
+            u8Result <- Pl.series @Word8 "u8" (V.fromList [Just 0, Nothing, Just 255])
+            u16Result <- Pl.series @Word16 "u16" (V.fromList [Just 0, Nothing, Just 65535])
+            u32Result <- Pl.series @Word32 "u32" (V.fromList [Just 0, Nothing, Just 4294967295])
+            u64Result <- Pl.series @Word64 "u64" (V.fromList [Just 0, Nothing, Just 9223372036854775808])
+            f32Result <- Pl.series @Float "f32" (V.fromList [Just 1.5, Nothing, Just (-2.25)])
+            case (i8Result, i16Result, i32Result, u8Result, u16Result, u32Result, u64Result, f32Result) of
+                (Right i8, Right i16, Right i32, Right u8, Right u16, Right u32, Right u64, Right f32) -> do
+                    dfResult <- Pl.dataFrame [i8, i16, i32, u8, u16, u32, u64, f32]
+                    case dfResult of
+                        Left err -> expectationFailure (show err)
+                        Right df -> do
+                            Pl.shape df `shouldReturn` Right (3, 8)
+                            Pl.column @Int8 df "i8" `shouldReturn` Right (V.fromList [Just (-128), Nothing, Just 127])
+                            Pl.column @Int16 df "i16" `shouldReturn` Right (V.fromList [Just (-32768), Nothing, Just 32767])
+                            Pl.column @Int32 df "i32" `shouldReturn` Right (V.fromList [Just (-2147483648), Nothing, Just 2147483647])
+                            Pl.column @Word8 df "u8" `shouldReturn` Right (V.fromList [Just 0, Nothing, Just 255])
+                            Pl.column @Word16 df "u16" `shouldReturn` Right (V.fromList [Just 0, Nothing, Just 65535])
+                            Pl.column @Word32 df "u32" `shouldReturn` Right (V.fromList [Just 0, Nothing, Just 4294967295])
+                            Pl.column @Word64 df "u64" `shouldReturn` Right (V.fromList [Just 0, Nothing, Just 9223372036854775808])
+                            Pl.column @Float df "f32" `shouldReturn` Right (V.fromList [Just 1.5, Nothing, Just (-2.25)])
+                            schemaResult <- Pl.schema df
+                            fmap (map Pl.fieldType) schemaResult
+                                `shouldBe` Right [Pl.Int8, Pl.Int16, Pl.Int32, Pl.UInt8, Pl.UInt16, Pl.UInt32, Pl.UInt64, Pl.Float32]
+                (Left err, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                (_, Left err, _, _, _, _, _, _) -> expectationFailure (show err)
+                (_, _, Left err, _, _, _, _, _) -> expectationFailure (show err)
+                (_, _, _, Left err, _, _, _, _) -> expectationFailure (show err)
+                (_, _, _, _, Left err, _, _, _) -> expectationFailure (show err)
+                (_, _, _, _, _, Left err, _, _) -> expectationFailure (show err)
+                (_, _, _, _, _, _, Left err, _) -> expectationFailure (show err)
+                (_, _, _, _, _, _, _, Left err) -> expectationFailure (show err)
 
         it "reports Polars errors for invalid DataFrame construction" $ do
             first <- Pl.series @Int64 "value" (V.fromList [Just 1, Just 2])
@@ -431,6 +468,64 @@ main = hspec $ do
                             case textResult of
                                 Left err -> expectationFailure (show err)
                                 Right textAge -> Pl.seriesText textAge `shouldReturn` Right (V.fromList [Just "34", Nothing, Just "29"])
+
+        it "casts Series handles to scalar dtype matrix values" $ do
+            integerResult <- Pl.series @Int64 "value" (V.fromList [Just 1, Nothing, Just 127])
+            unsignedResult <- Pl.series @Int64 "unsigned" (V.fromList [Just 0, Nothing, Just 255])
+            doubleResult <- Pl.series @Double "float_value" (V.fromList [Just 1.5, Nothing, Just (-2.25)])
+            case (integerResult, unsignedResult, doubleResult) of
+                (Right integerSeries, Right unsignedSeries, Right doubleSeries) -> do
+                    i8 <- Pl.seriesCast @Int8 integerSeries
+                    case i8 of
+                        Left err -> expectationFailure (show err)
+                        Right casted -> do
+                            Pl.seriesDataType casted `shouldReturn` Right Pl.Int8
+                            Pl.seriesInt8 casted `shouldReturn` Right (V.fromList [Just 1, Nothing, Just 127])
+                    i16 <- Pl.seriesCast @Int16 integerSeries
+                    case i16 of
+                        Left err -> expectationFailure (show err)
+                        Right casted -> do
+                            Pl.seriesDataType casted `shouldReturn` Right Pl.Int16
+                            Pl.seriesInt16 casted `shouldReturn` Right (V.fromList [Just 1, Nothing, Just 127])
+                    i32 <- Pl.seriesCast @Int32 integerSeries
+                    case i32 of
+                        Left err -> expectationFailure (show err)
+                        Right casted -> do
+                            Pl.seriesDataType casted `shouldReturn` Right Pl.Int32
+                            Pl.seriesInt32 casted `shouldReturn` Right (V.fromList [Just 1, Nothing, Just 127])
+                    u8 <- Pl.seriesCast @Word8 unsignedSeries
+                    case u8 of
+                        Left err -> expectationFailure (show err)
+                        Right casted -> do
+                            Pl.seriesDataType casted `shouldReturn` Right Pl.UInt8
+                            Pl.seriesWord8 casted `shouldReturn` Right (V.fromList [Just 0, Nothing, Just 255])
+                    u16 <- Pl.seriesCast @Word16 unsignedSeries
+                    case u16 of
+                        Left err -> expectationFailure (show err)
+                        Right casted -> do
+                            Pl.seriesDataType casted `shouldReturn` Right Pl.UInt16
+                            Pl.seriesWord16 casted `shouldReturn` Right (V.fromList [Just 0, Nothing, Just 255])
+                    u32 <- Pl.seriesCast @Word32 unsignedSeries
+                    case u32 of
+                        Left err -> expectationFailure (show err)
+                        Right casted -> do
+                            Pl.seriesDataType casted `shouldReturn` Right Pl.UInt32
+                            Pl.seriesWord32 casted `shouldReturn` Right (V.fromList [Just 0, Nothing, Just 255])
+                    u64 <- Pl.seriesCast @Word64 unsignedSeries
+                    case u64 of
+                        Left err -> expectationFailure (show err)
+                        Right casted -> do
+                            Pl.seriesDataType casted `shouldReturn` Right Pl.UInt64
+                            Pl.seriesWord64 casted `shouldReturn` Right (V.fromList [Just 0, Nothing, Just 255])
+                    f32 <- Pl.seriesCast @Float doubleSeries
+                    case f32 of
+                        Left err -> expectationFailure (show err)
+                        Right casted -> do
+                            Pl.seriesDataType casted `shouldReturn` Right Pl.Float32
+                            Pl.seriesFloat casted `shouldReturn` Right (V.fromList [Just 1.5, Nothing, Just (-2.25)])
+                (Left err, _, _) -> expectationFailure (show err)
+                (_, Left err, _) -> expectationFailure (show err)
+                (_, _, Left err) -> expectationFailure (show err)
 
         it "sorts Series handles with explicit options" $ do
             result <- Pl.readCsv valuesCsv
@@ -770,6 +865,44 @@ main = hspec $ do
                 (Left err, _) -> expectationFailure (show err)
                 (_, Left err) -> expectationFailure (show err)
 
+        it "round-trips scalar dtype matrix columns through Arrow RecordBatch" $ do
+            i8Result <- Pl.series @Int8 "i8" (V.fromList [Just (-128), Nothing, Just 127])
+            i16Result <- Pl.series @Int16 "i16" (V.fromList [Just (-32768), Nothing, Just 32767])
+            i32Result <- Pl.series @Int32 "i32" (V.fromList [Just (-2147483648), Nothing, Just 2147483647])
+            u8Result <- Pl.series @Word8 "u8" (V.fromList [Just 0, Nothing, Just 255])
+            u16Result <- Pl.series @Word16 "u16" (V.fromList [Just 0, Nothing, Just 65535])
+            u32Result <- Pl.series @Word32 "u32" (V.fromList [Just 0, Nothing, Just 4294967295])
+            u64Result <- Pl.series @Word64 "u64" (V.fromList [Just 0, Nothing, Just 9223372036854775808])
+            f32Result <- Pl.series @Float "f32" (V.fromList [Just 1.5, Nothing, Just (-2.25)])
+            case (i8Result, i16Result, i32Result, u8Result, u16Result, u32Result, u64Result, f32Result) of
+                (Right i8, Right i16, Right i32, Right u8, Right u16, Right u32, Right u64, Right f32) -> do
+                    dfResult <- Pl.dataFrame [i8, i16, i32, u8, u16, u32, u64, f32]
+                    case dfResult of
+                        Left err -> expectationFailure (show err)
+                        Right df -> do
+                            roundTrip <- Pl.withArrowRecordBatch df $ \schemaPtr arrayPtr ->
+                                Pl.fromArrowRecordBatch (Pl.unsafeArrowRecordBatch schemaPtr arrayPtr)
+                            case roundTrip of
+                                Left err -> expectationFailure (show err)
+                                Right (Left err) -> expectationFailure (show err)
+                                Right (Right imported) -> do
+                                    Pl.column @Int8 imported "i8" `shouldReturn` Right (V.fromList [Just (-128), Nothing, Just 127])
+                                    Pl.column @Int16 imported "i16" `shouldReturn` Right (V.fromList [Just (-32768), Nothing, Just 32767])
+                                    Pl.column @Int32 imported "i32" `shouldReturn` Right (V.fromList [Just (-2147483648), Nothing, Just 2147483647])
+                                    Pl.column @Word8 imported "u8" `shouldReturn` Right (V.fromList [Just 0, Nothing, Just 255])
+                                    Pl.column @Word16 imported "u16" `shouldReturn` Right (V.fromList [Just 0, Nothing, Just 65535])
+                                    Pl.column @Word32 imported "u32" `shouldReturn` Right (V.fromList [Just 0, Nothing, Just 4294967295])
+                                    Pl.column @Word64 imported "u64" `shouldReturn` Right (V.fromList [Just 0, Nothing, Just 9223372036854775808])
+                                    Pl.column @Float imported "f32" `shouldReturn` Right (V.fromList [Just 1.5, Nothing, Just (-2.25)])
+                (Left err, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                (_, Left err, _, _, _, _, _, _) -> expectationFailure (show err)
+                (_, _, Left err, _, _, _, _, _) -> expectationFailure (show err)
+                (_, _, _, Left err, _, _, _, _) -> expectationFailure (show err)
+                (_, _, _, _, Left err, _, _, _) -> expectationFailure (show err)
+                (_, _, _, _, _, Left err, _, _) -> expectationFailure (show err)
+                (_, _, _, _, _, _, Left err, _) -> expectationFailure (show err)
+                (_, _, _, _, _, _, _, Left err) -> expectationFailure (show err)
+
         it "exports a Series to an Arrow array and imports it back" $ do
             seriesResult <- Pl.series @Int64 "age" (V.fromList [Just 34, Nothing, Just 29])
             case seriesResult of
@@ -785,6 +918,50 @@ main = hspec $ do
                             Pl.seriesLength imported `shouldReturn` Right 3
                             Pl.seriesNullCount imported `shouldReturn` Right 1
                             Pl.seriesInt64 imported `shouldReturn` Right (V.fromList [Just 34, Nothing, Just 29])
+
+        it "round-trips scalar dtype matrix Series through Arrow arrays" $ do
+            i8Result <- Pl.series @Int8 "i8" (V.fromList [Just (-128), Nothing, Just 127])
+            i16Result <- Pl.series @Int16 "i16" (V.fromList [Just (-32768), Nothing, Just 32767])
+            i32Result <- Pl.series @Int32 "i32" (V.fromList [Just (-2147483648), Nothing, Just 2147483647])
+            u8Result <- Pl.series @Word8 "u8" (V.fromList [Just 0, Nothing, Just 255])
+            u16Result <- Pl.series @Word16 "u16" (V.fromList [Just 0, Nothing, Just 65535])
+            u32Result <- Pl.series @Word32 "u32" (V.fromList [Just 0, Nothing, Just 4294967295])
+            u64Result <- Pl.series @Word64 "u64" (V.fromList [Just 0, Nothing, Just 9223372036854775808])
+            f32Result <- Pl.series @Float "f32" (V.fromList [Just 1.5, Nothing, Just (-2.25)])
+            case (i8Result, i16Result, i32Result, u8Result, u16Result, u32Result, u64Result, f32Result) of
+                (Right i8, Right i16, Right i32, Right u8, Right u16, Right u32, Right u64, Right f32) -> do
+                    let roundTripScalar :: String -> Pl.Series -> IO Pl.Series
+                        roundTripScalar label input = do
+                            roundTrip <- Pl.withArrowSeries input $ \schemaPtr arrayPtr ->
+                                Pl.fromArrowSeries (Pl.unsafeArrowSeries schemaPtr arrayPtr)
+                            case roundTrip of
+                                Left err -> fail (label <> " Arrow export failed: " <> show err)
+                                Right (Left err) -> fail (label <> " Arrow import failed: " <> show err)
+                                Right (Right imported) -> pure imported
+                    i8Imported <- roundTripScalar "i8" i8
+                    i16Imported <- roundTripScalar "i16" i16
+                    i32Imported <- roundTripScalar "i32" i32
+                    u8Imported <- roundTripScalar "u8" u8
+                    u16Imported <- roundTripScalar "u16" u16
+                    u32Imported <- roundTripScalar "u32" u32
+                    u64Imported <- roundTripScalar "u64" u64
+                    f32Imported <- roundTripScalar "f32" f32
+                    Pl.seriesInt8 i8Imported `shouldReturn` Right (V.fromList [Just (-128), Nothing, Just 127])
+                    Pl.seriesInt16 i16Imported `shouldReturn` Right (V.fromList [Just (-32768), Nothing, Just 32767])
+                    Pl.seriesInt32 i32Imported `shouldReturn` Right (V.fromList [Just (-2147483648), Nothing, Just 2147483647])
+                    Pl.seriesWord8 u8Imported `shouldReturn` Right (V.fromList [Just 0, Nothing, Just 255])
+                    Pl.seriesWord16 u16Imported `shouldReturn` Right (V.fromList [Just 0, Nothing, Just 65535])
+                    Pl.seriesWord32 u32Imported `shouldReturn` Right (V.fromList [Just 0, Nothing, Just 4294967295])
+                    Pl.seriesWord64 u64Imported `shouldReturn` Right (V.fromList [Just 0, Nothing, Just 9223372036854775808])
+                    Pl.seriesFloat f32Imported `shouldReturn` Right (V.fromList [Just 1.5, Nothing, Just (-2.25)])
+                (Left err, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                (_, Left err, _, _, _, _, _, _) -> expectationFailure (show err)
+                (_, _, Left err, _, _, _, _, _) -> expectationFailure (show err)
+                (_, _, _, Left err, _, _, _, _) -> expectationFailure (show err)
+                (_, _, _, _, Left err, _, _, _) -> expectationFailure (show err)
+                (_, _, _, _, _, Left err, _, _) -> expectationFailure (show err)
+                (_, _, _, _, _, _, Left err, _) -> expectationFailure (show err)
+                (_, _, _, _, _, _, _, Left err) -> expectationFailure (show err)
 
     describe "Dataset-driven fixtures" $ do
         it "reads a Polars public iris fixture" $ do

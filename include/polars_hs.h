@@ -145,6 +145,46 @@ int phs_dataframe_column_i64(const struct phs_dataframe *dataframe,
                              struct phs_bytes **out,
                              struct phs_error **err);
 
+int phs_dataframe_column_i8(const struct phs_dataframe *dataframe,
+                            const char *name,
+                            struct phs_bytes **out,
+                            struct phs_error **err);
+
+int phs_dataframe_column_i16(const struct phs_dataframe *dataframe,
+                             const char *name,
+                             struct phs_bytes **out,
+                             struct phs_error **err);
+
+int phs_dataframe_column_i32(const struct phs_dataframe *dataframe,
+                             const char *name,
+                             struct phs_bytes **out,
+                             struct phs_error **err);
+
+int phs_dataframe_column_u8(const struct phs_dataframe *dataframe,
+                            const char *name,
+                            struct phs_bytes **out,
+                            struct phs_error **err);
+
+int phs_dataframe_column_u16(const struct phs_dataframe *dataframe,
+                             const char *name,
+                             struct phs_bytes **out,
+                             struct phs_error **err);
+
+int phs_dataframe_column_u32(const struct phs_dataframe *dataframe,
+                             const char *name,
+                             struct phs_bytes **out,
+                             struct phs_error **err);
+
+int phs_dataframe_column_u64(const struct phs_dataframe *dataframe,
+                             const char *name,
+                             struct phs_bytes **out,
+                             struct phs_error **err);
+
+int phs_dataframe_column_f32(const struct phs_dataframe *dataframe,
+                             const char *name,
+                             struct phs_bytes **out,
+                             struct phs_error **err);
+
 int phs_dataframe_column_f64(const struct phs_dataframe *dataframe,
                              const char *name,
                              struct phs_bytes **out,
@@ -438,6 +478,54 @@ int phs_series_new_i64(const char *name,
                        struct phs_series **out,
                        struct phs_error **err);
 
+int phs_series_new_i8(const char *name,
+                      const uint8_t *data,
+                      uintptr_t len,
+                      struct phs_series **out,
+                      struct phs_error **err);
+
+int phs_series_new_i16(const char *name,
+                       const uint8_t *data,
+                       uintptr_t len,
+                       struct phs_series **out,
+                       struct phs_error **err);
+
+int phs_series_new_i32(const char *name,
+                       const uint8_t *data,
+                       uintptr_t len,
+                       struct phs_series **out,
+                       struct phs_error **err);
+
+int phs_series_new_u8(const char *name,
+                      const uint8_t *data,
+                      uintptr_t len,
+                      struct phs_series **out,
+                      struct phs_error **err);
+
+int phs_series_new_u16(const char *name,
+                       const uint8_t *data,
+                       uintptr_t len,
+                       struct phs_series **out,
+                       struct phs_error **err);
+
+int phs_series_new_u32(const char *name,
+                       const uint8_t *data,
+                       uintptr_t len,
+                       struct phs_series **out,
+                       struct phs_error **err);
+
+int phs_series_new_u64(const char *name,
+                       const uint8_t *data,
+                       uintptr_t len,
+                       struct phs_series **out,
+                       struct phs_error **err);
+
+int phs_series_new_f32(const char *name,
+                       const uint8_t *data,
+                       uintptr_t len,
+                       struct phs_series **out,
+                       struct phs_error **err);
+
 int phs_series_new_f64(const char *name,
                        const uint8_t *data,
                        uintptr_t len,
@@ -527,6 +615,38 @@ int phs_series_values_bool(const struct phs_series *series,
                            struct phs_error **err);
 
 int phs_series_values_i64(const struct phs_series *series,
+                          struct phs_bytes **out,
+                          struct phs_error **err);
+
+int phs_series_values_i8(const struct phs_series *series,
+                         struct phs_bytes **out,
+                         struct phs_error **err);
+
+int phs_series_values_i16(const struct phs_series *series,
+                          struct phs_bytes **out,
+                          struct phs_error **err);
+
+int phs_series_values_i32(const struct phs_series *series,
+                          struct phs_bytes **out,
+                          struct phs_error **err);
+
+int phs_series_values_u8(const struct phs_series *series,
+                         struct phs_bytes **out,
+                         struct phs_error **err);
+
+int phs_series_values_u16(const struct phs_series *series,
+                          struct phs_bytes **out,
+                          struct phs_error **err);
+
+int phs_series_values_u32(const struct phs_series *series,
+                          struct phs_bytes **out,
+                          struct phs_error **err);
+
+int phs_series_values_u64(const struct phs_series *series,
+                          struct phs_bytes **out,
+                          struct phs_error **err);
+
+int phs_series_values_f32(const struct phs_series *series,
                           struct phs_bytes **out,
                           struct phs_error **err);
 

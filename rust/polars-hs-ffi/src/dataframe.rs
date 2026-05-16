@@ -8,7 +8,11 @@ use polars::prelude::*;
 use crate::bytes::{bytes_into_raw, phs_bytes};
 use crate::error::{PhsError, PhsResult, c_str_to_str, ffi_boundary, phs_error, required_mut};
 use crate::handles::{dataframe_into_raw, dataframe_ref, phs_dataframe, phs_series, series_into_raw, series_ref};
-use crate::series::{encode_bool_series, encode_f64_series, encode_i64_series, encode_text_series};
+use crate::series::{
+    encode_bool_series, encode_f32_series, encode_f64_series, encode_i8_series, encode_i16_series,
+    encode_i32_series, encode_i64_series, encode_text_series, encode_u8_series, encode_u16_series,
+    encode_u32_series, encode_u64_series,
+};
 
 unsafe fn c_path(path: *const c_char) -> PhsResult<PathBuf> {
     Ok(PathBuf::from(unsafe { c_str_to_str(path, "path") }?))
@@ -251,6 +255,86 @@ pub unsafe extern "C" fn phs_dataframe_column_i64(
     err: *mut *mut phs_error,
 ) -> c_int {
     dataframe_column_bytes(dataframe, name, out, err, encode_i64_series)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_column_i8(
+    dataframe: *const phs_dataframe,
+    name: *const c_char,
+    out: *mut *mut phs_bytes,
+    err: *mut *mut phs_error,
+) -> c_int {
+    dataframe_column_bytes(dataframe, name, out, err, encode_i8_series)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_column_i16(
+    dataframe: *const phs_dataframe,
+    name: *const c_char,
+    out: *mut *mut phs_bytes,
+    err: *mut *mut phs_error,
+) -> c_int {
+    dataframe_column_bytes(dataframe, name, out, err, encode_i16_series)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_column_i32(
+    dataframe: *const phs_dataframe,
+    name: *const c_char,
+    out: *mut *mut phs_bytes,
+    err: *mut *mut phs_error,
+) -> c_int {
+    dataframe_column_bytes(dataframe, name, out, err, encode_i32_series)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_column_u8(
+    dataframe: *const phs_dataframe,
+    name: *const c_char,
+    out: *mut *mut phs_bytes,
+    err: *mut *mut phs_error,
+) -> c_int {
+    dataframe_column_bytes(dataframe, name, out, err, encode_u8_series)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_column_u16(
+    dataframe: *const phs_dataframe,
+    name: *const c_char,
+    out: *mut *mut phs_bytes,
+    err: *mut *mut phs_error,
+) -> c_int {
+    dataframe_column_bytes(dataframe, name, out, err, encode_u16_series)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_column_u32(
+    dataframe: *const phs_dataframe,
+    name: *const c_char,
+    out: *mut *mut phs_bytes,
+    err: *mut *mut phs_error,
+) -> c_int {
+    dataframe_column_bytes(dataframe, name, out, err, encode_u32_series)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_column_u64(
+    dataframe: *const phs_dataframe,
+    name: *const c_char,
+    out: *mut *mut phs_bytes,
+    err: *mut *mut phs_error,
+) -> c_int {
+    dataframe_column_bytes(dataframe, name, out, err, encode_u64_series)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_column_f32(
+    dataframe: *const phs_dataframe,
+    name: *const c_char,
+    out: *mut *mut phs_bytes,
+    err: *mut *mut phs_error,
+) -> c_int {
+    dataframe_column_bytes(dataframe, name, out, err, encode_f32_series)
 }
 
 #[unsafe(no_mangle)]

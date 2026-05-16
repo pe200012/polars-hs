@@ -40,6 +40,34 @@ pub(crate) fn encode_i64_series(series: &Series) -> PhsResult<Vec<u8>> {
     Ok(bytes)
 }
 
+macro_rules! encode_le_series {
+    ($name:ident, $accessor:ident, $width:expr) => {
+        pub(crate) fn $name(series: &Series) -> PhsResult<Vec<u8>> {
+            let values = series.$accessor()?;
+            let mut bytes = Vec::with_capacity(values.len() * (1 + $width));
+            for value in values {
+                match value {
+                    None => bytes.push(COLUMN_TAG_NULL),
+                    Some(value) => {
+                        bytes.push(COLUMN_TAG_VALUE);
+                        bytes.extend_from_slice(&value.to_le_bytes());
+                    },
+                }
+            }
+            Ok(bytes)
+        }
+    };
+}
+
+encode_le_series!(encode_i8_series, i8, 1);
+encode_le_series!(encode_i16_series, i16, 2);
+encode_le_series!(encode_i32_series, i32, 4);
+encode_le_series!(encode_u8_series, u8, 1);
+encode_le_series!(encode_u16_series, u16, 2);
+encode_le_series!(encode_u32_series, u32, 4);
+encode_le_series!(encode_u64_series, u64, 8);
+encode_le_series!(encode_f32_series, f32, 4);
+
 pub(crate) fn encode_f64_series(series: &Series) -> PhsResult<Vec<u8>> {
     let values = series.f64()?;
     let mut bytes = Vec::with_capacity(values.len() * 9);
@@ -110,9 +138,17 @@ where
 fn dtype_from_code(code: c_int) -> PhsResult<DataType> {
     match code {
         0 => Ok(DataType::Boolean),
-        1 => Ok(DataType::Int64),
-        2 => Ok(DataType::Float64),
-        3 => Ok(DataType::String),
+        1 => Ok(DataType::Int8),
+        2 => Ok(DataType::Int16),
+        3 => Ok(DataType::Int32),
+        4 => Ok(DataType::Int64),
+        5 => Ok(DataType::UInt8),
+        6 => Ok(DataType::UInt16),
+        7 => Ok(DataType::UInt32),
+        8 => Ok(DataType::UInt64),
+        9 => Ok(DataType::Float32),
+        10 => Ok(DataType::Float64),
+        11 => Ok(DataType::String),
         value => Err(PhsError::invalid_argument(format!("unknown series cast dtype code {value}"))),
     }
 }
@@ -137,13 +173,17 @@ fn read_tag(bytes: &[u8], offset: &mut usize, context: &str) -> PhsResult<u8> {
 }
 
 fn read_u64_le(bytes: &[u8], offset: &mut usize, context: &str) -> PhsResult<u64> {
+    Ok(u64::from_le_bytes(read_fixed_le::<8>(bytes, offset, context)?))
+}
+
+fn read_fixed_le<const N: usize>(bytes: &[u8], offset: &mut usize, context: &str) -> PhsResult<[u8; N]> {
     let end = offset
-        .checked_add(8)
+        .checked_add(N)
         .ok_or_else(|| PhsError::invalid_argument(format!("{context} length overflow")))?;
     if end > bytes.len() {
         return Err(PhsError::invalid_argument(format!("{context} ended early")));
     }
-    let value = u64::from_le_bytes(bytes[*offset..end].try_into().expect("slice length checked"));
+    let value = bytes[*offset..end].try_into().expect("slice length checked");
     *offset = end;
     Ok(value)
 }
@@ -180,6 +220,39 @@ fn decode_i64_values(bytes: &[u8]) -> PhsResult<Vec<Option<i64>>> {
     }
     Ok(values)
 }
+
+macro_rules! decode_le_values {
+    ($name:ident, $type:ty, $label:literal, $width:literal) => {
+        fn $name(bytes: &[u8]) -> PhsResult<Vec<Option<$type>>> {
+            let mut values = Vec::new();
+            let mut offset = 0;
+            while offset < bytes.len() {
+                match read_tag(bytes, &mut offset, concat!($label, " payload"))? {
+                    COLUMN_TAG_NULL => values.push(None),
+                    COLUMN_TAG_VALUE => {
+                        let value = <$type>::from_le_bytes(read_fixed_le::<$width>(
+                            bytes,
+                            &mut offset,
+                            concat!($label, " value"),
+                        )?);
+                        values.push(Some(value));
+                    },
+                    other => return Err(PhsError::invalid_argument(format!("unknown {} tag {other}", $label))),
+                }
+            }
+            Ok(values)
+        }
+    };
+}
+
+decode_le_values!(decode_i8_values, i8, "i8", 1);
+decode_le_values!(decode_i16_values, i16, "i16", 2);
+decode_le_values!(decode_i32_values, i32, "i32", 4);
+decode_le_values!(decode_u8_values, u8, "u8", 1);
+decode_le_values!(decode_u16_values, u16, "u16", 2);
+decode_le_values!(decode_u32_values, u32, "u32", 4);
+decode_le_values!(decode_u64_values, u64, "u64", 8);
+decode_le_values!(decode_f32_values, f32, "f32", 4);
 
 fn decode_f64_values(bytes: &[u8]) -> PhsResult<Vec<Option<f64>>> {
     let mut values = Vec::new();
@@ -263,6 +336,94 @@ pub unsafe extern "C" fn phs_series_new_i64(
     err: *mut *mut phs_error,
 ) -> c_int {
     series_new_from_payload(name, data, len, out, err, decode_i64_values)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_new_i8(
+    name: *const c_char,
+    data: *const u8,
+    len: usize,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_new_from_payload(name, data, len, out, err, decode_i8_values)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_new_i16(
+    name: *const c_char,
+    data: *const u8,
+    len: usize,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_new_from_payload(name, data, len, out, err, decode_i16_values)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_new_i32(
+    name: *const c_char,
+    data: *const u8,
+    len: usize,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_new_from_payload(name, data, len, out, err, decode_i32_values)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_new_u8(
+    name: *const c_char,
+    data: *const u8,
+    len: usize,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_new_from_payload(name, data, len, out, err, decode_u8_values)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_new_u16(
+    name: *const c_char,
+    data: *const u8,
+    len: usize,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_new_from_payload(name, data, len, out, err, decode_u16_values)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_new_u32(
+    name: *const c_char,
+    data: *const u8,
+    len: usize,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_new_from_payload(name, data, len, out, err, decode_u32_values)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_new_u64(
+    name: *const c_char,
+    data: *const u8,
+    len: usize,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_new_from_payload(name, data, len, out, err, decode_u64_values)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_new_f32(
+    name: *const c_char,
+    data: *const u8,
+    len: usize,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_new_from_payload(name, data, len, out, err, decode_f32_values)
 }
 
 #[unsafe(no_mangle)]
@@ -531,6 +692,78 @@ pub unsafe extern "C" fn phs_series_values_i64(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_values_i8(
+    series: *const phs_series,
+    out: *mut *mut phs_bytes,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_values_bytes(series, out, err, encode_i8_series)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_values_i16(
+    series: *const phs_series,
+    out: *mut *mut phs_bytes,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_values_bytes(series, out, err, encode_i16_series)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_values_i32(
+    series: *const phs_series,
+    out: *mut *mut phs_bytes,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_values_bytes(series, out, err, encode_i32_series)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_values_u8(
+    series: *const phs_series,
+    out: *mut *mut phs_bytes,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_values_bytes(series, out, err, encode_u8_series)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_values_u16(
+    series: *const phs_series,
+    out: *mut *mut phs_bytes,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_values_bytes(series, out, err, encode_u16_series)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_values_u32(
+    series: *const phs_series,
+    out: *mut *mut phs_bytes,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_values_bytes(series, out, err, encode_u32_series)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_values_u64(
+    series: *const phs_series,
+    out: *mut *mut phs_bytes,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_values_bytes(series, out, err, encode_u64_series)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_values_f32(
+    series: *const phs_series,
+    out: *mut *mut phs_bytes,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_values_bytes(series, out, err, encode_f32_series)
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_series_values_f64(
     series: *const phs_series,
     out: *mut *mut phs_bytes,
@@ -779,7 +1012,7 @@ mod tests {
         assert_eq!(unsafe { series_ref(out) }.unwrap().value.name().as_str(), "age_years");
         unsafe { phs_series_free(out) };
 
-        let status = unsafe { phs_series_cast(series, 2, &mut out, &mut err) };
+        let status = unsafe { phs_series_cast(series, 10, &mut out, &mut err) };
         assert_eq!(status, PHS_OK);
         assert_eq!(unsafe { series_ref(out) }.unwrap().value.dtype(), &DataType::Float64);
         unsafe { phs_series_free(out) };
