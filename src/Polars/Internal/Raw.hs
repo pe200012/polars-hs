@@ -157,7 +157,9 @@ module Polars.Internal.Raw
     , phs_series_values_u32
     , phs_series_values_u64
     , phs_series_from_arrow_array
+    , phs_write_csv
     , phs_write_ipc_file
+    , phs_write_parquet
     ) where
 
 import Data.Word (Word8, Word64)
@@ -228,6 +230,12 @@ foreign import ccall unsafe "phs_read_csv"
 
 foreign import ccall unsafe "phs_read_parquet"
     phs_read_parquet :: CString -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_write_csv"
+    phs_write_csv :: CString -> Ptr RawDataFrame -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_write_parquet"
+    phs_write_parquet :: CString -> Ptr RawDataFrame -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_dataframe_new"
     phs_dataframe_new :: Ptr (Ptr RawSeries) -> CSize -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt

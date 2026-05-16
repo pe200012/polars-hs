@@ -5,7 +5,7 @@ Module      : Polars.DataFrame
 Description : Safe eager DataFrame operations backed by Rust Polars handles.
 
 A DataFrame wraps a Rust-owned Polars DataFrame handle in a ForeignPtr finalizer.
-The module supports eager readers, metadata queries, text rendering, and construction from owned Series handles.
+The module supports eager readers and writers, metadata queries, text rendering, and construction from owned Series handles.
 Functions return Either so Polars and FFI failures stay explicit.
 -}
 module Polars.DataFrame
@@ -20,6 +20,8 @@ module Polars.DataFrame
     , tail
     , toText
     , width
+    , writeCsv
+    , writeParquet
     ) where
 
 import Prelude hiding (head, tail)
@@ -53,6 +55,8 @@ import Polars.Internal.Raw
     , phs_dataframe_width
     , phs_read_csv
     , phs_read_parquet
+    , phs_write_csv
+    , phs_write_parquet
     )
 import Polars.Internal.Result (consumeError, nullPointerError)
 import Polars.Schema (Field (..), parseDataType)
@@ -62,6 +66,18 @@ readCsv path = withFilePathCString path $ \cPath -> dataframeOut (phs_read_csv c
 
 readParquet :: FilePath -> IO (Either PolarsError DataFrame)
 readParquet path = withFilePathCString path $ \cPath -> dataframeOut (phs_read_parquet cPath)
+
+writeCsv :: FilePath -> DataFrame -> IO (Either PolarsError ())
+writeCsv path df =
+    withFilePathCString path $ \cPath ->
+        withDataFrame df $ \ptr ->
+            unitOut (phs_write_csv cPath ptr)
+
+writeParquet :: FilePath -> DataFrame -> IO (Either PolarsError ())
+writeParquet path df =
+    withFilePathCString path $ \cPath ->
+        withDataFrame df $ \ptr ->
+            unitOut (phs_write_parquet cPath ptr)
 
 dataFrame :: [Series] -> IO (Either PolarsError DataFrame)
 dataFrame values = withSeriesArray values $ \ptr len -> dataframeOut (phs_dataframe_new ptr len)
@@ -126,6 +142,15 @@ word64Out action =
             if fromIntegralStatus status == 0
                 then word64ToInt <$> peek outPtr
                 else Left <$> (consumeError (fromIntegralStatus status) =<< peek errPtr)
+
+unitOut :: (Ptr (Ptr RawError) -> IO CInt) -> IO (Either PolarsError ())
+unitOut action =
+    alloca $ \errPtr -> do
+        poke errPtr nullPtr
+        status <- action errPtr
+        if fromIntegralStatus status == 0
+            then pure (Right ())
+            else Left <$> (consumeError (fromIntegralStatus status) =<< peek errPtr)
 
 withSeriesArray :: [Series] -> (Ptr (Ptr RawSeries) -> CSize -> IO a) -> IO a
 withSeriesArray values action = go values []

@@ -5,14 +5,19 @@ module Main (main) where
 
 import Prelude hiding (filter, head)
 
+import Control.Exception (bracket)
+import Control.Monad (when)
 import qualified Data.ByteString as BS
-import Data.Int (Int16, Int32, Int64, Int8)
 import Data.Foldable (forM_)
+import Data.Int (Int16, Int32, Int64, Int8)
 import Data.Maybe (isJust)
 import qualified Data.Text as T
 import qualified Data.Vector as V
 import Data.Word (Word16, Word32, Word64, Word8)
 import Foreign.Ptr (nullPtr)
+import System.Directory (doesFileExist, removeFile)
+import System.FilePath ((</>))
+import System.IO (hClose, openTempFile)
 import System.Mem (performGC)
 import Test.Hspec
 
@@ -41,6 +46,42 @@ shouldApproximate tolerance expected actual = do
   where
     aIsNaN d = d /= d
     aIsInfinite = isInfinite
+
+withTempFilePath :: String -> (FilePath -> IO a) -> IO a
+withTempFilePath suffix =
+    bracket
+        ( do
+            (path, handle) <- openTempFile "/tmp" suffix
+            hClose handle
+            removeFileIfExists path
+            pure path
+        )
+        removeFileIfExists
+
+removeFileIfExists :: FilePath -> IO ()
+removeFileIfExists path = do
+    exists <- doesFileExist path
+    when exists (removeFile path)
+
+expectPolarsFailure :: (Show a) => Either Pl.PolarsError a -> IO ()
+expectPolarsFailure result =
+    case result of
+        Left err -> Pl.polarsErrorCode err `shouldBe` Pl.PolarsFailure
+        Right value -> expectationFailure ("expected writer error, received " <> show value)
+
+expectValuesFrame :: Pl.DataFrame -> IO ()
+expectValuesFrame df = do
+    Pl.shape df `shouldReturn` Right (3, 4)
+    schemaResult <- Pl.schema df
+    fmap (map Pl.fieldName) schemaResult `shouldBe` Right ["name", "age", "score", "active"]
+    fmap (map Pl.fieldType) schemaResult `shouldBe` Right [Pl.Utf8, Pl.Int64, Pl.Float64, Pl.Boolean]
+    Pl.column @T.Text df "name" `shouldReturn` Right (V.fromList [Just "Alice", Just "Bob", Just "Carol"])
+    Pl.column @Int64 df "age" `shouldReturn` Right (V.fromList [Just 34, Nothing, Just 29])
+    scoreResult <- Pl.column @Double df "score"
+    case scoreResult of
+        Left err -> expectationFailure (show err)
+        Right scores -> shouldApproximate 1.0e-12 (V.fromList [Just 9.5, Just 8.25, Nothing]) scores
+    Pl.column @Bool df "active" `shouldReturn` Right (V.fromList [Just True, Just False, Nothing])
 
 fixtureCsv :: FilePath
 fixtureCsv = "test/data/people.csv"
@@ -120,6 +161,43 @@ main = hspec $ do
                 Right df -> do
                     textResult <- Pl.toText df
                     fmap (T.isInfixOf "Alice") textResult `shouldBe` Right True
+
+        it "writes CSV files and reads them back" $
+            withTempFilePath "polars-hs-values.csv" $ \path -> do
+                result <- Pl.readCsv valuesCsv
+                case result of
+                    Left err -> expectationFailure (show err)
+                    Right sourceDf -> do
+                        writeResult <- Pl.writeCsv path sourceDf
+                        writeResult `shouldBe` Right ()
+                        roundTrip <- Pl.readCsv path
+                        case roundTrip of
+                            Left err -> expectationFailure (show err)
+                            Right df -> expectValuesFrame df
+
+        it "writes Parquet files and reads them back" $
+            withTempFilePath "polars-hs-values.parquet" $ \path -> do
+                result <- Pl.readCsv valuesCsv
+                case result of
+                    Left err -> expectationFailure (show err)
+                    Right sourceDf -> do
+                        writeResult <- Pl.writeParquet path sourceDf
+                        writeResult `shouldBe` Right ()
+                        roundTrip <- Pl.readParquet path
+                        case roundTrip of
+                            Left err -> expectationFailure (show err)
+                            Right df -> expectValuesFrame df
+
+        it "returns writer errors for paths below missing directories" $
+            withTempFilePath "polars-hs-writer-anchor" $ \anchor -> do
+                result <- Pl.readCsv valuesCsv
+                case result of
+                    Left err -> expectationFailure (show err)
+                    Right df -> do
+                        csvResult <- Pl.writeCsv (anchor <> ".missing" </> "out.csv") df
+                        parquetResult <- Pl.writeParquet (anchor <> ".missing" </> "out.parquet") df
+                        expectPolarsFailure csvResult
+                        expectPolarsFailure parquetResult
 
         it "constructs Series from Haskell vectors and builds a DataFrame" $ do
             nameResult <- Pl.series @T.Text "name" (V.fromList [Just "Alice", Just "Bob", Just "Carol"])

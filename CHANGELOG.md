@@ -14,6 +14,7 @@ and this project adheres to the
 - Managed Haskell `DataFrame` and `LazyFrame` handles.
 - Typed `PolarsError` values copied from Rust error handles.
 - Eager CSV and Parquet readers.
+- Eager CSV and Parquet writers with temp-file round-trip coverage.
 - DataFrame shape, schema, head, tail, and text rendering operations.
 - Pure Haskell expression AST with comparison, boolean, and arithmetic operators.
 - Lazy CSV and Parquet scans with filter, select, withColumns, sort, limit, and collect.

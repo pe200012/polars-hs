@@ -94,6 +94,12 @@ int phs_read_csv(const char *path, struct phs_dataframe **out, struct phs_error 
 
 int phs_read_parquet(const char *path, struct phs_dataframe **out, struct phs_error **err);
 
+int phs_write_csv(const char *path, const struct phs_dataframe *dataframe, struct phs_error **err);
+
+int phs_write_parquet(const char *path,
+                      const struct phs_dataframe *dataframe,
+                      struct phs_error **err);
+
 int phs_dataframe_new(const struct phs_series *const *series,
                       uintptr_t len,
                       struct phs_dataframe **out,

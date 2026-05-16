@@ -2,7 +2,7 @@
 
 ![CI](https://github.com/pe200012/polars-hs/actions/workflows/ci.yml/badge.svg?branch=master)
 
-`polars-hs` is a Haskell binding to the Rust Polars dataframe engine. The current MVP exposes eager CSV/Parquet readers, lazy CSV/Parquet scans, expression-based lazy filters and projections, lazy plan inspection and transforms, grouped aggregations, lazy joins, typed column extraction, typed errors, Arrow C Data Interface import/export, and Arrow IPC byte round-trips.
+`polars-hs` is a Haskell binding to the Rust Polars dataframe engine. The current MVP exposes eager CSV/Parquet readers and writers, lazy CSV/Parquet scans, expression-based lazy filters and projections, lazy plan inspection and transforms, grouped aggregations, lazy joins, typed column extraction, typed errors, Arrow C Data Interface import/export, and Arrow IPC byte round-trips.
 
 The Haskell package uses a small Rust adapter crate in `rust/polars-hs-ffi`. The adapter owns direct calls into Polars and exposes a stable `phs_*` C ABI. Haskell wraps returned handles in `ForeignPtr` finalizers and returns `Either PolarsError a` for recoverable failures.
 
@@ -155,6 +155,24 @@ transform set covers `dropColumns`, `rename`, `slice`, `lazyHead`, `lazyTail`,
 returns the collected result plus a profile frame with `node`, `start`, and
 `end` columns; the profile frame can be empty when Polars reports no executor
 timings for the plan.
+
+## Eager file writers
+
+```haskell
+{-# LANGUAGE OverloadedStrings #-}
+
+import qualified Polars as Pl
+
+main :: IO ()
+main = do
+  Right df <- Pl.readCsv "test/data/values.csv"
+  Right () <- Pl.writeCsv "/tmp/values.csv" df
+  Right () <- Pl.writeParquet "/tmp/values.parquet" df
+  print =<< Pl.shape df
+```
+
+`writeCsv` and `writeParquet` use Polars defaults and return typed
+`PolarsError` values for filesystem or writer failures.
 
 ## Typed column extraction and Series handles
 

@@ -7,7 +7,9 @@ use polars::prelude::*;
 
 use crate::bytes::{bytes_into_raw, phs_bytes};
 use crate::error::{PhsError, PhsResult, c_str_to_str, ffi_boundary, phs_error, required_mut};
-use crate::handles::{dataframe_into_raw, dataframe_ref, phs_dataframe, phs_series, series_into_raw, series_ref};
+use crate::handles::{
+    dataframe_into_raw, dataframe_ref, phs_dataframe, phs_series, series_into_raw, series_ref,
+};
 use crate::series::{
     encode_bool_series, encode_f32_series, encode_f64_series, encode_i8_series, encode_i16_series,
     encode_i32_series, encode_i64_series, encode_text_series, encode_u8_series, encode_u16_series,
@@ -50,6 +52,38 @@ pub unsafe extern "C" fn phs_read_parquet(
         let file = File::open(path)?;
         let df = ParquetReader::new(file).finish()?;
         *out = dataframe_into_raw(df);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_write_csv(
+    path: *const c_char,
+    dataframe: *const phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let path = unsafe { c_path(path) }?;
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        let mut df = handle.value.clone();
+        let mut file = File::create(path)?;
+        CsvWriter::new(&mut file).finish(&mut df)?;
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_write_parquet(
+    path: *const c_char,
+    dataframe: *const phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let path = unsafe { c_path(path) }?;
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        let mut df = handle.value.clone();
+        let file = File::create(path)?;
+        let _bytes = ParquetWriter::new(file).finish(&mut df)?;
         Ok(())
     })
 }

@@ -96,6 +96,8 @@ jj --config signing.behavior=drop new
 
 ### Task 2: LazyFrame Plan and Transformations
 
+Status: implemented and verified on 2026-05-17.
+
 **Files:**
 - Modify: `src/Polars/LazyFrame.hs`
 - Modify: `src/Polars/Internal/Raw.hs`
@@ -116,6 +118,8 @@ jj --config signing.behavior=drop new
 
 ### Task 3: CSV and Parquet Writers
 
+Status: implemented and verified on 2026-05-17.
+
 **Files:**
 - Modify: `src/Polars/DataFrame.hs`
 - Modify: `src/Polars/Internal/Raw.hs`
@@ -127,12 +131,29 @@ jj --config signing.behavior=drop new
 
 **Step 1:** Add temp-file round-trip tests for `writeCsv` and `writeParquet`.
 
-**Step 2:** Add minimal writer option records.
+**Step 2:** Add default writer APIs. Writer option records are reserved for a
+later IO options batch with dedicated option tests.
 
 **Step 3:** Implement Rust writers and Haskell wrappers.
 
 **Step 4:** Verify round trips preserve shape, schema, nulls, text, integers,
 and floats.
+
+Current verification:
+
+```bash
+cargo test --manifest-path rust/polars-hs-ffi/Cargo.toml
+# 85 passed
+
+PATH="$HOME/.ghcup/bin:$PATH" stack --system-ghc test --fast
+# 89 examples, 0 failures
+
+hlint src app test
+# No hints
+
+git diff --check
+# passed
+```
 
 ### Task 4: Join Modes Phase 2
 
