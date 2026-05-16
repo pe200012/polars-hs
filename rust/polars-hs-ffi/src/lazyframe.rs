@@ -47,6 +47,9 @@ fn join_type_from_code(code: c_int) -> PhsResult<JoinType> {
         1 => Ok(JoinType::Left),
         2 => Ok(JoinType::Right),
         3 => Ok(JoinType::Full),
+        4 => Ok(JoinType::Semi),
+        5 => Ok(JoinType::Anti),
+        6 => Ok(JoinType::Cross),
         _ => Err(PhsError::invalid_argument(format!("unknown join type code {code}"))),
     }
 }
@@ -515,6 +518,17 @@ pub unsafe extern "C" fn phs_lazyframe_join(
     ffi_boundary(err, || {
         let out = unsafe { required_mut(out, "out") }?;
         *out = ptr::null_mut();
+        let join_type = join_type_from_code(join_type)?;
+        let left_frame = unsafe { lazyframe_ref(left) }?.value.clone();
+        let right_frame = unsafe { lazyframe_ref(right) }?.value.clone();
+        let suffix = unsafe { optional_suffix(suffix) }?;
+        if matches!(join_type, JoinType::Cross) {
+            if left_len != 0 || right_len != 0 {
+                return Err(PhsError::invalid_argument("cross join requires empty join key lists"));
+            }
+            *out = lazyframe_into_raw(left_frame.cross_join(right_frame, suffix));
+            return Ok(());
+        }
         if left_len == 0 {
             return Err(PhsError::invalid_argument("left join keys must contain at least one expression"));
         }
@@ -524,12 +538,10 @@ pub unsafe extern "C" fn phs_lazyframe_join(
         if left_len != right_len {
             return Err(PhsError::invalid_argument("left and right join key counts must match"));
         }
-        let left_frame = unsafe { lazyframe_ref(left) }?.value.clone();
-        let right_frame = unsafe { lazyframe_ref(right) }?.value.clone();
         let left_on = unsafe { expr_vec(left_on, left_len) }?;
         let right_on = unsafe { expr_vec(right_on, right_len) }?;
-        let mut args = JoinArgs::new(join_type_from_code(join_type)?);
-        if let Some(suffix) = unsafe { optional_suffix(suffix) }? {
+        let mut args = JoinArgs::new(join_type);
+        if let Some(suffix) = suffix {
             args = args.with_suffix(Some(suffix));
         }
         *out = lazyframe_into_raw(left_frame.join(right_frame, left_on, right_on, args));

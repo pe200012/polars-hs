@@ -113,9 +113,19 @@ main = do
               , Pl.suffix = Just "_dept"
               }
       joined <- Pl.joinWith options employees departments
-      case joined of
-        Left err -> print err
-        Right lf -> Pl.collect lf >>= print
+      semi <- Pl.semiJoin [Pl.col "department"] [Pl.col "department"] employees departments
+      anti <- Pl.antiJoin [Pl.col "department"] [Pl.col "department"] employees departments
+      productFrame <- Pl.crossJoin employees departments
+      case (joined, semi, anti, productFrame) of
+        (Right lf, Right semiLf, Right antiLf, Right productLf) -> do
+          Pl.collect lf >>= print
+          Pl.collect semiLf >>= print
+          Pl.collect antiLf >>= print
+          Pl.collect productLf >>= print
+        (Left err, _, _, _) -> print err
+        (_, Left err, _, _) -> print err
+        (_, _, Left err, _) -> print err
+        (_, _, _, Left err) -> print err
     (Left err, _) -> print err
     (_, Left err) -> print err
 ```
@@ -311,7 +321,7 @@ stack runghc examples/construction.hs
 - `Polars.Series` provides `series @xxx`, Series metadata, slicing, DataFrame conversion, scalar value readers, casts, and transforms.
 - `Polars.LazyFrame` provides scan, filter, select, withColumns, sort, limit, collect, explain, profile, dropColumns, rename, slice, lazyHead, lazyTail, dropNulls, fillNulls, fillNans, nullCount, and unique.
 - `Polars.GroupBy` provides grouped lazy aggregation through groupBy, groupByStable, and agg.
-- `Polars.Join` provides lazy inner, left, right, and full joins with optional suffix configuration.
+- `Polars.Join` provides lazy inner, left, right, full, semi, anti, and cross joins with optional suffix configuration.
 - `Polars.Expr` and `Polars.Operators` build a pure Haskell expression AST including core Expression DSL support for casts, predicates, fills, conditionals, statistics, cumulative expressions, ranking, expression sorting/filtering/slicing, window `over`, string namespace helpers (including stripPrefix/stripSuffix/escapeRegex/extractAll, string split, and concat/format), temporal namespace helpers, list namespace helpers, scalar predicate/clip helpers, horizontal/coalesce helpers, and name namespace helpers.
 - `Polars.Error` defines `PolarsError` and `PolarsErrorCode`.
 - `Polars.Schema` defines schema field and datatype values.

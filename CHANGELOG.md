@@ -22,7 +22,7 @@ and this project adheres to the
 - Arrow IPC byte and file round-trip helpers.
 - Hspec integration tests for eager, lazy, and IPC behavior.
 - Grouped lazy aggregation helpers.
-- Lazy join helpers with join options and suffix handling.
+- Lazy join helpers with join options, suffix handling, and inner, left, right, full, semi, anti, and cross modes.
 - Typed DataFrame column extraction for bool, int64, double, and text columns.
 - Unified `column @xxx` API with Series handles and `Vector (Maybe a)` typed value readers.
 - Scalar dtype matrix coverage for typed Series construction, Series casts, Series extraction, column extraction, schema parsing, and Arrow RecordBatch/Series round trips across `Int8`, `Int16`, `Int32`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, and `Float32`.

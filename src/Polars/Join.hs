@@ -9,7 +9,9 @@ Join functions compile pure Haskell expression keys into temporary Rust handles,
 call the Rust adapter once, and return a managed LazyFrame.
 -}
 module Polars.Join
-    ( JoinOptions (..)
+    ( antiJoin
+    , crossJoin
+    , JoinOptions (..)
     , JoinType (..)
     , defaultJoinOptions
     , fullJoin
@@ -17,6 +19,7 @@ module Polars.Join
     , joinWith
     , leftJoin
     , rightJoin
+    , semiJoin
     ) where
 
 import Data.Text (Text)
@@ -40,6 +43,9 @@ data JoinType
     | JoinLeft
     | JoinRight
     | JoinFull
+    | JoinSemi
+    | JoinAnti
+    | JoinCross
     deriving stock (Eq, Show)
 
 -- | Options for joining two lazy frames.
@@ -94,6 +100,21 @@ rightJoin = joinUsing JoinRight
 fullJoin :: [Expr] -> [Expr] -> LazyFrame -> LazyFrame -> IO (Either PolarsError LazyFrame)
 fullJoin = joinUsing JoinFull
 
+semiJoin :: [Expr] -> [Expr] -> LazyFrame -> LazyFrame -> IO (Either PolarsError LazyFrame)
+semiJoin = joinUsing JoinSemi
+
+antiJoin :: [Expr] -> [Expr] -> LazyFrame -> LazyFrame -> IO (Either PolarsError LazyFrame)
+antiJoin = joinUsing JoinAnti
+
+crossJoin :: LazyFrame -> LazyFrame -> IO (Either PolarsError LazyFrame)
+crossJoin =
+    joinWith
+        defaultJoinOptions
+            { joinType = JoinCross
+            , leftOn = []
+            , rightOn = []
+            }
+
 joinUsing :: JoinType -> [Expr] -> [Expr] -> LazyFrame -> LazyFrame -> IO (Either PolarsError LazyFrame)
 joinUsing kind leftKeys rightKeys =
     joinWith
@@ -105,6 +126,9 @@ joinUsing kind leftKeys rightKeys =
 
 validateJoinOptions :: JoinOptions -> Either PolarsError ()
 validateJoinOptions options
+    | joinType options == JoinCross && (not (null leftKeys) || not (null rightKeys)) =
+        Left (invalidArgument "cross join requires empty join key lists")
+    | joinType options == JoinCross = Right ()
     | null leftKeys = Left (invalidArgument "left join keys must contain at least one expression")
     | null rightKeys = Left (invalidArgument "right join keys must contain at least one expression")
     | length leftKeys /= length rightKeys = Left (invalidArgument "left and right join key counts must match")
@@ -125,6 +149,9 @@ joinTypeCode JoinInner = 0
 joinTypeCode JoinLeft = 1
 joinTypeCode JoinRight = 2
 joinTypeCode JoinFull = 3
+joinTypeCode JoinSemi = 4
+joinTypeCode JoinAnti = 5
+joinTypeCode JoinCross = 6
 
 lazyFrameOut :: (Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt) -> IO (Either PolarsError LazyFrame)
 lazyFrameOut action =

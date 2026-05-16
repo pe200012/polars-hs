@@ -1015,6 +1015,74 @@ main = hspec $ do
                 (Left err, _) -> expectationFailure (show err)
                 (_, Left err) -> expectationFailure (show err)
 
+        it "semi joins and keeps matching left rows" $ do
+            employeesResult <- Pl.scanCsv employeesCsv
+            departmentsResult <- Pl.scanCsv departmentsCsv
+            case (employeesResult, departmentsResult) of
+                (Right employees, Right departments) -> do
+                    joined <- Pl.semiJoin [Pl.col "department"] [Pl.col "department"] employees departments
+                    case joined of
+                        Left err -> expectationFailure (show err)
+                        Right lf -> do
+                            collected <- Pl.collect lf
+                            case collected of
+                                Left err -> expectationFailure (show err)
+                                Right df -> do
+                                    Pl.shape df `shouldReturn` Right (3, 4)
+                                    schemaResult <- Pl.schema df
+                                    fmap (map Pl.fieldName) schemaResult
+                                        `shouldBe` Right ["id", "name", "department", "salary"]
+                                    Pl.column @T.Text df "name"
+                                        `shouldReturn` Right (V.fromList [Just "Alice", Just "Bob", Just "Carol"])
+                (Left err, _) -> expectationFailure (show err)
+                (_, Left err) -> expectationFailure (show err)
+
+        it "anti joins and keeps unmatched left rows" $ do
+            employeesResult <- Pl.scanCsv employeesCsv
+            departmentsResult <- Pl.scanCsv departmentsCsv
+            case (employeesResult, departmentsResult) of
+                (Right employees, Right departments) -> do
+                    joined <- Pl.antiJoin [Pl.col "department"] [Pl.col "department"] employees departments
+                    case joined of
+                        Left err -> expectationFailure (show err)
+                        Right lf -> do
+                            collected <- Pl.collect lf
+                            case collected of
+                                Left err -> expectationFailure (show err)
+                                Right df -> do
+                                    Pl.shape df `shouldReturn` Right (1, 4)
+                                    schemaResult <- Pl.schema df
+                                    fmap (map Pl.fieldName) schemaResult
+                                        `shouldBe` Right ["id", "name", "department", "salary"]
+                                    Pl.column @T.Text df "name" `shouldReturn` Right (V.fromList [Just "Eve"])
+                                    Pl.column @T.Text df "department" `shouldReturn` Right (V.fromList [Just "Support"])
+                (Left err, _) -> expectationFailure (show err)
+                (_, Left err) -> expectationFailure (show err)
+
+        it "cross joins and returns the Cartesian product" $ do
+            employeesResult <- Pl.scanCsv employeesCsv
+            departmentsResult <- Pl.scanCsv departmentsCsv
+            case (employeesResult, departmentsResult) of
+                (Right employees, Right departments) -> do
+                    joined <- Pl.crossJoin employees departments
+                    case joined of
+                        Left err -> expectationFailure (show err)
+                        Right lf -> do
+                            collected <- Pl.collect lf
+                            case collected of
+                                Left err -> expectationFailure (show err)
+                                Right df -> do
+                                    Pl.shape df `shouldReturn` Right (12, 7)
+                                    schemaResult <- Pl.schema df
+                                    fmap (map Pl.fieldName) schemaResult
+                                        `shouldBe` Right ["id", "name", "department", "salary", "department_right", "name_right", "budget"]
+                                    textResult <- Pl.toText df
+                                    fmap (T.isInfixOf "Grace") textResult `shouldBe` Right True
+                                    fmap (T.isInfixOf "Ivan") textResult `shouldBe` Right True
+                                    fmap (T.isInfixOf "Eve") textResult `shouldBe` Right True
+                (Left err, _) -> expectationFailure (show err)
+                (_, Left err) -> expectationFailure (show err)
+
         it "uses a custom suffix for duplicate right-side column names" $ do
             employeesResult <- Pl.scanCsv employeesCsv
             departmentsResult <- Pl.scanCsv departmentsCsv
@@ -1061,6 +1129,24 @@ main = hspec $ do
                     result <- Pl.innerJoin [Pl.col "department", Pl.col "name"] [Pl.col "department"] employees departments
                     case result of
                         Right _ -> expectationFailure "expected InvalidArgument for mismatched join key counts"
+                        Left err -> Pl.polarsErrorCode err `shouldBe` Pl.InvalidArgument
+                (Left err, _) -> expectationFailure (show err)
+                (_, Left err) -> expectationFailure (show err)
+
+        it "rejects keyed cross joins" $ do
+            employeesResult <- Pl.scanCsv employeesCsv
+            departmentsResult <- Pl.scanCsv departmentsCsv
+            case (employeesResult, departmentsResult) of
+                (Right employees, Right departments) -> do
+                    let options =
+                            Pl.defaultJoinOptions
+                                { Pl.joinType = Pl.JoinCross
+                                , Pl.leftOn = [Pl.col "department"]
+                                , Pl.rightOn = [Pl.col "department"]
+                                }
+                    result <- Pl.joinWith options employees departments
+                    case result of
+                        Right _ -> expectationFailure "expected InvalidArgument for keyed cross join"
                         Left err -> Pl.polarsErrorCode err `shouldBe` Pl.InvalidArgument
                 (Left err, _) -> expectationFailure (show err)
                 (_, Left err) -> expectationFailure (show err)

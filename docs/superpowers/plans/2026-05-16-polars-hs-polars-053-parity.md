@@ -157,8 +157,11 @@ git diff --check
 
 ### Task 4: Join Modes Phase 2
 
+Status: implemented and verified on 2026-05-17.
+
 **Files:**
 - Modify: `src/Polars/Join.hs`
+- Modify: `rust/polars-hs-ffi/Cargo.toml`
 - Modify: `rust/polars-hs-ffi/src/lazyframe.rs`
 - Modify: `test/Spec.hs`
 - Modify: `README.md`
@@ -169,6 +172,22 @@ git diff --check
 **Step 2:** Extend `JoinType` and Rust join mapping.
 
 **Step 3:** Verify existing join tests and new result-level tests.
+
+Current verification:
+
+```bash
+cargo test --manifest-path rust/polars-hs-ffi/Cargo.toml
+# 85 passed
+
+PATH="$HOME/.ghcup/bin:$PATH" stack --system-ghc test --fast
+# 93 examples, 0 failures
+
+hlint src app test
+# No hints
+
+git diff --check
+# passed
+```
 
 ### Task 5: Eager DataFrame and Series Core Transforms
 
