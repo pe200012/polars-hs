@@ -20,6 +20,25 @@ unsafe fn c_path(path: *const c_char) -> PhsResult<PathBuf> {
     Ok(PathBuf::from(unsafe { c_str_to_str(path, "path") }?))
 }
 
+unsafe fn name_vec(names: *const *const c_char, len: usize, label: &str) -> PhsResult<Vec<String>> {
+    if names.is_null() && len > 0 {
+        return Err(PhsError::invalid_argument(format!("{label} pointer was null")));
+    }
+    let slice = if len == 0 {
+        &[]
+    } else {
+        unsafe { std::slice::from_raw_parts(names, len) }
+    };
+    slice
+        .iter()
+        .map(|name| unsafe { c_str_to_str(*name, label) }.map(str::to_owned))
+        .collect()
+}
+
+fn usize_from_u64(value: u64, label: &str) -> PhsResult<usize> {
+    usize::try_from(value).map_err(|_| PhsError::invalid_argument(format!("{label} exceeded usize")))
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_read_csv(
     path: *const c_char,
@@ -111,6 +130,156 @@ pub unsafe extern "C" fn phs_dataframe_new(
             columns.push(handle.value.clone().into());
         }
         *out = dataframe_into_raw(DataFrame::new_infer_height(columns)?);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_select(
+    dataframe: *const phs_dataframe,
+    names: *const *const c_char,
+    len: usize,
+    out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        let names = unsafe { name_vec(names, len, "names") }?;
+        if names.is_empty() {
+            return Err(PhsError::invalid_argument("select requires at least one column name"));
+        }
+        *out = dataframe_into_raw(handle.value.select(names.iter().map(String::as_str))?);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_drop(
+    dataframe: *const phs_dataframe,
+    names: *const *const c_char,
+    len: usize,
+    out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        let names = unsafe { name_vec(names, len, "names") }?;
+        if names.is_empty() {
+            return Err(PhsError::invalid_argument("drop requires at least one column name"));
+        }
+        let mut df = handle.value.clone();
+        for name in names {
+            df = df.drop(&name)?;
+        }
+        *out = dataframe_into_raw(df);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_rename(
+    dataframe: *const phs_dataframe,
+    existing: *const *const c_char,
+    new_names: *const *const c_char,
+    len: usize,
+    out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        let existing = unsafe { name_vec(existing, len, "existing") }?;
+        let new_names = unsafe { name_vec(new_names, len, "new_names") }?;
+        if existing.is_empty() {
+            return Err(PhsError::invalid_argument("rename requires at least one column pair"));
+        }
+        let mut df = handle.value.clone();
+        for (from, to) in existing.iter().zip(new_names.iter()) {
+            df.rename(from, PlSmallStr::from_str(to))?;
+        }
+        *out = dataframe_into_raw(df);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_slice(
+    dataframe: *const phs_dataframe,
+    offset: i64,
+    len: u64,
+    out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        let len = usize_from_u64(len, "slice length")?;
+        *out = dataframe_into_raw(handle.value.slice(offset, len));
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_reverse(
+    dataframe: *const phs_dataframe,
+    out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        *out = dataframe_into_raw(handle.value.reverse());
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_drop_nulls(
+    dataframe: *const phs_dataframe,
+    names: *const *const c_char,
+    len: usize,
+    has_subset: bool,
+    out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        let df = if has_subset {
+            let names = unsafe { name_vec(names, len, "names") }?;
+            if names.is_empty() {
+                return Err(PhsError::invalid_argument(
+                    "drop_nulls subset requires at least one column name",
+                ));
+            }
+            handle.value.drop_nulls(Some(names.as_slice()))?
+        } else {
+            handle.value.drop_nulls::<String>(None)?
+        };
+        *out = dataframe_into_raw(df);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_null_count(
+    dataframe: *const phs_dataframe,
+    out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        *out = dataframe_into_raw(handle.value.null_count());
         Ok(())
     })
 }

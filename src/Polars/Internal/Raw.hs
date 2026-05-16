@@ -27,6 +27,8 @@ module Polars.Internal.Raw
     , phs_bytes_len
     , phs_dataframe_column
     , phs_dataframe_column_bool
+    , phs_dataframe_drop
+    , phs_dataframe_drop_nulls
     , phs_dataframe_from_arrow_record_batch
     , phs_dataframe_to_arrow_record_batch
     , phs_dataframe_new
@@ -45,8 +47,13 @@ module Polars.Internal.Raw
     , phs_dataframe_from_ipc_bytes
     , phs_dataframe_head
     , phs_dataframe_height
+    , phs_dataframe_null_count
+    , phs_dataframe_rename
+    , phs_dataframe_reverse
     , phs_dataframe_schema
+    , phs_dataframe_select
     , phs_dataframe_shape
+    , phs_dataframe_slice
     , phs_dataframe_tail
     , phs_dataframe_to_ipc_bytes
     , phs_dataframe_to_text
@@ -239,6 +246,27 @@ foreign import ccall unsafe "phs_write_parquet"
 
 foreign import ccall unsafe "phs_dataframe_new"
     phs_dataframe_new :: Ptr (Ptr RawSeries) -> CSize -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_dataframe_select"
+    phs_dataframe_select :: Ptr RawDataFrame -> Ptr CString -> CSize -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_dataframe_drop"
+    phs_dataframe_drop :: Ptr RawDataFrame -> Ptr CString -> CSize -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_dataframe_rename"
+    phs_dataframe_rename :: Ptr RawDataFrame -> Ptr CString -> Ptr CString -> CSize -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_dataframe_slice"
+    phs_dataframe_slice :: Ptr RawDataFrame -> CLLong -> Word64 -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_dataframe_reverse"
+    phs_dataframe_reverse :: Ptr RawDataFrame -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_dataframe_drop_nulls"
+    phs_dataframe_drop_nulls :: Ptr RawDataFrame -> Ptr CString -> CSize -> CBool -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_dataframe_null_count"
+    phs_dataframe_null_count :: Ptr RawDataFrame -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_dataframe_from_arrow_record_batch"
     phs_dataframe_from_arrow_record_batch :: Ptr () -> Ptr () -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt

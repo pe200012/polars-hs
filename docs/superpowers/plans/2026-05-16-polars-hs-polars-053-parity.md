@@ -191,6 +191,10 @@ git diff --check
 
 ### Task 5: Eager DataFrame and Series Core Transforms
 
+Status: DataFrame structural transform phase 1 implemented and verified on
+2026-05-17. Remaining Task 5 scope: eager DataFrame filter/sort/fill/unique and
+Series filter/take/slice/fill/null predicates/arithmetic/stats.
+
 **Files:**
 - Modify: `src/Polars/DataFrame.hs`
 - Modify: `src/Polars/Series.hs`
@@ -204,9 +208,35 @@ git diff --check
 
 **Step 1:** Add DataFrame tests for select/drop/rename/slice/filter/sort/reverse/nullCount/dropNulls/fill/unique.
 
+Current DataFrame phase 1 coverage:
+
+- `dataFrameSelect`
+- `dataFrameDropColumns`
+- `dataFrameRename`
+- `dataFrameSlice`
+- `dataFrameReverse`
+- `dataFrameDropNulls`
+- `dataFrameNullCount`
+
 **Step 2:** Add Series tests for filter/take/slice/fill/null predicates/arithmetic/stats.
 
 **Step 3:** Implement one subfamily at a time with focused verification.
+
+Current verification:
+
+```bash
+cargo test --manifest-path rust/polars-hs-ffi/Cargo.toml
+# 85 passed
+
+PATH="$HOME/.ghcup/bin:$PATH" stack --system-ghc test --fast
+# 96 examples, 0 failures
+
+hlint src app test
+# No hints
+
+git diff --check
+# passed
+```
 
 ### Task 6: Nested and Temporal Design Follow-through
 

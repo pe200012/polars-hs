@@ -184,6 +184,29 @@ main = do
 `writeCsv` and `writeParquet` use Polars defaults and return typed
 `PolarsError` values for filesystem or writer failures.
 
+## Eager DataFrame transforms
+
+```haskell
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeApplications #-}
+
+import Data.Int (Int64)
+import qualified Polars as Pl
+
+main :: IO ()
+main = do
+  Right df <- Pl.readCsv "test/data/values.csv"
+  Right selected <- Pl.dataFrameSelect ["name", "age"] df
+  Right renamed <- Pl.dataFrameRename [("age", "years")] selected
+  Right counts <- Pl.dataFrameNullCount df
+  print =<< Pl.shape renamed
+  Pl.column @Int64 renamed "years" >>= print
+  print =<< Pl.toText counts
+```
+
+Structural eager helpers cover column selection, column dropping, renaming,
+row slicing, row reversal, null-row dropping, and null counts.
+
 ## Typed column extraction and Series handles
 
 ```haskell
@@ -316,7 +339,7 @@ stack runghc examples/construction.hs
 
 - `Polars` re-exports the MVP API.
 - `Polars.Arrow` provides Arrow C Data Interface RecordBatch and Series import/export.
-- `Polars.DataFrame` provides `dataFrame`, eager readers, shape/schema queries, head/tail, text rendering, and IPC byte conversion.
+- `Polars.DataFrame` provides `dataFrame`, eager readers/writers, structural transforms, shape/schema queries, head/tail, text rendering, and IPC byte conversion.
 - `Polars.Column` provides `column @Series` and typed scalar extraction with null preservation.
 - `Polars.Series` provides `series @xxx`, Series metadata, slicing, DataFrame conversion, scalar value readers, casts, and transforms.
 - `Polars.LazyFrame` provides scan, filter, select, withColumns, sort, limit, collect, explain, profile, dropColumns, rename, slice, lazyHead, lazyTail, dropNulls, fillNulls, fillNans, nullCount, and unique.

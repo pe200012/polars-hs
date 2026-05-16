@@ -199,6 +199,81 @@ main = hspec $ do
                         expectPolarsFailure csvResult
                         expectPolarsFailure parquetResult
 
+        it "selects, drops, and renames eager DataFrame columns" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    selected <- Pl.dataFrameSelect ["name", "age"] df
+                    dropped <- Pl.dataFrameDropColumns ["score"] df
+                    renamed <- Pl.dataFrameRename [("age", "years")] df
+                    case (selected, dropped, renamed) of
+                        (Right selectedDf, Right droppedDf, Right renamedDf) -> do
+                            Pl.shape selectedDf `shouldReturn` Right (3, 2)
+                            selectedSchema <- Pl.schema selectedDf
+                            fmap (map Pl.fieldName) selectedSchema `shouldBe` Right ["name", "age"]
+                            Pl.shape droppedDf `shouldReturn` Right (3, 3)
+                            droppedSchema <- Pl.schema droppedDf
+                            fmap (map Pl.fieldName) droppedSchema `shouldBe` Right ["name", "age", "active"]
+                            renamedSchema <- Pl.schema renamedDf
+                            fmap (map Pl.fieldName) renamedSchema `shouldBe` Right ["name", "years", "score", "active"]
+                            Pl.column @Int64 renamedDf "years" `shouldReturn` Right (V.fromList [Just 34, Nothing, Just 29])
+                        (Left err, _, _) -> expectationFailure (show err)
+                        (_, Left err, _) -> expectationFailure (show err)
+                        (_, _, Left err) -> expectationFailure (show err)
+
+        it "slices, reverses, drops nulls, and counts nulls in eager DataFrames" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    sliced <- Pl.dataFrameSlice 1 2 df
+                    reversed <- Pl.dataFrameReverse df
+                    dense <- Pl.dataFrameDropNulls Nothing df
+                    ageDense <- Pl.dataFrameDropNulls (Just ["age"]) df
+                    counts <- Pl.dataFrameNullCount df
+                    case (sliced, reversed, dense, ageDense, counts) of
+                        (Right slicedDf, Right reversedDf, Right denseDf, Right ageDenseDf, Right countsDf) -> do
+                            Pl.column @T.Text slicedDf "name" `shouldReturn` Right (V.fromList [Just "Bob", Just "Carol"])
+                            Pl.column @T.Text reversedDf "name" `shouldReturn` Right (V.fromList [Just "Carol", Just "Bob", Just "Alice"])
+                            Pl.column @T.Text denseDf "name" `shouldReturn` Right (V.fromList [Just "Alice"])
+                            Pl.column @T.Text ageDenseDf "name" `shouldReturn` Right (V.fromList [Just "Alice", Just "Carol"])
+                            Pl.column @Word32 countsDf "name" `shouldReturn` Right (V.fromList [Just 0])
+                            Pl.column @Word32 countsDf "age" `shouldReturn` Right (V.fromList [Just 1])
+                            Pl.column @Word32 countsDf "score" `shouldReturn` Right (V.fromList [Just 1])
+                            Pl.column @Word32 countsDf "active" `shouldReturn` Right (V.fromList [Just 1])
+                        (Left err, _, _, _, _) -> expectationFailure (show err)
+                        (_, Left err, _, _, _) -> expectationFailure (show err)
+                        (_, _, Left err, _, _) -> expectationFailure (show err)
+                        (_, _, _, Left err, _) -> expectationFailure (show err)
+                        (_, _, _, _, Left err) -> expectationFailure (show err)
+
+        it "validates eager DataFrame transform arguments" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    selectResult <- Pl.dataFrameSelect [] df
+                    dropResult <- Pl.dataFrameDropColumns [] df
+                    renameResult <- Pl.dataFrameRename [] df
+                    sliceResult <- Pl.dataFrameSlice 0 (-1) df
+                    dropNullsResult <- Pl.dataFrameDropNulls (Just []) df
+                    case selectResult of
+                        Right _ -> expectationFailure "expected InvalidArgument for empty dataFrameSelect"
+                        Left err -> Pl.polarsErrorCode err `shouldBe` Pl.InvalidArgument
+                    case dropResult of
+                        Right _ -> expectationFailure "expected InvalidArgument for empty dataFrameDropColumns"
+                        Left err -> Pl.polarsErrorCode err `shouldBe` Pl.InvalidArgument
+                    case renameResult of
+                        Right _ -> expectationFailure "expected InvalidArgument for empty dataFrameRename"
+                        Left err -> Pl.polarsErrorCode err `shouldBe` Pl.InvalidArgument
+                    case sliceResult of
+                        Right _ -> expectationFailure "expected InvalidArgument for negative dataFrameSlice length"
+                        Left err -> Pl.polarsErrorCode err `shouldBe` Pl.InvalidArgument
+                    case dropNullsResult of
+                        Right _ -> expectationFailure "expected InvalidArgument for empty dataFrameDropNulls subset"
+                        Left err -> Pl.polarsErrorCode err `shouldBe` Pl.InvalidArgument
+
         it "constructs Series from Haskell vectors and builds a DataFrame" $ do
             nameResult <- Pl.series @T.Text "name" (V.fromList [Just "Alice", Just "Bob", Just "Carol"])
             ageResult <- Pl.series @Int64 "age" (V.fromList [Just 34, Nothing, Just 29])

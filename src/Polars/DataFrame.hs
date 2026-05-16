@@ -11,6 +11,13 @@ Functions return Either so Polars and FFI failures stay explicit.
 module Polars.DataFrame
     ( DataFrame
     , dataFrame
+    , dataFrameDropColumns
+    , dataFrameDropNulls
+    , dataFrameNullCount
+    , dataFrameRename
+    , dataFrameReverse
+    , dataFrameSelect
+    , dataFrameSlice
     , head
     , height
     , readCsv
@@ -29,27 +36,35 @@ import Prelude hiding (head, tail)
 import qualified Data.ByteString as BS
 import Data.Text (Text)
 import qualified Data.Text.Encoding as TE
+import Foreign.C.String (CString)
+import Foreign.C.Types (CBool (..), CInt, CSize)
 import Data.Word (Word64)
-import Foreign.C.Types (CInt, CSize)
 import Foreign.Marshal.Alloc (alloca)
 import Foreign.Marshal.Array (withArray)
 import Foreign.Ptr (Ptr, nullPtr)
 import Foreign.Storable (peek, poke)
 
-import Polars.Error (PolarsError)
+import Polars.Error (PolarsError (..), PolarsErrorCode (InvalidArgument))
 import Polars.Internal.Bytes (copyAndFreeBytes)
-import Polars.Internal.CString (withFilePathCString)
+import Polars.Internal.CString (withFilePathCString, withTextCString)
 import Polars.Internal.Managed (DataFrame, Series, mkDataFrame, withDataFrame, withSeries)
 import Polars.Internal.Raw
     ( RawBytes
     , RawDataFrame
     , RawError
     , RawSeries
+    , phs_dataframe_drop
+    , phs_dataframe_drop_nulls
     , phs_dataframe_head
     , phs_dataframe_new
     , phs_dataframe_height
+    , phs_dataframe_null_count
+    , phs_dataframe_rename
+    , phs_dataframe_reverse
     , phs_dataframe_schema
+    , phs_dataframe_select
     , phs_dataframe_shape
+    , phs_dataframe_slice
     , phs_dataframe_tail
     , phs_dataframe_to_text
     , phs_dataframe_width
@@ -81,6 +96,38 @@ writeParquet path df =
 
 dataFrame :: [Series] -> IO (Either PolarsError DataFrame)
 dataFrame values = withSeriesArray values $ \ptr len -> dataframeOut (phs_dataframe_new ptr len)
+
+dataFrameSelect :: [Text] -> DataFrame -> IO (Either PolarsError DataFrame)
+dataFrameSelect [] _ = pure (Left (invalidArgument "dataFrameSelect requires at least one column name"))
+dataFrameSelect names df = withDataFrame df $ \ptr -> withCStringList names $ \nameArray len ->
+    dataframeOut (phs_dataframe_select ptr nameArray len)
+
+dataFrameDropColumns :: [Text] -> DataFrame -> IO (Either PolarsError DataFrame)
+dataFrameDropColumns [] _ = pure (Left (invalidArgument "dataFrameDropColumns requires at least one column name"))
+dataFrameDropColumns names df = withDataFrame df $ \ptr -> withCStringList names $ \nameArray len ->
+    dataframeOut (phs_dataframe_drop ptr nameArray len)
+
+dataFrameRename :: [(Text, Text)] -> DataFrame -> IO (Either PolarsError DataFrame)
+dataFrameRename [] _ = pure (Left (invalidArgument "dataFrameRename requires at least one column pair"))
+dataFrameRename pairs df = withDataFrame df $ \ptr -> withRenamePairs pairs $ \existingArray newArray len ->
+    dataframeOut (phs_dataframe_rename ptr existingArray newArray len)
+
+dataFrameSlice :: Int -> Int -> DataFrame -> IO (Either PolarsError DataFrame)
+dataFrameSlice offset len df = case nonNegativeWord64 "dataFrameSlice length" len of
+    Left err -> pure (Left err)
+    Right lenWord -> withDataFrame df $ \ptr ->
+        dataframeOut (phs_dataframe_slice ptr (fromIntegral offset) lenWord)
+
+dataFrameReverse :: DataFrame -> IO (Either PolarsError DataFrame)
+dataFrameReverse df = withDataFrame df $ \ptr -> dataframeOut (phs_dataframe_reverse ptr)
+
+dataFrameDropNulls :: Maybe [Text] -> DataFrame -> IO (Either PolarsError DataFrame)
+dataFrameDropNulls (Just []) _ = pure (Left (invalidArgument "dataFrameDropNulls subset requires at least one column name"))
+dataFrameDropNulls subset df = withDataFrame df $ \ptr -> withMaybeCStringList subset $ \nameArray len hasSubset ->
+    dataframeOut (phs_dataframe_drop_nulls ptr nameArray len (toCBool hasSubset))
+
+dataFrameNullCount :: DataFrame -> IO (Either PolarsError DataFrame)
+dataFrameNullCount df = withDataFrame df $ \ptr -> dataframeOut (phs_dataframe_null_count ptr)
 
 height :: DataFrame -> IO (Either PolarsError Int)
 height df = withDataFrame df $ \ptr -> word64Out (phs_dataframe_height ptr)
@@ -158,6 +205,28 @@ withSeriesArray values action = go values []
     go [] acc = withArray (reverse acc) $ \ptr -> action ptr (fromIntegral (length acc))
     go (value : rest) acc = withSeries value $ \ptr -> go rest (ptr : acc)
 
+withCStringList :: [Text] -> (Ptr CString -> CSize -> IO a) -> IO a
+withCStringList values action = go values []
+  where
+    go [] acc = withArray (reverse acc) $ \ptr -> action ptr (fromIntegral (length acc))
+    go (value : rest) acc = withTextCString value $ \ptr -> go rest (ptr : acc)
+
+withMaybeCStringList :: Maybe [Text] -> (Ptr CString -> CSize -> Bool -> IO a) -> IO a
+withMaybeCStringList Nothing action = action nullPtr 0 False
+withMaybeCStringList (Just values) action = withCStringList values $ \ptr len -> action ptr len True
+
+withRenamePairs :: [(Text, Text)] -> (Ptr CString -> Ptr CString -> CSize -> IO a) -> IO a
+withRenamePairs values action = go values [] []
+  where
+    go [] existing new =
+        withArray (reverse existing) $ \existingPtr ->
+            withArray (reverse new) $ \newPtr ->
+                action existingPtr newPtr (fromIntegral (length existing))
+    go ((existingName, newName) : rest) existing new =
+        withTextCString existingName $ \existingPtr ->
+            withTextCString newName $ \newPtr ->
+                go rest (existingPtr : existing) (newPtr : new)
+
 bytesOut :: DataFrame -> (Ptr RawDataFrame -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt) -> (BS.ByteString -> a) -> IO (Either PolarsError a)
 bytesOut df action decode = withDataFrame df $ \ptr ->
     alloca $ \outPtr ->
@@ -188,6 +257,18 @@ word64ToInt :: Word64 -> Either PolarsError Int
 word64ToInt value
     | value <= fromIntegral (maxBound :: Int) = Right (fromIntegral value)
     | otherwise = Left (nullPointerError "integer conversion")
+
+nonNegativeWord64 :: Text -> Int -> Either PolarsError Word64
+nonNegativeWord64 label value
+    | value < 0 = Left (invalidArgument (label <> " must be non-negative"))
+    | otherwise = Right (fromIntegral value)
+
+invalidArgument :: Text -> PolarsError
+invalidArgument = PolarsError InvalidArgument
+
+toCBool :: Bool -> CBool
+toCBool False = CBool 0
+toCBool True = CBool 1
 
 fromIntegralStatus :: (Integral a) => a -> CInt
 fromIntegralStatus = fromIntegral

@@ -105,6 +105,46 @@ int phs_dataframe_new(const struct phs_series *const *series,
                       struct phs_dataframe **out,
                       struct phs_error **err);
 
+int phs_dataframe_select(const struct phs_dataframe *dataframe,
+                         const char *const *names,
+                         uintptr_t len,
+                         struct phs_dataframe **out,
+                         struct phs_error **err);
+
+int phs_dataframe_drop(const struct phs_dataframe *dataframe,
+                       const char *const *names,
+                       uintptr_t len,
+                       struct phs_dataframe **out,
+                       struct phs_error **err);
+
+int phs_dataframe_rename(const struct phs_dataframe *dataframe,
+                         const char *const *existing,
+                         const char *const *new_names,
+                         uintptr_t len,
+                         struct phs_dataframe **out,
+                         struct phs_error **err);
+
+int phs_dataframe_slice(const struct phs_dataframe *dataframe,
+                        int64_t offset,
+                        uint64_t len,
+                        struct phs_dataframe **out,
+                        struct phs_error **err);
+
+int phs_dataframe_reverse(const struct phs_dataframe *dataframe,
+                          struct phs_dataframe **out,
+                          struct phs_error **err);
+
+int phs_dataframe_drop_nulls(const struct phs_dataframe *dataframe,
+                             const char *const *names,
+                             uintptr_t len,
+                             bool has_subset,
+                             struct phs_dataframe **out,
+                             struct phs_error **err);
+
+int phs_dataframe_null_count(const struct phs_dataframe *dataframe,
+                             struct phs_dataframe **out,
+                             struct phs_error **err);
+
 int phs_dataframe_shape(const struct phs_dataframe *dataframe,
                         uint64_t *height_out,
                         uint64_t *width_out,

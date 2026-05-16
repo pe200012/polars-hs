@@ -16,6 +16,7 @@ and this project adheres to the
 - Eager CSV and Parquet readers.
 - Eager CSV and Parquet writers with temp-file round-trip coverage.
 - DataFrame shape, schema, head, tail, and text rendering operations.
+- Eager DataFrame structural transforms for select, drop, rename, slice, reverse, dropNulls, and nullCount.
 - Pure Haskell expression AST with comparison, boolean, and arithmetic operators.
 - Lazy CSV and Parquet scans with filter, select, withColumns, sort, limit, and collect.
 - LazyFrame plan inspection, profiling, and common transforms: dropColumns, rename, slice, lazyHead, lazyTail, dropNulls, fillNulls, fillNans, nullCount, and unique.
