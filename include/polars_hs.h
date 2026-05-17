@@ -848,6 +848,12 @@ int phs_series_ceil(const struct phs_series *series,
                     struct phs_series **out,
                     struct phs_error **err);
 
+int phs_series_diff(const struct phs_series *series,
+                    int64_t n,
+                    int null_behavior,
+                    struct phs_series **out,
+                    struct phs_error **err);
+
 int phs_series_is_null(const struct phs_series *series,
                        struct phs_series **out,
                        struct phs_error **err);

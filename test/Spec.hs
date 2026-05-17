@@ -1924,6 +1924,66 @@ main = hspec $ do
                 (_, _, Left err, _) -> expectationFailure (show err)
                 (_, _, _, Left err) -> expectationFailure (show err)
 
+        it "computes Series differences" $ do
+            let int64MaxAsWord64 = fromIntegral (maxBound :: Int64) :: Word64
+            valuesResult <- Pl.series @Int64 "value" (V.fromList [Just 10, Just 13, Nothing, Just 20])
+            unsignedResult <- Pl.series @Word8 "small" (V.fromList [Just 1, Just 4, Just 9])
+            unsigned16Result <- Pl.series @Word16 "medium" (V.fromList [Just 1, Just 4, Just 9])
+            unsigned32Result <- Pl.series @Word32 "large" (V.fromList [Just 1, Just 4, Just 9])
+            unsigned64Result <- Pl.series @Word64 "wide" (V.fromList [Just 1, Just 4, Just 9])
+            overflow64Result <- Pl.series @Word64 "overflow" (V.fromList [Just (int64MaxAsWord64 + 1), Just (int64MaxAsWord64 + 3)])
+            textResult <- Pl.series @T.Text "text" (V.fromList [Just "a", Just "b"])
+            case (valuesResult, unsignedResult, unsigned16Result, unsigned32Result, unsigned64Result, overflow64Result, textResult) of
+                (Right values, Right unsigned, Right unsigned16, Right unsigned32, Right unsigned64, Right overflow64, Right textSeries) -> do
+                    ignoreResult <- Pl.seriesDiff 1 Pl.SeriesDiffIgnore values
+                    ignoreNegativeResult <- Pl.seriesDiff (-1) Pl.SeriesDiffIgnore values
+                    ignoreTooLargeResult <- Pl.seriesDiff 10 Pl.SeriesDiffIgnore values
+                    zeroResult <- Pl.seriesDiff 0 Pl.SeriesDiffIgnore values
+                    dropResult <- Pl.seriesDiff 1 Pl.SeriesDiffDrop values
+                    negativeDropResult <- Pl.seriesDiff (-1) Pl.SeriesDiffDrop values
+                    dropTooLargeResult <- Pl.seriesDiff 10 Pl.SeriesDiffDrop values
+                    dropNegativeTooLargeResult <- Pl.seriesDiff (-10) Pl.SeriesDiffDrop values
+                    unsignedResult' <- Pl.seriesDiff 1 Pl.SeriesDiffIgnore unsigned
+                    unsigned16Result' <- Pl.seriesDiff 1 Pl.SeriesDiffIgnore unsigned16
+                    unsigned32Result' <- Pl.seriesDiff 1 Pl.SeriesDiffIgnore unsigned32
+                    unsigned64Result' <- Pl.seriesDiff 1 Pl.SeriesDiffIgnore unsigned64
+                    overflow64Result' <- Pl.seriesDiff 1 Pl.SeriesDiffIgnore overflow64
+                    textDiff <- Pl.seriesDiff 1 Pl.SeriesDiffIgnore textSeries
+                    case (ignoreResult, ignoreNegativeResult, ignoreTooLargeResult, zeroResult, dropResult, negativeDropResult, unsignedResult', unsigned16Result', unsigned32Result', unsigned64Result', overflow64Result') of
+                        (Right ignoreSeries, Right ignoreNegativeSeries, Right ignoreTooLargeSeries, Right zeroSeries, Right dropSeries, Right negativeDropSeries, Right unsignedSeries, Right unsigned16Series, Right unsigned32Series, Right unsigned64Series, Right overflow64Series) -> do
+                            Pl.seriesInt64 ignoreSeries `shouldReturn` Right (V.fromList [Nothing, Just 3, Nothing, Nothing])
+                            Pl.seriesInt64 ignoreNegativeSeries `shouldReturn` Right (V.fromList [Just (-3), Nothing, Nothing, Nothing])
+                            Pl.seriesInt64 ignoreTooLargeSeries `shouldReturn` Right (V.fromList [Nothing, Nothing, Nothing, Nothing])
+                            Pl.seriesInt64 zeroSeries `shouldReturn` Right (V.fromList [Just 0, Just 0, Nothing, Just 0])
+                            Pl.seriesInt64 dropSeries `shouldReturn` Right (V.fromList [Just 3, Nothing, Nothing])
+                            Pl.seriesInt64 negativeDropSeries `shouldReturn` Right (V.fromList [Just (-3), Nothing, Nothing])
+                            Pl.seriesInt16 unsignedSeries `shouldReturn` Right (V.fromList [Nothing, Just 3, Just 5])
+                            Pl.seriesInt32 unsigned16Series `shouldReturn` Right (V.fromList [Nothing, Just 3, Just 5])
+                            Pl.seriesInt64 unsigned32Series `shouldReturn` Right (V.fromList [Nothing, Just 3, Just 5])
+                            Pl.seriesInt64 unsigned64Series `shouldReturn` Right (V.fromList [Nothing, Just 3, Just 5])
+                            Pl.seriesInt64 overflow64Series `shouldReturn` Right (V.fromList [Nothing, Nothing])
+                        (Left err, _, _, _, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                        (_, Left err, _, _, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                        (_, _, Left err, _, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                        (_, _, _, Left err, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                        (_, _, _, _, Left err, _, _, _, _, _, _) -> expectationFailure (show err)
+                        (_, _, _, _, _, Left err, _, _, _, _, _) -> expectationFailure (show err)
+                        (_, _, _, _, _, _, Left err, _, _, _, _) -> expectationFailure (show err)
+                        (_, _, _, _, _, _, _, Left err, _, _, _) -> expectationFailure (show err)
+                        (_, _, _, _, _, _, _, _, Left err, _, _) -> expectationFailure (show err)
+                        (_, _, _, _, _, _, _, _, _, Left err, _) -> expectationFailure (show err)
+                        (_, _, _, _, _, _, _, _, _, _, Left err) -> expectationFailure (show err)
+                    expectInvalidArgumentMessage "series diff period 10 exceeds series length 4" dropTooLargeResult
+                    expectInvalidArgumentMessage "series diff period 10 exceeds series length 4" dropNegativeTooLargeResult
+                    expectPolarsFailure textDiff
+                (Left err, _, _, _, _, _, _) -> expectationFailure (show err)
+                (_, Left err, _, _, _, _, _) -> expectationFailure (show err)
+                (_, _, Left err, _, _, _, _) -> expectationFailure (show err)
+                (_, _, _, Left err, _, _, _) -> expectationFailure (show err)
+                (_, _, _, _, Left err, _, _) -> expectationFailure (show err)
+                (_, _, _, _, _, Left err, _) -> expectationFailure (show err)
+                (_, _, _, _, _, _, Left err) -> expectationFailure (show err)
+
         it "fills Series nulls with strategies" $ do
             result <- Pl.readCsv valuesCsv
             case result of

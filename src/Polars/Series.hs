@@ -15,6 +15,7 @@ module Polars.Series
     ( Series
     , FillNullStrategy (..)
     , SeriesCast (..)
+    , SeriesDiffNullBehavior (..)
     , SeriesFrom (..)
     , SeriesRoundMode (..)
     , SeriesSortOptions (..)
@@ -25,6 +26,7 @@ module Polars.Series
     , seriesBool
     , seriesCeil
     , seriesDataType
+    , seriesDiff
     , seriesDiv
     , seriesDouble
     , seriesDropNulls
@@ -130,6 +132,7 @@ import Polars.Internal.Raw
     , phs_series_binary_op
     , phs_series_cast
     , phs_series_ceil
+    , phs_series_diff
     , phs_series_drop_nulls
     , phs_series_dtype
     , phs_series_filter
@@ -210,6 +213,11 @@ defaultSeriesSortOptions =
 data SeriesRoundMode
     = RoundHalfToEven
     | RoundHalfAwayFromZero
+    deriving stock (Eq, Show)
+
+data SeriesDiffNullBehavior
+    = SeriesDiffIgnore
+    | SeriesDiffDrop
     deriving stock (Eq, Show)
 
 class SeriesCast a where
@@ -366,6 +374,11 @@ seriesFloor input = seriesUnaryOut input phs_series_floor
 
 seriesCeil :: Series -> IO (Either PolarsError Series)
 seriesCeil input = seriesUnaryOut input phs_series_ceil
+
+seriesDiff :: Int64 -> SeriesDiffNullBehavior -> Series -> IO (Either PolarsError Series)
+seriesDiff periods behavior input =
+    withSeries input $ \ptr ->
+        seriesOut (phs_series_diff ptr (fromIntegral periods) (seriesDiffNullBehaviorCode behavior))
 
 seriesIsNull :: Series -> IO (Either PolarsError Series)
 seriesIsNull input = seriesUnaryOut input phs_series_is_null
@@ -552,6 +565,10 @@ nonNegativeWord32 label value
 seriesRoundModeCode :: SeriesRoundMode -> CInt
 seriesRoundModeCode RoundHalfToEven = 0
 seriesRoundModeCode RoundHalfAwayFromZero = 1
+
+seriesDiffNullBehaviorCode :: SeriesDiffNullBehavior -> CInt
+seriesDiffNullBehaviorCode SeriesDiffIgnore = 0
+seriesDiffNullBehaviorCode SeriesDiffDrop = 1
 
 fillNullStrategyCode :: FillNullStrategy -> Either PolarsError (CInt, Bool, Word64)
 fillNullStrategyCode (FillForward limit) = fillNullLimitedStrategy 0 limit

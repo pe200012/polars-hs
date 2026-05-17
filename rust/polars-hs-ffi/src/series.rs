@@ -2,8 +2,10 @@ use std::os::raw::{c_char, c_int};
 use std::ptr;
 
 use polars::prelude::*;
+use polars::series::ops::NullBehavior;
 use polars_ops::series::{
     abs as polars_series_abs,
+    diff as polars_series_diff,
     is_duplicated as polars_series_is_duplicated,
     is_first_distinct as polars_series_is_first_distinct,
     is_last_distinct as polars_series_is_last_distinct,
@@ -197,6 +199,28 @@ fn round_mode_from_code(code: c_int) -> PhsResult<RoundMode> {
         0 => Ok(RoundMode::HalfToEven),
         1 => Ok(RoundMode::HalfAwayFromZero),
         _ => Err(PhsError::invalid_argument(format!("unknown round mode code {code}"))),
+    }
+}
+
+fn null_behavior_from_code(code: c_int) -> PhsResult<NullBehavior> {
+    match code {
+        0 => Ok(NullBehavior::Ignore),
+        1 => Ok(NullBehavior::Drop),
+        _ => Err(PhsError::invalid_argument(format!(
+            "unknown null behavior code {code}"
+        ))),
+    }
+}
+
+fn ensure_diff_period_in_bounds(series: &Series, n: i64, null_behavior: NullBehavior) -> PhsResult<()> {
+    if null_behavior == NullBehavior::Drop && n.unsigned_abs() > series.len() as u64 {
+        Err(PhsError::invalid_argument(format!(
+            "series diff period {} exceeds series length {}",
+            n.unsigned_abs(),
+            series.len()
+        )))
+    } else {
+        Ok(())
     }
 }
 
@@ -704,6 +728,21 @@ pub unsafe extern "C" fn phs_series_ceil(
     err: *mut *mut phs_error,
 ) -> c_int {
     series_transform(series, out, err, |value| Ok(value.ceil()?))
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_diff(
+    series: *const phs_series,
+    n: i64,
+    null_behavior: c_int,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| {
+        let null_behavior = null_behavior_from_code(null_behavior)?;
+        ensure_diff_period_in_bounds(value, n, null_behavior)?;
+        Ok(polars_series_diff(value, n, null_behavior)?)
+    })
 }
 
 #[unsafe(no_mangle)]
@@ -1216,6 +1255,22 @@ mod tests {
         assert!(!raw.is_null());
         let series = unsafe { series_ref(raw) }.unwrap();
         let values = series.value.i64().unwrap().into_iter().collect();
+        unsafe { phs_series_free(raw) };
+        values
+    }
+
+    unsafe fn take_i32_values(raw: *mut phs_series) -> Vec<Option<i32>> {
+        assert!(!raw.is_null());
+        let series = unsafe { series_ref(raw) }.unwrap();
+        let values = series.value.i32().unwrap().into_iter().collect();
+        unsafe { phs_series_free(raw) };
+        values
+    }
+
+    unsafe fn take_i16_values(raw: *mut phs_series) -> Vec<Option<i16>> {
+        assert!(!raw.is_null());
+        let series = unsafe { series_ref(raw) }.unwrap();
+        let values = series.value.i16().unwrap().into_iter().collect();
         unsafe { phs_series_free(raw) };
         values
     }
@@ -1887,6 +1942,108 @@ mod tests {
         assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
         assert!(out.is_null());
         assert_eq!(unsafe { take_error_message(err) }, "unknown round mode code 99");
+
+        unsafe { phs_series_free(text) };
+    }
+
+    #[test]
+    fn series_diff_returns_expected_values() {
+        let values = series_into_raw(Series::new(
+            "value".into(),
+            &[Some(10_i64), Some(13), None, Some(20)],
+        ));
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_series_diff(values, 1, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_i64_values(out) },
+            vec![None, Some(3), None, None]
+        );
+
+        let status = unsafe { phs_series_diff(values, 1, 1, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_i64_values(out) }, vec![Some(3), None, None]);
+
+        let status = unsafe { phs_series_diff(values, -1, 1, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_i64_values(out) }, vec![Some(-3), None, None]);
+
+        let status = unsafe { phs_series_diff(values, 10, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_i64_values(out) }, vec![None, None, None, None]);
+
+        let status = unsafe { phs_series_diff(values, 10, 1, &mut out, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        assert!(out.is_null());
+        assert_eq!(
+            unsafe { take_error_message(err) },
+            "series diff period 10 exceeds series length 4"
+        );
+
+        let status = unsafe { phs_series_diff(values, -10, 1, &mut out, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        assert!(out.is_null());
+        assert_eq!(
+            unsafe { take_error_message(err) },
+            "series diff period 10 exceeds series length 4"
+        );
+
+        let unsigned = series_into_raw(Series::new("small".into(), &[1_u8, 4, 9]));
+        let status = unsafe { phs_series_diff(unsigned, 1, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_i16_values(out) }, vec![None, Some(3), Some(5)]);
+
+        let unsigned16 = series_into_raw(Series::new("medium".into(), &[1_u16, 4, 9]));
+        let status = unsafe { phs_series_diff(unsigned16, 1, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_i32_values(out) }, vec![None, Some(3), Some(5)]);
+
+        let unsigned32 = series_into_raw(Series::new("large".into(), &[1_u32, 4, 9]));
+        let status = unsafe { phs_series_diff(unsigned32, 1, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_i64_values(out) }, vec![None, Some(3), Some(5)]);
+
+        let unsigned64 = series_into_raw(Series::new("wide".into(), &[1_u64, 4, 9]));
+        let status = unsafe { phs_series_diff(unsigned64, 1, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_i64_values(out) }, vec![None, Some(3), Some(5)]);
+
+        let overflow_u64 = series_into_raw(Series::new(
+            "overflow".into(),
+            &[(i64::MAX as u64) + 1, (i64::MAX as u64) + 3],
+        ));
+        let status = unsafe { phs_series_diff(overflow_u64, 1, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_i64_values(out) }, vec![None, None]);
+
+        assert!(err.is_null());
+        unsafe {
+            phs_series_free(values);
+            phs_series_free(unsigned);
+            phs_series_free(unsigned16);
+            phs_series_free(unsigned32);
+            phs_series_free(unsigned64);
+            phs_series_free(overflow_u64);
+        }
+    }
+
+    #[test]
+    fn series_diff_reports_errors() {
+        let text = series_into_raw(Series::new("text".into(), ["a", "b"]));
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_series_diff(text, 1, 0, &mut out, &mut err) };
+        assert_eq!(status, crate::error::PHS_POLARS_ERROR);
+        assert!(out.is_null());
+        assert!(!unsafe { take_error_message(err) }.is_empty());
+
+        let status = unsafe { phs_series_diff(text, 1, 99, &mut out, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        assert!(out.is_null());
+        assert_eq!(unsafe { take_error_message(err) }, "unknown null behavior code 99");
 
         unsafe { phs_series_free(text) };
     }
