@@ -1925,6 +1925,7 @@ dependencies = [
  "polars-schema",
  "polars-utils",
  "rand 0.9.4",
+ "rand_distr",
  "rayon",
  "regex",
  "regex-syntax",

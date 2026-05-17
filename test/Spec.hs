@@ -2189,6 +2189,83 @@ main = hspec $ do
                 (_, _, _, _, Left err, _) -> expectationFailure (show err)
                 (_, _, _, _, _, Left err) -> expectationFailure (show err)
 
+        it "samples and shuffles Series values" $ do
+            valuesResult <- Pl.series @Int64 "value" (V.fromList (Just <$> [10, 20, 30, 40, 50]))
+            singleResult <- Pl.series @Int64 "single" (V.singleton (Just 42))
+            textResult <- Pl.series @T.Text "text" (V.fromList [Just "a", Nothing, Just "c", Just "d", Just "e"])
+            let seeded =
+                    Pl.defaultSeriesSampleOptions
+                        { Pl.seriesSampleSeed = Just 0
+                        }
+                replacement =
+                    Pl.defaultSeriesSampleOptions
+                        { Pl.seriesSampleWithReplacement = True
+                        , Pl.seriesSampleSeed = Just 0
+                        }
+                replacementShuffle =
+                    replacement
+                        { Pl.seriesSampleShuffle = True
+                        , Pl.seriesSampleSeed = Just 13
+                        }
+            case (valuesResult, singleResult, textResult) of
+                (Right values, Right single, Right textValues) -> do
+                    sampled <- Pl.seriesSampleN seeded 2 values
+                    fracSampled <- Pl.seriesSampleFrac seeded 0.4 values
+                    shuffled <- Pl.seriesShuffle (Just 0) values
+                    sampledWithReplacement <- Pl.seriesSampleN replacement 7 values
+                    sampledEmpty <- Pl.seriesSampleN seeded 0 values
+                    sampledRepeated <- Pl.seriesSampleN replacementShuffle 4 single
+                    fracRepeated <- Pl.seriesSampleFrac replacementShuffle 3.0 single
+                    textAll <- Pl.seriesSampleN seeded 5 textValues
+                    tooLarge <- Pl.seriesSampleN seeded 6 values
+                    negative <- Pl.seriesSampleN seeded (-1) values
+                    negativeFrac <- Pl.seriesSampleFrac seeded (-0.1) values
+                    nanFrac <- Pl.seriesSampleFrac seeded (0 / 0) values
+                    tooLargeFrac <- Pl.seriesSampleFrac seeded 1.1 values
+                    case
+                        ( sampled
+                        , fracSampled
+                        , shuffled
+                        , sampledWithReplacement
+                        , sampledEmpty
+                        , sampledRepeated
+                        , fracRepeated
+                        , textAll
+                        ) of
+                            ( Right sampledOut
+                                , Right fracSampledOut
+                                , Right shuffledOut
+                                , Right sampledWithReplacementOut
+                                , Right sampledEmptyOut
+                                , Right sampledRepeatedOut
+                                , Right fracRepeatedOut
+                                , Right textAllOut
+                                ) -> do
+                                    Pl.seriesInt64 sampledOut `shouldReturn` Right (V.fromList [Just 50, Just 20])
+                                    Pl.seriesInt64 fracSampledOut `shouldReturn` Right (V.fromList [Just 50, Just 20])
+                                    Pl.seriesInt64 shuffledOut `shouldReturn` Right (V.fromList [Just 40, Just 10, Just 20, Just 50, Just 30])
+                                    Pl.seriesInt64 sampledWithReplacementOut `shouldReturn` Right (V.fromList [Just 20, Just 20, Just 20, Just 10, Just 30, Just 10, Just 50])
+                                    Pl.seriesInt64 sampledEmptyOut `shouldReturn` Right V.empty
+                                    Pl.seriesInt64 sampledRepeatedOut `shouldReturn` Right (V.fromList [Just 42, Just 42, Just 42, Just 42])
+                                    Pl.seriesInt64 fracRepeatedOut `shouldReturn` Right (V.fromList [Just 42, Just 42, Just 42])
+                                    Pl.seriesText textAllOut `shouldReturn` Right (V.fromList [Just "a", Nothing, Just "c", Just "d", Just "e"])
+                                    expectPolarsFailure tooLarge
+                                    expectInvalidArgumentMessage "series sample size must be non-negative" negative
+                                    expectInvalidArgumentMessage "series sample fraction must be non-negative" negativeFrac
+                                    expectInvalidArgumentMessage "series sample fraction must be finite" nanFrac
+                                    expectInvalidArgumentMessage "series sample fraction must be at most 1.0 without replacement" tooLargeFrac
+                            (Left err, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                            (_, Left err, _, _, _, _, _, _) -> expectationFailure (show err)
+                            (_, _, Left err, _, _, _, _, _) -> expectationFailure (show err)
+                            (_, _, _, Left err, _, _, _, _) -> expectationFailure (show err)
+                            (_, _, _, _, Left err, _, _, _) -> expectationFailure (show err)
+                            (_, _, _, _, _, Left err, _, _) -> expectationFailure (show err)
+                            (_, _, _, _, _, _, Left err, _) -> expectationFailure (show err)
+                            (_, _, _, _, _, _, _, Left err) -> expectationFailure (show err)
+                (Left err, _, _) -> expectationFailure (show err)
+                (_, Left err, _) -> expectationFailure (show err)
+                (_, _, Left err) -> expectationFailure (show err)
+
         it "computes Series scalar statistics" $ do
             result <- Pl.readCsv valuesCsv
             case result of

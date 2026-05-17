@@ -185,8 +185,11 @@ module Polars.Internal.Raw
     , phs_series_reverse
     , phs_series_null_count
     , phs_series_round
+    , phs_series_sample_frac
+    , phs_series_sample_n
     , phs_series_search_sorted
     , phs_series_shift
+    , phs_series_shuffle
     , phs_series_slice
     , phs_series_sort
     , phs_series_stat
@@ -701,6 +704,15 @@ foreign import ccall safe "phs_series_binary_op"
 
 foreign import ccall safe "phs_series_compare_op"
     phs_series_compare_op :: Ptr RawSeries -> Ptr RawSeries -> CInt -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_series_sample_n"
+    phs_series_sample_n :: Ptr RawSeries -> Word64 -> CBool -> CBool -> CBool -> Word64 -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_series_sample_frac"
+    phs_series_sample_frac :: Ptr RawSeries -> CDouble -> CBool -> CBool -> CBool -> Word64 -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_series_shuffle"
+    phs_series_shuffle :: Ptr RawSeries -> CBool -> Word64 -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_series_sort"
     phs_series_sort :: Ptr RawSeries -> CBool -> CBool -> CBool -> CBool -> CBool -> Word64 -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt

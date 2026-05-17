@@ -1049,6 +1049,30 @@ int phs_series_compare_op(const struct phs_series *left,
                           struct phs_series **out,
                           struct phs_error **err);
 
+int phs_series_sample_n(const struct phs_series *series,
+                        uint64_t n,
+                        bool with_replacement,
+                        bool shuffle,
+                        bool has_seed,
+                        uint64_t seed,
+                        struct phs_series **out,
+                        struct phs_error **err);
+
+int phs_series_sample_frac(const struct phs_series *series,
+                           double frac,
+                           bool with_replacement,
+                           bool shuffle,
+                           bool has_seed,
+                           uint64_t seed,
+                           struct phs_series **out,
+                           struct phs_error **err);
+
+int phs_series_shuffle(const struct phs_series *series,
+                       bool has_seed,
+                       uint64_t seed,
+                       struct phs_series **out,
+                       struct phs_error **err);
+
 int phs_series_stat(const struct phs_series *series,
                     int op,
                     uint8_t ddof,

@@ -20,10 +20,12 @@ module Polars.Series
     , SeriesInterpolationMethod (..)
     , SeriesModeOptions (..)
     , SeriesRoundMode (..)
+    , SeriesSampleOptions (..)
     , SearchSortedSide (..)
     , SeriesSortOptions (..)
     , SeriesValueCountsOptions (..)
     , defaultSeriesModeOptions
+    , defaultSeriesSampleOptions
     , defaultSeriesSortOptions
     , defaultSeriesValueCountsOptions
     , seriesAbs
@@ -80,8 +82,11 @@ module Polars.Series
     , seriesReverse
     , seriesRem
     , seriesRound
+    , seriesSampleFrac
+    , seriesSampleN
     , seriesSearchSorted
     , seriesShift
+    , seriesShuffle
     , seriesSlice
     , seriesSort
     , seriesStd
@@ -115,7 +120,7 @@ import Data.Word (Word16, Word32, Word64, Word8)
 import Data.Vector (Vector)
 import qualified Data.Vector as V
 import Foreign.C.String (CString)
-import Foreign.C.Types (CBool (..), CInt, CSize, CUChar (..))
+import Foreign.C.Types (CBool (..), CDouble (..), CInt, CSize, CUChar (..))
 import Foreign.Marshal.Array (withArray)
 import Foreign.Ptr (Ptr, castPtr)
 
@@ -205,8 +210,11 @@ import Polars.Internal.Raw
     , phs_series_rename
     , phs_series_reverse
     , phs_series_round
+    , phs_series_sample_frac
+    , phs_series_sample_n
     , phs_series_search_sorted
     , phs_series_shift
+    , phs_series_shuffle
     , phs_series_slice
     , phs_series_sort
     , phs_series_stat
@@ -251,6 +259,22 @@ defaultSeriesSortOptions =
         , seriesSortMultithreaded = True
         , seriesSortMaintainOrder = False
         , seriesSortLimit = Nothing
+        }
+
+-- | Controls eager Series sampling.
+data SeriesSampleOptions = SeriesSampleOptions
+    { seriesSampleWithReplacement :: !Bool
+    , seriesSampleShuffle :: !Bool
+    , seriesSampleSeed :: !(Maybe Word64)
+    }
+    deriving stock (Eq, Show)
+
+defaultSeriesSampleOptions :: SeriesSampleOptions
+defaultSeriesSampleOptions =
+    SeriesSampleOptions
+        { seriesSampleWithReplacement = False
+        , seriesSampleShuffle = False
+        , seriesSampleSeed = Nothing
         }
 
 -- | Side selection for eager Series sorted insertion indexes.
@@ -506,6 +530,50 @@ seriesSearchSorted side descending sorted searchValues =
                     (searchSortedSideCode side)
                     (toCBool descending)
                 )
+
+-- | Sample a fixed number of Series values using Polars random sampling semantics.
+seriesSampleN :: SeriesSampleOptions -> Int -> Series -> IO (Either PolarsError Series)
+seriesSampleN options n input = case nonNegativeWord64 "series sample size" n of
+    Left err -> pure (Left err)
+    Right sampleSize ->
+        withSeries input $ \ptr ->
+            seriesOut
+                ( phs_series_sample_n
+                    ptr
+                    sampleSize
+                    (toCBool (seriesSampleWithReplacement options))
+                    (toCBool (seriesSampleShuffle options))
+                    (toCBool hasSeed)
+                    seed
+                )
+  where
+    (hasSeed, seed) = seedWord64 (seriesSampleSeed options)
+
+-- | Sample a fraction of Series values using Polars random sampling semantics.
+seriesSampleFrac :: SeriesSampleOptions -> Double -> Series -> IO (Either PolarsError Series)
+seriesSampleFrac options frac input = case validSampleFraction options frac of
+    Left err -> pure (Left err)
+    Right () ->
+        withSeries input $ \ptr ->
+            seriesOut
+                ( phs_series_sample_frac
+                    ptr
+                    (CDouble frac)
+                    (toCBool (seriesSampleWithReplacement options))
+                    (toCBool (seriesSampleShuffle options))
+                    (toCBool hasSeed)
+                    seed
+                )
+  where
+    (hasSeed, seed) = seedWord64 (seriesSampleSeed options)
+
+-- | Shuffle Series values using an optional deterministic seed.
+seriesShuffle :: Maybe Word64 -> Series -> IO (Either PolarsError Series)
+seriesShuffle seedValue input =
+    withSeries input $ \ptr ->
+        seriesOut (phs_series_shuffle ptr (toCBool hasSeed) seed)
+  where
+    (hasSeed, seed) = seedWord64 seedValue
 
 -- | Count unique Series values into a two-column DataFrame.
 seriesValueCounts :: SeriesValueCountsOptions -> Series -> IO (Either PolarsError DataFrame)
@@ -806,6 +874,20 @@ nonNegativeWord64 :: Text -> Int -> Either PolarsError Word64
 nonNegativeWord64 label value
     | value < 0 = Left (invalidArgument (label <> " must be non-negative"))
     | otherwise = Right (fromIntegral value)
+
+validSampleFraction :: SeriesSampleOptions -> Double -> Either PolarsError ()
+validSampleFraction options frac
+    | isNaN frac || isInfinite frac =
+        Left (invalidArgument "series sample fraction must be finite")
+    | frac < 0 =
+        Left (invalidArgument "series sample fraction must be non-negative")
+    | not (seriesSampleWithReplacement options) && frac > 1.0 =
+        Left (invalidArgument "series sample fraction must be at most 1.0 without replacement")
+    | otherwise = Right ()
+
+seedWord64 :: Maybe Word64 -> (Bool, Word64)
+seedWord64 Nothing = (False, 0)
+seedWord64 (Just seed) = (True, seed)
 
 seriesRoundModeCode :: SeriesRoundMode -> CInt
 seriesRoundModeCode RoundHalfToEven = 0

@@ -1388,6 +1388,54 @@ pub unsafe extern "C" fn phs_series_compare_op(
     })
 }
 
+fn sample_seed(has_seed: bool, seed: u64) -> Option<u64> {
+    has_seed.then_some(seed)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_sample_n(
+    series: *const phs_series,
+    n: u64,
+    with_replacement: bool,
+    shuffle: bool,
+    has_seed: bool,
+    seed: u64,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| {
+        let n = usize_from_u64(n, "series sample size")?;
+        Ok(value.sample_n(n, with_replacement, shuffle, sample_seed(has_seed, seed))?)
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_sample_frac(
+    series: *const phs_series,
+    frac: f64,
+    with_replacement: bool,
+    shuffle: bool,
+    has_seed: bool,
+    seed: u64,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| {
+        Ok(value.sample_frac(frac, with_replacement, shuffle, sample_seed(has_seed, seed))?)
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_shuffle(
+    series: *const phs_series,
+    has_seed: bool,
+    seed: u64,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| Ok(value.shuffle(sample_seed(has_seed, seed))))
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_series_stat(
     series: *const phs_series,
@@ -2860,6 +2908,82 @@ mod tests {
             phs_series_free(text);
             phs_series_free(text_scalar);
             phs_series_free(short);
+        }
+    }
+
+    #[test]
+    fn series_sampling_and_shuffle_return_expected_values() {
+        let values = series_into_raw(Series::new("value".into(), &[10_i64, 20, 30, 40, 50]));
+        let single = series_into_raw(Series::new("single".into(), &[42_i64]));
+        let text = series_into_raw(Series::new(
+            "text".into(),
+            &[Some("a"), None, Some("c"), Some("d"), Some("e")],
+        ));
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_series_sample_n(values, 2, false, false, true, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_i64_values(out) }, vec![Some(50), Some(20)]);
+
+        let status = unsafe { phs_series_sample_frac(values, 0.4, false, false, true, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_i64_values(out) }, vec![Some(50), Some(20)]);
+
+        let status = unsafe { phs_series_shuffle(values, true, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_i64_values(out) },
+            vec![Some(40), Some(10), Some(20), Some(50), Some(30)]
+        );
+
+        let status = unsafe { phs_series_sample_n(values, 7, true, false, true, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_i64_values(out) },
+            vec![Some(20), Some(20), Some(20), Some(10), Some(30), Some(10), Some(50)]
+        );
+
+        let status = unsafe { phs_series_sample_n(values, 0, false, false, true, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_i64_values(out) }, Vec::<Option<i64>>::new());
+
+        let status = unsafe { phs_series_sample_n(single, 4, true, true, true, 13, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_i64_values(out) },
+            vec![Some(42), Some(42), Some(42), Some(42)]
+        );
+
+        let status = unsafe { phs_series_sample_frac(single, 3.0, true, true, true, 13, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_i64_values(out) },
+            vec![Some(42), Some(42), Some(42)]
+        );
+
+        let status = unsafe { phs_series_sample_n(text, 5, false, false, true, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { series_ref(out) }
+                .unwrap()
+                .value
+                .str()
+                .unwrap()
+                .into_iter()
+                .collect::<Vec<_>>(),
+            vec![Some("a"), None, Some("c"), Some("d"), Some("e")]
+        );
+        unsafe { phs_series_free(out) };
+
+        let status = unsafe { phs_series_sample_n(values, 6, false, false, true, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_POLARS_ERROR);
+        unsafe { take_error_message(err) };
+
+        unsafe {
+            phs_series_free(values);
+            phs_series_free(single);
+            phs_series_free(text);
         }
     }
 
