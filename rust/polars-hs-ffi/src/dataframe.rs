@@ -743,6 +743,38 @@ pub unsafe extern "C" fn phs_dataframe_hstack(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_with_columns(
+    dataframe: *const phs_dataframe,
+    series: *const *const phs_series,
+    len: usize,
+    out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        let ptrs = if len == 0 {
+            &[]
+        } else if series.is_null() {
+            return Err(PhsError::invalid_argument("series array pointer was null"));
+        } else {
+            unsafe { std::slice::from_raw_parts(series, len) }
+        };
+        if ptrs.is_empty() {
+            return Err(PhsError::invalid_argument("with_columns requires at least one series"));
+        }
+        let mut df = handle.value.clone();
+        for ptr in ptrs {
+            let handle = unsafe { series_ref(*ptr) }?;
+            df.with_column(handle.value.clone().into())?;
+        }
+        *out = dataframe_into_raw(df);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_dataframe_fill_null(
     dataframe: *const phs_dataframe,
     strategy: c_int,
@@ -1488,6 +1520,53 @@ mod tests {
         assert!(out.is_null());
         let message = unsafe { take_error_message(err) };
         assert_eq!(message, "hstack requires at least one series");
+        unsafe { crate::handles::phs_dataframe_free(df) };
+    }
+
+    #[test]
+    fn dataframe_with_columns_replaces_and_broadcasts() {
+        let df = read_values_dataframe();
+        let age = series_into_raw(Series::new("age".into(), [40_i64, 41, 42]));
+        let score = series_into_raw(Series::new("score".into(), [10.0_f64]));
+        let series = [age as *const phs_series, score as *const phs_series];
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_dataframe_with_columns(df, series.as_ptr(), series.len(), &mut out, &mut err) };
+
+        assert_eq!(status, PHS_OK);
+        assert!(err.is_null());
+        let result = unsafe { dataframe_ref(out) }.unwrap();
+        assert_eq!(result.value.shape(), (3, 4));
+        let age_values: Vec<Option<i64>> = result.value.column("age").unwrap().as_materialized_series().i64().unwrap().into_iter().collect();
+        assert_eq!(age_values, vec![Some(40), Some(41), Some(42)]);
+        let score_values: Vec<Option<f64>> = result.value.column("score").unwrap().as_materialized_series().f64().unwrap().into_iter().collect();
+        assert_eq!(score_values, vec![Some(10.0), Some(10.0), Some(10.0)]);
+        unsafe {
+            crate::handles::phs_dataframe_free(out);
+            crate::handles::phs_series_free(score);
+            crate::handles::phs_series_free(age);
+            crate::handles::phs_dataframe_free(df);
+        }
+    }
+
+    #[test]
+    fn dataframe_with_columns_rejects_invalid_series_array() {
+        let df = read_values_dataframe();
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_dataframe_with_columns(df, ptr::null(), 1, &mut out, &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        assert!(out.is_null());
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "series array pointer was null");
+
+        let status = unsafe { phs_dataframe_with_columns(df, ptr::null(), 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        assert!(out.is_null());
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "with_columns requires at least one series");
         unsafe { crate::handles::phs_dataframe_free(df) };
     }
 

@@ -39,6 +39,7 @@ module Polars.DataFrame
     , dataFrameTake
     , dataFrameUnique
     , dataFrameVStack
+    , dataFrameWithColumns
     , head
     , height
     , defaultCsvReadOptions
@@ -111,6 +112,7 @@ import Polars.Internal.Raw
     , phs_dataframe_to_text
     , phs_dataframe_unique
     , phs_dataframe_vstack
+    , phs_dataframe_with_columns
     , phs_dataframe_width
     , phs_read_csv_options
     , phs_read_parquet_options
@@ -367,6 +369,13 @@ dataFrameHStack columns df =
     withDataFrame df $ \dfPtr ->
         withSeriesArray columns $ \seriesPtr len ->
             dataframeOut (phs_dataframe_hstack dfPtr seriesPtr len)
+
+dataFrameWithColumns :: [Series] -> DataFrame -> IO (Either PolarsError DataFrame)
+dataFrameWithColumns [] _ = pure (Left (invalidArgument "dataFrameWithColumns requires at least one Series"))
+dataFrameWithColumns columns df =
+    withDataFrame df $ \dfPtr ->
+        withSeriesArray columns $ \seriesPtr len ->
+            dataframeOut (phs_dataframe_with_columns dfPtr seriesPtr len)
 
 dataFrameRename :: [(Text, Text)] -> DataFrame -> IO (Either PolarsError DataFrame)
 dataFrameRename [] _ = pure (Left (invalidArgument "dataFrameRename requires at least one column pair"))

@@ -971,6 +971,51 @@ main = hspec $ do
                 (_, _, Left err, _) -> expectationFailure (show err)
                 (_, _, _, Left err) -> expectationFailure (show err)
 
+        it "adds and replaces eager DataFrame columns" $ do
+            dfResult <- Pl.readCsv valuesCsv
+            replacementAgeResult <- Pl.series @Int64 "age" (V.fromList [Just 40, Just 41, Just 42])
+            cityResult <- Pl.series @T.Text "city" (V.fromList [Just "Tokyo", Just "Paris", Just "Oslo"])
+            case (dfResult, replacementAgeResult, cityResult) of
+                (Right df, Right replacementAge, Right city) -> do
+                    updated <- Pl.dataFrameWithColumns [replacementAge, city] df
+                    case updated of
+                        Left err -> expectationFailure (show err)
+                        Right out -> do
+                            Pl.shape out `shouldReturn` Right (3, 5)
+                            Pl.column @Int64 out "age"
+                                `shouldReturn` Right (V.fromList [Just 40, Just 41, Just 42])
+                            Pl.column @T.Text out "city"
+                                `shouldReturn` Right (V.fromList [Just "Tokyo", Just "Paris", Just "Oslo"])
+                (Left err, _, _) -> expectationFailure (show err)
+                (_, Left err, _) -> expectationFailure (show err)
+                (_, _, Left err) -> expectationFailure (show err)
+
+        it "broadcasts unit-length eager DataFrame columns" $ do
+            dfResult <- Pl.readCsv valuesCsv
+            scoreResult <- Pl.series @Double "score" (V.fromList [Just 10.0])
+            case (dfResult, scoreResult) of
+                (Right df, Right score) -> do
+                    updated <- Pl.dataFrameWithColumns [score] df
+                    case updated of
+                        Left err -> expectationFailure (show err)
+                        Right out ->
+                            Pl.column @Double out "score"
+                                `shouldReturn` Right (V.fromList [Just 10.0, Just 10.0, Just 10.0])
+                (Left err, _) -> expectationFailure (show err)
+                (_, Left err) -> expectationFailure (show err)
+
+        it "reports errors for invalid eager DataFrame with-columns inputs" $ do
+            dfResult <- Pl.readCsv valuesCsv
+            shortSeriesResult <- Pl.series @Int64 "short" (V.fromList [Just 1, Just 2])
+            case (dfResult, shortSeriesResult) of
+                (Right df, Right shortSeries) -> do
+                    emptyColumns <- Pl.dataFrameWithColumns [] df
+                    lengthMismatch <- Pl.dataFrameWithColumns [shortSeries] df
+                    expectInvalidArgumentMessage "dataFrameWithColumns requires at least one Series" emptyColumns
+                    expectPolarsFailure lengthMismatch
+                (Left err, _) -> expectationFailure (show err)
+                (_, Left err) -> expectationFailure (show err)
+
         it "validates eager DataFrame transform arguments" $ do
             result <- Pl.readCsv valuesCsv
             case result of

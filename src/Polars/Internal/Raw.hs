@@ -65,6 +65,7 @@ module Polars.Internal.Raw
     , phs_dataframe_to_text
     , phs_dataframe_unique
     , phs_dataframe_vstack
+    , phs_dataframe_with_columns
     , phs_dataframe_width
     , phs_error_code
     , phs_error_free
@@ -363,6 +364,9 @@ foreign import ccall safe "phs_dataframe_vstack"
 
 foreign import ccall safe "phs_dataframe_hstack"
     phs_dataframe_hstack :: Ptr RawDataFrame -> Ptr (Ptr RawSeries) -> CSize -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_dataframe_with_columns"
+    phs_dataframe_with_columns :: Ptr RawDataFrame -> Ptr (Ptr RawSeries) -> CSize -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_dataframe_sort"
     phs_dataframe_sort ::
