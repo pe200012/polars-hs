@@ -1561,6 +1561,53 @@ main = hspec $ do
                                 (_, Left err, _) -> expectationFailure (show err)
                                 (_, _, Left err) -> expectationFailure (show err)
 
+        it "computes Series sum min and max" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    scoreResult <- Pl.column @Pl.Series df "score"
+                    case scoreResult of
+                        Left err -> expectationFailure (show err)
+                        Right score -> do
+                            sumResult <- Pl.seriesSum score
+                            minResult <- Pl.seriesMin score
+                            maxResult <- Pl.seriesMax score
+                            case (sumResult, minResult, maxResult) of
+                                (Right sumValue, Right minValue, Right maxValue) -> do
+                                    shouldApproximateMaybe 1.0e-12 (Just 17.75) sumValue
+                                    shouldApproximateMaybe 1.0e-12 (Just 8.25) minValue
+                                    shouldApproximateMaybe 1.0e-12 (Just 9.5) maxValue
+                                (Left err, _, _) -> expectationFailure (show err)
+                                (_, Left err, _) -> expectationFailure (show err)
+                                (_, _, Left err) -> expectationFailure (show err)
+
+        it "handles all-null and empty Series sum min max" $ do
+            allNullResult <- Pl.series @Double "all_null" (V.fromList [Nothing, Nothing])
+            emptyResult <- Pl.series @Double "empty" V.empty
+            case (allNullResult, emptyResult) of
+                (Right allNull, Right empty) -> do
+                    Pl.seriesSum allNull `shouldReturn` Right (Just 0.0)
+                    Pl.seriesMin allNull `shouldReturn` Right Nothing
+                    Pl.seriesMax allNull `shouldReturn` Right Nothing
+                    Pl.seriesSum empty `shouldReturn` Right (Just 0.0)
+                    Pl.seriesMin empty `shouldReturn` Right Nothing
+                    Pl.seriesMax empty `shouldReturn` Right Nothing
+                (Left err, _) -> expectationFailure (show err)
+                (_, Left err) -> expectationFailure (show err)
+
+        it "reports Polars errors for invalid Series sum min max dtypes" $ do
+            textResult <- Pl.series @T.Text "text" (V.fromList [Just "a", Just "b"])
+            case textResult of
+                Left err -> expectationFailure (show err)
+                Right textSeries -> do
+                    sumResult <- Pl.seriesSum textSeries
+                    minResult <- Pl.seriesMin textSeries
+                    maxResult <- Pl.seriesMax textSeries
+                    expectInvalidArgumentMessage "series sum requires numeric dtype" sumResult
+                    expectInvalidArgumentMessage "series min requires numeric dtype" minResult
+                    expectInvalidArgumentMessage "series max requires numeric dtype" maxResult
+
         it "handles all-null Series stats and invalid ddof" $ do
             seriesResult <- Pl.series @Double "all_null" (V.fromList [Nothing, Nothing])
             case seriesResult of

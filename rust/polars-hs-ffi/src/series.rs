@@ -201,9 +201,29 @@ fn series_stat_from_code(series: &Series, op: c_int, ddof: u8) -> PhsResult<Opti
         0 => Ok(series.mean()),
         1 => Ok(series.std(ddof)),
         2 => Ok(series.var(ddof)),
+        3 => {
+            ensure_numeric_stat_dtype(series, "series sum")?;
+            Ok(Some(series.sum::<f64>()?))
+        },
+        4 => {
+            ensure_numeric_stat_dtype(series, "series min")?;
+            Ok(series.min::<f64>()?)
+        },
+        5 => {
+            ensure_numeric_stat_dtype(series, "series max")?;
+            Ok(series.max::<f64>()?)
+        },
         _ => Err(PhsError::invalid_argument(format!(
             "unknown series stat op code {op}"
         ))),
+    }
+}
+
+fn ensure_numeric_stat_dtype(series: &Series, label: &str) -> PhsResult<()> {
+    if series.dtype().is_numeric() {
+        Ok(())
+    } else {
+        Err(PhsError::invalid_argument(format!("{label} requires numeric dtype")))
     }
 }
 
@@ -1321,6 +1341,61 @@ mod tests {
         let message = unsafe { take_error_message(err) };
         assert_eq!(message, "series take index exceeds Polars index size");
         unsafe { phs_series_free(series) };
+    }
+
+    #[test]
+    fn series_stat_sum_min_max_return_nullable_doubles() {
+        let series = read_age_series();
+        let mut err = ptr::null_mut();
+        let mut has_value = false;
+        let mut value = 0.0;
+
+        let status = unsafe { phs_series_stat(series, 3, 0, &mut has_value, &mut value, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert!(has_value);
+        assert_eq!(value, 63.0);
+
+        let status = unsafe { phs_series_stat(series, 4, 0, &mut has_value, &mut value, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert!(has_value);
+        assert_eq!(value, 29.0);
+
+        let status = unsafe { phs_series_stat(series, 5, 0, &mut has_value, &mut value, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert!(has_value);
+        assert_eq!(value, 34.0);
+        unsafe { phs_series_free(series) };
+    }
+
+    #[test]
+    fn series_stat_sum_min_max_reject_non_numeric_dtype() {
+        let dataframe = read_values_dataframe();
+        let name = std::ffi::CString::new("name").unwrap();
+        let mut series = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        let status = unsafe { phs_dataframe_column(dataframe, name.as_ptr(), &mut series, &mut err) };
+        assert_eq!(status, PHS_OK);
+
+        let mut has_value = false;
+        let mut value = 0.0;
+        let status = unsafe { phs_series_stat(series, 3, 0, &mut has_value, &mut value, &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "series sum requires numeric dtype");
+
+        let status = unsafe { phs_series_stat(series, 4, 0, &mut has_value, &mut value, &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "series min requires numeric dtype");
+
+        let status = unsafe { phs_series_stat(series, 5, 0, &mut has_value, &mut value, &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "series max requires numeric dtype");
+        unsafe {
+            phs_series_free(series);
+            phs_dataframe_free(dataframe);
+        }
     }
 
     #[test]

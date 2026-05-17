@@ -36,7 +36,9 @@ module Polars.Series
     , seriesIsNotNull
     , seriesIsNull
     , seriesLength
+    , seriesMax
     , seriesMean
+    , seriesMin
     , seriesMul
     , seriesName
     , seriesRename
@@ -47,6 +49,7 @@ module Polars.Series
     , seriesSort
     , seriesStd
     , seriesSub
+    , seriesSum
     , seriesNullCount
     , seriesTail
     , seriesTake
@@ -386,6 +389,15 @@ seriesVar :: Int -> Series -> IO (Either PolarsError (Maybe Double))
 seriesVar ddof input = case ddofCUChar "series var ddof" ddof of
     Left err -> pure (Left err)
     Right value -> seriesStat 2 value input
+
+seriesSum :: Series -> IO (Either PolarsError (Maybe Double))
+seriesSum = seriesStat 3 (CUChar 0)
+
+seriesMin :: Series -> IO (Either PolarsError (Maybe Double))
+seriesMin = seriesStat 4 (CUChar 0)
+
+seriesMax :: Series -> IO (Either PolarsError (Maybe Double))
+seriesMax = seriesStat 5 (CUChar 0)
 
 seriesBool :: Series -> IO (Either PolarsError (Vector (Maybe Bool)))
 seriesBool input = seriesBytesOut input phs_series_values_bool decodeBoolColumn
