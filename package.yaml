@@ -17,6 +17,7 @@ extra-source-files:
 - rust/polars-hs-ffi/build.rs
 - rust/polars-hs-ffi/cbindgen.toml
 - rust/polars-hs-ffi/src/*.rs
+- rust/polars-hs-ffi/src/bin/*.rs
 - test/data/*.csv
 - scripts/*.py
 - scripts/*.sh
@@ -116,3 +117,4 @@ tests:
     dependencies:
     - polars-hs
     - hspec >= 2.11 && < 2.12
+    - process >= 1.6 && < 1.7

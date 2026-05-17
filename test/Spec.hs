@@ -8,17 +8,21 @@ import Prelude hiding (filter, head)
 import Control.Exception (bracket)
 import Control.Monad (when)
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSC
 import Data.Foldable (forM_)
 import Data.Int (Int16, Int32, Int64, Int8)
 import Data.Maybe (isJust)
 import qualified Data.Text as T
 import qualified Data.Vector as V
 import Data.Word (Word16, Word32, Word64, Word8)
+import System.Exit (ExitCode (..))
 import Foreign.Ptr (nullPtr)
 import System.Directory (doesFileExist, removeFile)
+import System.Environment (lookupEnv)
 import System.FilePath ((</>))
-import System.IO (hClose, openTempFile)
+import System.IO (hClose, hSetBinaryMode, openTempFile)
 import System.Mem (performGC)
+import System.Process (StdStream (CreatePipe), createProcess, proc, std_err, std_out, waitForProcess)
 import Test.Hspec
 
 import ArrowRecordBatch (withAgeArray, withPeopleRecordBatch)
@@ -96,6 +100,61 @@ expectValuesFrame df = do
         Left err -> expectationFailure (show err)
         Right scores -> shouldApproximate 1.0e-12 (V.fromList [Just 9.5, Just 8.25, Nothing]) scores
     Pl.column @Bool df "active" `shouldReturn` Right (V.fromList [Just True, Just False, Nothing])
+
+canonicalDataFrameCsv :: Pl.DataFrame -> IO BS.ByteString
+canonicalDataFrameCsv df =
+    withTempFilePath "polars-hs-canonical.csv" $ \path -> do
+        writeResult <-
+            Pl.writeCsvWith
+                Pl.defaultCsvWriteOptions {Pl.csvWriteNullValue = "NULL"}
+                path
+                df
+        writeResult `shouldBe` Right ()
+        BS.readFile path
+
+runRustOracle :: [String] -> IO BS.ByteString
+runRustOracle args = do
+    configuredOracle <- lookupEnv "POLARS_HS_ORACLE"
+    let releaseOracle = "rust" </> "polars-hs-ffi" </> "target" </> "release" </> "polars_hs_oracle"
+    releaseOracleExists <- doesFileExist releaseOracle
+    case configuredOracle of
+        Just oracle -> runProcessBytes oracle args
+        Nothing
+            | releaseOracleExists -> runProcessBytes releaseOracle args
+            | otherwise ->
+                runProcessBytes
+                    "cargo"
+                    ( [ "run"
+                      , "--quiet"
+                      , "--release"
+                      , "--manifest-path"
+                      , "rust/polars-hs-ffi/Cargo.toml"
+                      , "--bin"
+                      , "polars_hs_oracle"
+                      , "--"
+                      ]
+                        <> args
+                    )
+
+runProcessBytes :: FilePath -> [String] -> IO BS.ByteString
+runProcessBytes command args = do
+    (_, Just stdoutHandle, Just stderrHandle, processHandle) <-
+        createProcess
+            (proc command args)
+                { std_out = CreatePipe
+                , std_err = CreatePipe
+                }
+    hSetBinaryMode stdoutHandle True
+    hSetBinaryMode stderrHandle True
+    out <- BS.hGetContents stdoutHandle
+    err <- BS.hGetContents stderrHandle
+    code <- waitForProcess processHandle
+    BS.length out `seq` BS.length err `seq`
+        case code of
+            ExitSuccess -> pure out
+            ExitFailure exitCode -> do
+                expectationFailure ("process exited " <> show exitCode <> ": " <> BSC.unpack err)
+                pure ""
 
 fixtureCsv :: FilePath
 fixtureCsv = "test/data/people.csv"
@@ -686,6 +745,42 @@ main = hspec $ do
                     case uniqueResult of
                         Right _ -> expectationFailure "expected InvalidArgument for empty unique subset"
                         Left err -> Pl.polarsErrorCode err `shouldBe` Pl.InvalidArgument
+
+    describe "Rust Polars parity harness" $ do
+        it "matches Rust Polars for CSV parser options" $
+            withTempFileContent "polars-hs-oracle-csv.csv" "Alice;34\nBob;NA\n" $ \path -> do
+                let options =
+                        Pl.defaultCsvReadOptions
+                            { Pl.csvReadHasHeader = False
+                            , Pl.csvReadSeparator = 59
+                            , Pl.csvReadNullValue = Just "NA"
+                            }
+                oracle <- runRustOracle ["csv-read-options", path]
+                result <- Pl.readCsvWith options path
+                case result of
+                    Left err -> expectationFailure (show err)
+                    Right df -> do
+                        actual <- canonicalDataFrameCsv df
+                        actual `shouldBe` oracle
+
+        it "matches Rust Polars for Parquet row limits" $
+            withTempFilePath "polars-hs-oracle.parquet" $ \path -> do
+                sourceResult <- Pl.readCsv valuesCsv
+                case sourceResult of
+                    Left err -> expectationFailure (show err)
+                    Right sourceDf -> do
+                        writeResult <- Pl.writeParquet path sourceDf
+                        writeResult `shouldBe` Right ()
+                        oracle <- runRustOracle ["parquet-read-n-rows", path]
+                        result <-
+                            Pl.readParquetWith
+                                Pl.defaultParquetReadOptions {Pl.parquetReadNRows = Just 2}
+                                path
+                        case result of
+                            Left err -> expectationFailure (show err)
+                            Right df -> do
+                                actual <- canonicalDataFrameCsv df
+                                actual `shouldBe` oracle
 
     describe "Polars.GroupBy" $ do
         it "groups a lazy CSV scan and aggregates columns" $ do
