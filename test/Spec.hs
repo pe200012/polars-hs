@@ -2255,6 +2255,61 @@ main = hspec $ do
                 (_, _, Left err, _) -> expectationFailure (show err)
                 (_, _, _, Left err) -> expectationFailure (show err)
 
+        it "ranks Series handles with deterministic rank methods" $ do
+            valuesResult <- Pl.series @Int64 "rank" (V.fromList [Just 1, Just 2, Just 3, Just 2, Just 2, Just 3, Just 0])
+            nullValuesResult <- Pl.series @Int64 "rank_nulls" (V.fromList [Just 1, Just 2, Just 3, Just 2, Nothing, Nothing, Just 0])
+            descendingResult <- Pl.series @Int64 "rank_desc" (V.fromList [Nothing, Just 1, Just 1, Just 5, Nothing])
+            textResult <- Pl.series @T.Text "rank_text" (V.fromList [Just "b", Just "a", Nothing, Just "b"])
+            allNullResult <- Pl.series @Word32 "rank_all_null" (V.fromList [Nothing, Nothing, Nothing])
+            emptyResult <- Pl.series @Word32 "rank_empty" V.empty
+            case (valuesResult, nullValuesResult, descendingResult, textResult, allNullResult, emptyResult) of
+                (Right values, Right nullValues, Right descendingValues, Right textValues, Right allNull, Right empty) -> do
+                    dense <- Pl.seriesRank Pl.defaultRankOptions values
+                    minRank <- Pl.seriesRank Pl.defaultRankOptions { Pl.rankMethod = Pl.RankMin } values
+                    maxRank <- Pl.seriesRank Pl.defaultRankOptions { Pl.rankMethod = Pl.RankMax } values
+                    ordinal <- Pl.seriesRank Pl.defaultRankOptions { Pl.rankMethod = Pl.RankOrdinal } values
+                    average <- Pl.seriesRank Pl.defaultRankOptions { Pl.rankMethod = Pl.RankAverage } values
+                    averageWithNulls <- Pl.seriesRank Pl.defaultRankOptions { Pl.rankMethod = Pl.RankAverage } nullValues
+                    descendingDense <- Pl.seriesRank Pl.defaultRankOptions { Pl.rankDescending = True } descendingValues
+                    textDense <- Pl.seriesRank Pl.defaultRankOptions textValues
+                    allNullDense <- Pl.seriesRank Pl.defaultRankOptions allNull
+                    emptyAverage <- Pl.seriesRank Pl.defaultRankOptions { Pl.rankMethod = Pl.RankAverage } empty
+                    emptyMax <- Pl.seriesRank Pl.defaultRankOptions { Pl.rankMethod = Pl.RankMax } empty
+                    case (dense, minRank, maxRank, ordinal, average, averageWithNulls, descendingDense, textDense, allNullDense, emptyAverage, emptyMax) of
+                        (Right denseRank, Right minRanked, Right maxRanked, Right ordinalRank, Right averageRank, Right averageNullRank, Right descendingRank, Right textRank, Right allNullRank, Right emptyAverageRank, Right emptyMaxRank) -> do
+                            Pl.seriesDataType denseRank `shouldReturn` Right Pl.UInt32
+                            Pl.seriesDataType averageRank `shouldReturn` Right Pl.Float64
+                            Pl.seriesWord32 denseRank `shouldReturn` Right (V.fromList [Just 2, Just 3, Just 4, Just 3, Just 3, Just 4, Just 1])
+                            Pl.seriesWord32 minRanked `shouldReturn` Right (V.fromList [Just 2, Just 3, Just 6, Just 3, Just 3, Just 6, Just 1])
+                            Pl.seriesWord32 maxRanked `shouldReturn` Right (V.fromList [Just 2, Just 5, Just 7, Just 5, Just 5, Just 7, Just 1])
+                            Pl.seriesWord32 ordinalRank `shouldReturn` Right (V.fromList [Just 2, Just 3, Just 6, Just 4, Just 5, Just 7, Just 1])
+                            Pl.seriesDouble averageRank `shouldReturn` Right (V.fromList [Just 2.0, Just 4.0, Just 6.5, Just 4.0, Just 4.0, Just 6.5, Just 1.0])
+                            Pl.seriesDouble averageNullRank `shouldReturn` Right (V.fromList [Just 2.0, Just 3.5, Just 5.0, Just 3.5, Nothing, Nothing, Just 1.0])
+                            Pl.seriesWord32 descendingRank `shouldReturn` Right (V.fromList [Nothing, Just 2, Just 2, Just 1, Nothing])
+                            Pl.seriesWord32 textRank `shouldReturn` Right (V.fromList [Just 2, Just 1, Nothing, Just 2])
+                            Pl.seriesWord32 allNullRank `shouldReturn` Right (V.fromList [Nothing, Nothing, Nothing])
+                            Pl.seriesDataType emptyAverageRank `shouldReturn` Right Pl.Float64
+                            Pl.seriesDouble emptyAverageRank `shouldReturn` Right V.empty
+                            Pl.seriesDataType emptyMaxRank `shouldReturn` Right Pl.UInt32
+                            Pl.seriesWord32 emptyMaxRank `shouldReturn` Right V.empty
+                        (Left err, _, _, _, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                        (_, Left err, _, _, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                        (_, _, Left err, _, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                        (_, _, _, Left err, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                        (_, _, _, _, Left err, _, _, _, _, _, _) -> expectationFailure (show err)
+                        (_, _, _, _, _, Left err, _, _, _, _, _) -> expectationFailure (show err)
+                        (_, _, _, _, _, _, Left err, _, _, _, _) -> expectationFailure (show err)
+                        (_, _, _, _, _, _, _, Left err, _, _, _) -> expectationFailure (show err)
+                        (_, _, _, _, _, _, _, _, Left err, _, _) -> expectationFailure (show err)
+                        (_, _, _, _, _, _, _, _, _, Left err, _) -> expectationFailure (show err)
+                        (_, _, _, _, _, _, _, _, _, _, Left err) -> expectationFailure (show err)
+                (Left err, _, _, _, _, _) -> expectationFailure (show err)
+                (_, Left err, _, _, _, _) -> expectationFailure (show err)
+                (_, _, Left err, _, _, _) -> expectationFailure (show err)
+                (_, _, _, Left err, _, _) -> expectationFailure (show err)
+                (_, _, _, _, Left err, _) -> expectationFailure (show err)
+                (_, _, _, _, _, Left err) -> expectationFailure (show err)
+
         it "computes Series value counts as a DataFrame" $ do
             colorResult <- Pl.series @T.Text "color" (V.fromList [Just "blue", Just "red", Just "blue", Just "green", Just "blue", Just "red"])
             emptyResult <- Pl.series @T.Text "color" V.empty

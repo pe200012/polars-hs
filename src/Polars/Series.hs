@@ -63,6 +63,7 @@ module Polars.Series
     , seriesMul
     , seriesName
     , seriesNUnique
+    , seriesRank
     , seriesRename
     , seriesReverse
     , seriesRem
@@ -102,6 +103,7 @@ import Foreign.Ptr (Ptr, castPtr)
 
 import Polars.DataFrame (DataFrame, FillNullStrategy (..))
 import Polars.Error (PolarsError (..), PolarsErrorCode (InvalidArgument))
+import Polars.Expr (RankMethod (..), RankOptions (..))
 import Polars.Internal.ColumnEncode
     ( encodeBoolColumn
     , encodeDoubleColumn
@@ -176,6 +178,7 @@ import Polars.Internal.Raw
     , phs_series_new_u16
     , phs_series_new_u32
     , phs_series_new_u64
+    , phs_series_rank
     , phs_series_rename
     , phs_series_reverse
     , phs_series_round
@@ -409,6 +412,11 @@ seriesUniqueStable input = seriesUnaryOut input phs_series_unique_stable
 
 seriesArgUnique :: Series -> IO (Either PolarsError Series)
 seriesArgUnique input = seriesUnaryOut input phs_series_arg_unique
+
+seriesRank :: RankOptions -> Series -> IO (Either PolarsError Series)
+seriesRank options input =
+    withSeries input $ \ptr ->
+        seriesOut (phs_series_rank ptr (rankMethodCode (rankMethod options)) (toCBool (rankDescending options)))
 
 -- | Count unique Series values into a two-column DataFrame.
 seriesValueCounts :: SeriesValueCountsOptions -> Series -> IO (Either PolarsError DataFrame)
@@ -659,6 +667,13 @@ seriesDiffNullBehaviorCode SeriesDiffDrop = 1
 seriesInterpolationMethodCode :: SeriesInterpolationMethod -> CInt
 seriesInterpolationMethodCode SeriesInterpolateLinear = 0
 seriesInterpolationMethodCode SeriesInterpolateNearest = 1
+
+rankMethodCode :: RankMethod -> CInt
+rankMethodCode RankAverage = 0
+rankMethodCode RankMin = 1
+rankMethodCode RankMax = 2
+rankMethodCode RankDense = 3
+rankMethodCode RankOrdinal = 4
 
 fillNullStrategyCode :: FillNullStrategy -> Either PolarsError (CInt, Bool, Word64)
 fillNullStrategyCode (FillForward limit) = fillNullLimitedStrategy 0 limit

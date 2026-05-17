@@ -15,6 +15,7 @@ use polars_ops::series::{
     RoundMode,
     RoundSeries,
     SeriesMethods,
+    SeriesRank,
 };
 
 use crate::bytes::{bytes_into_raw, phs_bytes};
@@ -221,6 +222,19 @@ fn interpolation_method_from_code(code: c_int) -> PhsResult<InterpolationMethod>
         1 => Ok(InterpolationMethod::Nearest),
         _ => Err(PhsError::invalid_argument(format!(
             "unknown interpolation method code {code}"
+        ))),
+    }
+}
+
+fn rank_method_from_code(code: c_int) -> PhsResult<RankMethod> {
+    match code {
+        0 => Ok(RankMethod::Average),
+        1 => Ok(RankMethod::Min),
+        2 => Ok(RankMethod::Max),
+        3 => Ok(RankMethod::Dense),
+        4 => Ok(RankMethod::Ordinal),
+        value => Err(PhsError::invalid_argument(format!(
+            "unknown rank method code {value}"
         ))),
     }
 }
@@ -1101,6 +1115,20 @@ pub unsafe extern "C" fn phs_series_arg_unique(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_rank(
+    series: *const phs_series,
+    method: c_int,
+    descending: bool,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| {
+        let method = rank_method_from_code(method)?;
+        Ok(value.rank(RankOptions { method, descending }, None))
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_series_reverse(
     series: *const phs_series,
     out: *mut *mut phs_series,
@@ -1902,6 +1930,100 @@ mod tests {
             phs_series_free(values);
             phs_series_free(ties);
             phs_series_free(text);
+            phs_series_free(empty);
+        }
+    }
+
+    #[test]
+    fn series_rank_returns_deterministic_ranks() {
+        let values = series_into_raw(Series::new(
+            "rank".into(),
+            &[Some(1_i64), Some(2), Some(3), Some(2), Some(2), Some(3), Some(0)],
+        ));
+        let null_values = series_into_raw(Series::new(
+            "rank_nulls".into(),
+            &[Some(1_i64), Some(2), Some(3), Some(2), None, None, Some(0)],
+        ));
+        let descending_values =
+            series_into_raw(Series::new("rank_desc".into(), &[None, Some(1_i64), Some(1), Some(5), None]));
+        let text_values = series_into_raw(Series::new("rank_text".into(), &[Some("b"), Some("a"), None, Some("b")]));
+        let all_null = series_into_raw(Series::new("rank_all_null".into(), &[None::<u32>, None, None]));
+        let empty = series_into_raw(Series::new("rank_empty".into(), Vec::<u32>::new()));
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_series_rank(values, 3, false, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_u32_values(out) },
+            vec![Some(2), Some(3), Some(4), Some(3), Some(3), Some(4), Some(1)]
+        );
+
+        let status = unsafe { phs_series_rank(values, 1, false, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_u32_values(out) },
+            vec![Some(2), Some(3), Some(6), Some(3), Some(3), Some(6), Some(1)]
+        );
+
+        let status = unsafe { phs_series_rank(values, 2, false, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_u32_values(out) },
+            vec![Some(2), Some(5), Some(7), Some(5), Some(5), Some(7), Some(1)]
+        );
+
+        let status = unsafe { phs_series_rank(values, 4, false, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_u32_values(out) },
+            vec![Some(2), Some(3), Some(6), Some(4), Some(5), Some(7), Some(1)]
+        );
+
+        let status = unsafe { phs_series_rank(values, 0, false, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_f64_values(out) },
+            vec![Some(2.0), Some(4.0), Some(6.5), Some(4.0), Some(4.0), Some(6.5), Some(1.0)]
+        );
+
+        let status = unsafe { phs_series_rank(null_values, 0, false, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_f64_values(out) },
+            vec![Some(2.0), Some(3.5), Some(5.0), Some(3.5), None, None, Some(1.0)]
+        );
+
+        let status = unsafe { phs_series_rank(descending_values, 3, true, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_u32_values(out) }, vec![None, Some(2), Some(2), Some(1), None]);
+
+        let status = unsafe { phs_series_rank(text_values, 3, false, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_u32_values(out) }, vec![Some(2), Some(1), None, Some(2)]);
+
+        let status = unsafe { phs_series_rank(all_null, 3, false, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_u32_values(out) }, vec![None, None, None]);
+
+        let status = unsafe { phs_series_rank(empty, 0, false, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_f64_values(out) }, Vec::<Option<f64>>::new());
+
+        let status = unsafe { phs_series_rank(empty, 2, false, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_u32_values(out) }, Vec::<Option<u32>>::new());
+
+        let status = unsafe { phs_series_rank(values, 99, false, &mut out, &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        assert_eq!(unsafe { take_error_message(err) }, "unknown rank method code 99");
+
+        unsafe {
+            phs_series_free(values);
+            phs_series_free(null_values);
+            phs_series_free(descending_values);
+            phs_series_free(text_values);
+            phs_series_free(all_null);
             phs_series_free(empty);
         }
     }
