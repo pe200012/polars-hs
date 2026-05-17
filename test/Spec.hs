@@ -2535,6 +2535,48 @@ main = hspec $ do
                 (_, _, _, _, Left err, _) -> expectationFailure (show err)
                 (_, _, _, _, _, Left err) -> expectationFailure (show err)
 
+        it "computes Series is-between masks" $ do
+            valuesResult <- Pl.series @Int64 "value" (V.fromList [Just 1, Just 2, Just 3, Just 4, Just 5, Nothing])
+            lowerResult <- Pl.series @Int64 "lower" (V.singleton (Just 2))
+            upperResult <- Pl.series @Int64 "upper" (V.singleton (Just 4))
+            reversedLowerResult <- Pl.series @Int64 "lower" (V.singleton (Just 4))
+            reversedUpperResult <- Pl.series @Int64 "upper" (V.singleton (Just 2))
+            textResult <- Pl.series @T.Text "text" (V.fromList [Just "a", Just "b", Just "c", Just "d", Nothing])
+            textLowerResult <- Pl.series @T.Text "lower" (V.singleton (Just "b"))
+            textUpperResult <- Pl.series @T.Text "upper" (V.singleton (Just "d"))
+            case (valuesResult, lowerResult, upperResult, reversedLowerResult, reversedUpperResult, textResult, textLowerResult, textUpperResult) of
+                (Right values, Right lower, Right upper, Right reversedLower, Right reversedUpper, Right textValues, Right textLower, Right textUpper) -> do
+                    both <- Pl.seriesIsBetween Pl.ClosedBoth values lower upper
+                    left <- Pl.seriesIsBetween Pl.ClosedLeft values lower upper
+                    right <- Pl.seriesIsBetween Pl.ClosedRight values lower upper
+                    open <- Pl.seriesIsBetween Pl.ClosedNone values lower upper
+                    reversed <- Pl.seriesIsBetween Pl.ClosedBoth values reversedLower reversedUpper
+                    textLeft <- Pl.seriesIsBetween Pl.ClosedLeft textValues textLower textUpper
+                    mismatch <- Pl.seriesIsBetween Pl.ClosedBoth values textLower textUpper
+                    case (both, left, right, open, reversed, textLeft) of
+                        (Right bothOut, Right leftOut, Right rightOut, Right openOut, Right reversedOut, Right textLeftOut) -> do
+                            Pl.seriesBool bothOut `shouldReturn` Right (V.fromList [Just False, Just True, Just True, Just True, Just False, Nothing])
+                            Pl.seriesBool leftOut `shouldReturn` Right (V.fromList [Just False, Just True, Just True, Just False, Just False, Nothing])
+                            Pl.seriesBool rightOut `shouldReturn` Right (V.fromList [Just False, Just False, Just True, Just True, Just False, Nothing])
+                            Pl.seriesBool openOut `shouldReturn` Right (V.fromList [Just False, Just False, Just True, Just False, Just False, Nothing])
+                            Pl.seriesBool reversedOut `shouldReturn` Right (V.fromList [Just False, Just False, Just False, Just False, Just False, Nothing])
+                            Pl.seriesBool textLeftOut `shouldReturn` Right (V.fromList [Just False, Just True, Just True, Just False, Nothing])
+                            expectPolarsFailure mismatch
+                        (Left err, _, _, _, _, _) -> expectationFailure (show err)
+                        (_, Left err, _, _, _, _) -> expectationFailure (show err)
+                        (_, _, Left err, _, _, _) -> expectationFailure (show err)
+                        (_, _, _, Left err, _, _) -> expectationFailure (show err)
+                        (_, _, _, _, Left err, _) -> expectationFailure (show err)
+                        (_, _, _, _, _, Left err) -> expectationFailure (show err)
+                (Left err, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                (_, Left err, _, _, _, _, _, _) -> expectationFailure (show err)
+                (_, _, Left err, _, _, _, _, _) -> expectationFailure (show err)
+                (_, _, _, Left err, _, _, _, _) -> expectationFailure (show err)
+                (_, _, _, _, Left err, _, _, _) -> expectationFailure (show err)
+                (_, _, _, _, _, Left err, _, _) -> expectationFailure (show err)
+                (_, _, _, _, _, _, Left err, _) -> expectationFailure (show err)
+                (_, _, _, _, _, _, _, Left err) -> expectationFailure (show err)
+
         it "searches sorted Series insertion indexes" $ do
             sortedResult <- Pl.series @Int64 "value" (V.fromList [Just 1, Just 2, Just 2, Just 4])
             needlesResult <- Pl.series @Int64 "value" (V.fromList [Just 0, Just 2, Just 3, Just 5])

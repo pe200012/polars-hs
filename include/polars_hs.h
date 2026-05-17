@@ -938,6 +938,13 @@ int phs_series_is_last_distinct(const struct phs_series *series,
                                 struct phs_series **out,
                                 struct phs_error **err);
 
+int phs_series_is_between(const struct phs_series *series,
+                          const struct phs_series *lower,
+                          const struct phs_series *upper,
+                          int closed,
+                          struct phs_series **out,
+                          struct phs_error **err);
+
 int phs_series_filter(const struct phs_series *series,
                       const struct phs_series *mask,
                       struct phs_series **out,

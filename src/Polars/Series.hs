@@ -47,6 +47,7 @@ module Polars.Series
     , seriesInt32
     , seriesInt64
     , seriesInterpolate
+    , seriesIsBetween
     , seriesIsDuplicated
     , seriesIsFinite
     , seriesIsFirstDistinct
@@ -112,7 +113,7 @@ import Foreign.Ptr (Ptr, castPtr)
 
 import Polars.DataFrame (DataFrame, FillNullStrategy (..))
 import Polars.Error (PolarsError (..), PolarsErrorCode (InvalidArgument))
-import Polars.Expr (RankMethod (..), RankOptions (..))
+import Polars.Expr (ClosedInterval (..), RankMethod (..), RankOptions (..))
 import Polars.Internal.ColumnEncode
     ( encodeBoolColumn
     , encodeDoubleColumn
@@ -163,6 +164,7 @@ import Polars.Internal.Raw
     , phs_series_gather_every
     , phs_series_head
     , phs_series_interpolate
+    , phs_series_is_between
     , phs_series_is_duplicated
     , phs_series_is_finite
     , phs_series_is_first_distinct
@@ -579,6 +581,14 @@ seriesIsFirstDistinct input = seriesUnaryOut input phs_series_is_first_distinct
 seriesIsLastDistinct :: Series -> IO (Either PolarsError Series)
 seriesIsLastDistinct input = seriesUnaryOut input phs_series_is_last_distinct
 
+-- | Return a Boolean mask for values between lower and upper bound Series.
+seriesIsBetween :: ClosedInterval -> Series -> Series -> Series -> IO (Either PolarsError Series)
+seriesIsBetween closed input lower upper =
+    withSeries input $ \inputPtr ->
+        withSeries lower $ \lowerPtr ->
+            withSeries upper $ \upperPtr ->
+                seriesOut (phs_series_is_between inputPtr lowerPtr upperPtr (closedIntervalCode closed))
+
 seriesFilter :: Series -> Series -> IO (Either PolarsError Series)
 seriesFilter mask input =
     withSeries input $ \seriesPtr ->
@@ -757,6 +767,12 @@ seriesRoundModeCode RoundHalfAwayFromZero = 1
 seriesDiffNullBehaviorCode :: SeriesDiffNullBehavior -> CInt
 seriesDiffNullBehaviorCode SeriesDiffIgnore = 0
 seriesDiffNullBehaviorCode SeriesDiffDrop = 1
+
+closedIntervalCode :: ClosedInterval -> CInt
+closedIntervalCode ClosedBoth = 0
+closedIntervalCode ClosedLeft = 1
+closedIntervalCode ClosedRight = 2
+closedIntervalCode ClosedNone = 3
 
 searchSortedSideCode :: SearchSortedSide -> CInt
 searchSortedSideCode SearchSortedAny = 0

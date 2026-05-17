@@ -5,8 +5,10 @@ use polars::prelude::*;
 use polars::series::ops::NullBehavior;
 use polars_ops::series::{
     abs as polars_series_abs,
+    is_between as polars_series_is_between,
     diff as polars_series_diff,
     interpolate as polars_series_interpolate,
+    ClosedInterval as PolarsClosedInterval,
     InterpolationMethod,
     is_duplicated as polars_series_is_duplicated,
     is_first_distinct as polars_series_is_first_distinct,
@@ -251,6 +253,18 @@ fn search_sorted_side_from_code(code: c_int) -> PhsResult<PolarsSearchSortedSide
         2 => Ok(PolarsSearchSortedSide::Right),
         value => Err(PhsError::invalid_argument(format!(
             "unknown search sorted side code {value}"
+        ))),
+    }
+}
+
+fn closed_interval_from_code(code: c_int) -> PhsResult<PolarsClosedInterval> {
+    match code {
+        0 => Ok(PolarsClosedInterval::Both),
+        1 => Ok(PolarsClosedInterval::Left),
+        2 => Ok(PolarsClosedInterval::Right),
+        3 => Ok(PolarsClosedInterval::None),
+        value => Err(PhsError::invalid_argument(format!(
+            "unknown closed interval code {value}"
         ))),
     }
 }
@@ -1044,6 +1058,35 @@ pub unsafe extern "C" fn phs_series_is_last_distinct(
 ) -> c_int {
     series_transform(series, out, err, |value| {
         Ok(polars_series_is_last_distinct(value)?.into_series())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_is_between(
+    series: *const phs_series,
+    lower: *const phs_series,
+    upper: *const phs_series,
+    closed: c_int,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let series_handle = unsafe { series_ref(series) }?;
+        let lower_handle = unsafe { series_ref(lower) }?;
+        let upper_handle = unsafe { series_ref(upper) }?;
+        let closed = closed_interval_from_code(closed)?;
+        *out = series_into_raw(
+            polars_series_is_between(
+                &series_handle.value,
+                &lower_handle.value,
+                &upper_handle.value,
+                closed,
+            )?
+            .into_series(),
+        );
+        Ok(())
     })
 }
 
@@ -2576,6 +2619,91 @@ mod tests {
             phs_series_free(nullable_needles);
             phs_series_free(empty_sorted);
             phs_series_free(mismatch_needles);
+        }
+    }
+
+    #[test]
+    fn series_is_between_returns_boolean_masks() {
+        let values = series_into_raw(Series::new(
+            "value".into(),
+            &[Some(1_i64), Some(2), Some(3), Some(4), Some(5), None],
+        ));
+        let lower = series_into_raw(Series::new("lower".into(), &[2_i64]));
+        let upper = series_into_raw(Series::new("upper".into(), &[4_i64]));
+        let reversed_lower = series_into_raw(Series::new("lower".into(), &[4_i64]));
+        let reversed_upper = series_into_raw(Series::new("upper".into(), &[2_i64]));
+        let text = series_into_raw(Series::new(
+            "text".into(),
+            &[Some("a"), Some("b"), Some("c"), Some("d"), None],
+        ));
+        let text_lower = series_into_raw(Series::new("lower".into(), ["b"]));
+        let text_upper = series_into_raw(Series::new("upper".into(), ["d"]));
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_series_is_between(values, lower, upper, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_bool_values(out) },
+            vec![Some(false), Some(true), Some(true), Some(true), Some(false), None]
+        );
+
+        let status = unsafe { phs_series_is_between(values, lower, upper, 1, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_bool_values(out) },
+            vec![Some(false), Some(true), Some(true), Some(false), Some(false), None]
+        );
+
+        let status = unsafe { phs_series_is_between(values, lower, upper, 2, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_bool_values(out) },
+            vec![Some(false), Some(false), Some(true), Some(true), Some(false), None]
+        );
+
+        let status = unsafe { phs_series_is_between(values, lower, upper, 3, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_bool_values(out) },
+            vec![Some(false), Some(false), Some(true), Some(false), Some(false), None]
+        );
+
+        let status =
+            unsafe { phs_series_is_between(values, reversed_lower, reversed_upper, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_bool_values(out) },
+            vec![Some(false), Some(false), Some(false), Some(false), Some(false), None]
+        );
+
+        let status = unsafe { phs_series_is_between(text, text_lower, text_upper, 1, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_bool_values(out) },
+            vec![Some(false), Some(true), Some(true), Some(false), None]
+        );
+
+        let status = unsafe { phs_series_is_between(values, text_lower, text_upper, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_POLARS_ERROR);
+        unsafe { take_error_message(err) };
+
+        let status = unsafe { phs_series_is_between(values, lower, upper, 99, &mut out, &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        assert_eq!(
+            unsafe { take_error_message(err) },
+            "unknown closed interval code 99"
+        );
+
+        unsafe {
+            phs_series_free(values);
+            phs_series_free(lower);
+            phs_series_free(upper);
+            phs_series_free(reversed_lower);
+            phs_series_free(reversed_upper);
+            phs_series_free(text);
+            phs_series_free(text_lower);
+            phs_series_free(text_upper);
         }
     }
 

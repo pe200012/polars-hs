@@ -155,6 +155,7 @@ module Polars.Internal.Raw
     , phs_series_is_finite
     , phs_series_is_first_distinct
     , phs_series_is_infinite
+    , phs_series_is_between
     , phs_series_is_last_distinct
     , phs_series_is_nan
     , phs_series_is_not_nan
@@ -804,6 +805,9 @@ foreign import ccall safe "phs_series_is_first_distinct"
 
 foreign import ccall safe "phs_series_is_last_distinct"
     phs_series_is_last_distinct :: Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_series_is_between"
+    phs_series_is_between :: Ptr RawSeries -> Ptr RawSeries -> Ptr RawSeries -> CInt -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_series_filter"
     phs_series_filter :: Ptr RawSeries -> Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
