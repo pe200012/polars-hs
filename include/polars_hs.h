@@ -1043,6 +1043,12 @@ int phs_series_binary_op(const struct phs_series *left,
                          struct phs_series **out,
                          struct phs_error **err);
 
+int phs_series_compare_op(const struct phs_series *left,
+                          const struct phs_series *right,
+                          int op,
+                          struct phs_series **out,
+                          struct phs_error **err);
+
 int phs_series_stat(const struct phs_series *series,
                     int op,
                     uint8_t ddof,

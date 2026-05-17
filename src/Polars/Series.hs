@@ -38,10 +38,14 @@ module Polars.Series
     , seriesDiv
     , seriesDouble
     , seriesDropNulls
+    , seriesEqual
+    , seriesEqualMissing
     , seriesFloat
     , seriesFloor
     , seriesHead
     , seriesGatherEvery
+    , seriesGreater
+    , seriesGreaterEqual
     , seriesInt8
     , seriesInt16
     , seriesInt32
@@ -69,6 +73,8 @@ module Polars.Series
     , seriesMul
     , seriesName
     , seriesNUnique
+    , seriesNotEqual
+    , seriesNotEqualMissing
     , seriesRank
     , seriesRename
     , seriesReverse
@@ -81,6 +87,8 @@ module Polars.Series
     , seriesStd
     , seriesSub
     , seriesSum
+    , seriesLess
+    , seriesLessEqual
     , seriesNullCount
     , seriesPctChange
     , seriesTail
@@ -155,6 +163,7 @@ import Polars.Internal.Raw
     , phs_series_binary_op
     , phs_series_cast
     , phs_series_ceil
+    , phs_series_compare_op
     , phs_series_diff
     , phs_series_drop_nulls
     , phs_series_dtype
@@ -639,6 +648,38 @@ seriesDiv = seriesBinaryOp 3
 seriesRem :: Series -> Series -> IO (Either PolarsError Series)
 seriesRem = seriesBinaryOp 4
 
+-- | Return a Boolean mask where left values equal right values.
+seriesEqual :: Series -> Series -> IO (Either PolarsError Series)
+seriesEqual = seriesCompareOp 0
+
+-- | Return a Boolean mask where left values differ from right values.
+seriesNotEqual :: Series -> Series -> IO (Either PolarsError Series)
+seriesNotEqual = seriesCompareOp 1
+
+-- | Return a Boolean mask where left values equal right values, treating paired nulls as equal.
+seriesEqualMissing :: Series -> Series -> IO (Either PolarsError Series)
+seriesEqualMissing = seriesCompareOp 2
+
+-- | Return a Boolean mask where left values differ from right values, treating paired nulls as equal.
+seriesNotEqualMissing :: Series -> Series -> IO (Either PolarsError Series)
+seriesNotEqualMissing = seriesCompareOp 3
+
+-- | Return a Boolean mask where left values are greater than right values.
+seriesGreater :: Series -> Series -> IO (Either PolarsError Series)
+seriesGreater = seriesCompareOp 4
+
+-- | Return a Boolean mask where left values are greater than or equal to right values.
+seriesGreaterEqual :: Series -> Series -> IO (Either PolarsError Series)
+seriesGreaterEqual = seriesCompareOp 5
+
+-- | Return a Boolean mask where left values are less than right values.
+seriesLess :: Series -> Series -> IO (Either PolarsError Series)
+seriesLess = seriesCompareOp 6
+
+-- | Return a Boolean mask where left values are less than or equal to right values.
+seriesLessEqual :: Series -> Series -> IO (Either PolarsError Series)
+seriesLessEqual = seriesCompareOp 7
+
 seriesMean :: Series -> IO (Either PolarsError (Maybe Double))
 seriesMean = seriesStat 0 (CUChar 0)
 
@@ -722,6 +763,12 @@ seriesBinaryOp op left right =
     withSeries left $ \leftPtr ->
         withSeries right $ \rightPtr ->
             seriesOut (phs_series_binary_op leftPtr rightPtr op)
+
+seriesCompareOp :: CInt -> Series -> Series -> IO (Either PolarsError Series)
+seriesCompareOp op left right =
+    withSeries left $ \leftPtr ->
+        withSeries right $ \rightPtr ->
+            seriesOut (phs_series_compare_op leftPtr rightPtr op)
 
 seriesStat :: CInt -> CUChar -> Series -> IO (Either PolarsError (Maybe Double))
 seriesStat op ddof input =

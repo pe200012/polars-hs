@@ -141,6 +141,7 @@ module Polars.Internal.Raw
     , phs_series_binary_op
     , phs_series_cast
     , phs_series_ceil
+    , phs_series_compare_op
     , phs_series_diff
     , phs_series_drop_nulls
     , phs_series_dtype
@@ -697,6 +698,9 @@ foreign import ccall unsafe "phs_series_append"
 
 foreign import ccall safe "phs_series_binary_op"
     phs_series_binary_op :: Ptr RawSeries -> Ptr RawSeries -> CInt -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_series_compare_op"
+    phs_series_compare_op :: Ptr RawSeries -> Ptr RawSeries -> CInt -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_series_sort"
     phs_series_sort :: Ptr RawSeries -> CBool -> CBool -> CBool -> CBool -> CBool -> Word64 -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt

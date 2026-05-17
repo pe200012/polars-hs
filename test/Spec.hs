@@ -2111,6 +2111,84 @@ main = hspec $ do
                 (_, Left err, _) -> expectationFailure (show err)
                 (_, _, Left err) -> expectationFailure (show err)
 
+        it "compares Series values into boolean masks" $ do
+            leftResult <- Pl.series @Int64 "left" (V.fromList [Just 1, Just 2, Nothing, Just 4])
+            rightResult <- Pl.series @Int64 "right" (V.fromList [Just 1, Just 3, Nothing, Just 2])
+            scalarResult <- Pl.series @Int64 "scalar" (V.singleton (Just 2))
+            textResult <- Pl.series @T.Text "text" (V.fromList [Just "a", Just "b", Nothing, Just "d"])
+            textScalarResult <- Pl.series @T.Text "text_scalar" (V.singleton (Just "b"))
+            shortResult <- Pl.series @Int64 "short" (V.fromList [Just 1, Just 2])
+            case (leftResult, rightResult, scalarResult, textResult, textScalarResult, shortResult) of
+                (Right left, Right right, Right scalar, Right textValues, Right textScalar, Right short) -> do
+                    equal <- Pl.seriesEqual left right
+                    notEqual <- Pl.seriesNotEqual left right
+                    equalMissing <- Pl.seriesEqualMissing left right
+                    notEqualMissing <- Pl.seriesNotEqualMissing left right
+                    greater <- Pl.seriesGreater left right
+                    greaterEqual <- Pl.seriesGreaterEqual left right
+                    less <- Pl.seriesLess left right
+                    lessEqual <- Pl.seriesLessEqual left right
+                    scalarGreater <- Pl.seriesGreater left scalar
+                    textLess <- Pl.seriesLess textValues textScalar
+                    textGreaterEqual <- Pl.seriesGreaterEqual textValues textScalar
+                    lengthMismatch <- Pl.seriesEqual left short
+                    dtypeMismatch <- Pl.seriesGreater left textScalar
+                    case
+                        ( equal
+                        , notEqual
+                        , equalMissing
+                        , notEqualMissing
+                        , greater
+                        , greaterEqual
+                        , less
+                        , lessEqual
+                        , scalarGreater
+                        , textLess
+                        , textGreaterEqual
+                        ) of
+                            ( Right equalOut
+                                , Right notEqualOut
+                                , Right equalMissingOut
+                                , Right notEqualMissingOut
+                                , Right greaterOut
+                                , Right greaterEqualOut
+                                , Right lessOut
+                                , Right lessEqualOut
+                                , Right scalarGreaterOut
+                                , Right textLessOut
+                                , Right textGreaterEqualOut
+                                ) -> do
+                                    Pl.seriesBool equalOut `shouldReturn` Right (V.fromList [Just True, Just False, Nothing, Just False])
+                                    Pl.seriesBool notEqualOut `shouldReturn` Right (V.fromList [Just False, Just True, Nothing, Just True])
+                                    Pl.seriesBool equalMissingOut `shouldReturn` Right (V.fromList [Just True, Just False, Just True, Just False])
+                                    Pl.seriesBool notEqualMissingOut `shouldReturn` Right (V.fromList [Just False, Just True, Just False, Just True])
+                                    Pl.seriesBool greaterOut `shouldReturn` Right (V.fromList [Just False, Just False, Nothing, Just True])
+                                    Pl.seriesBool greaterEqualOut `shouldReturn` Right (V.fromList [Just True, Just False, Nothing, Just True])
+                                    Pl.seriesBool lessOut `shouldReturn` Right (V.fromList [Just False, Just True, Nothing, Just False])
+                                    Pl.seriesBool lessEqualOut `shouldReturn` Right (V.fromList [Just True, Just True, Nothing, Just False])
+                                    Pl.seriesBool scalarGreaterOut `shouldReturn` Right (V.fromList [Just False, Just False, Nothing, Just True])
+                                    Pl.seriesBool textLessOut `shouldReturn` Right (V.fromList [Just True, Just False, Nothing, Just False])
+                                    Pl.seriesBool textGreaterEqualOut `shouldReturn` Right (V.fromList [Just False, Just True, Nothing, Just True])
+                                    expectPolarsFailure lengthMismatch
+                                    expectPolarsFailure dtypeMismatch
+                            (Left err, _, _, _, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                            (_, Left err, _, _, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                            (_, _, Left err, _, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                            (_, _, _, Left err, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                            (_, _, _, _, Left err, _, _, _, _, _, _) -> expectationFailure (show err)
+                            (_, _, _, _, _, Left err, _, _, _, _, _) -> expectationFailure (show err)
+                            (_, _, _, _, _, _, Left err, _, _, _, _) -> expectationFailure (show err)
+                            (_, _, _, _, _, _, _, Left err, _, _, _) -> expectationFailure (show err)
+                            (_, _, _, _, _, _, _, _, Left err, _, _) -> expectationFailure (show err)
+                            (_, _, _, _, _, _, _, _, _, Left err, _) -> expectationFailure (show err)
+                            (_, _, _, _, _, _, _, _, _, _, Left err) -> expectationFailure (show err)
+                (Left err, _, _, _, _, _) -> expectationFailure (show err)
+                (_, Left err, _, _, _, _) -> expectationFailure (show err)
+                (_, _, Left err, _, _, _) -> expectationFailure (show err)
+                (_, _, _, Left err, _, _) -> expectationFailure (show err)
+                (_, _, _, _, Left err, _) -> expectationFailure (show err)
+                (_, _, _, _, _, Left err) -> expectationFailure (show err)
+
         it "computes Series scalar statistics" $ do
             result <- Pl.readCsv valuesCsv
             case result of

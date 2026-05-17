@@ -313,6 +313,22 @@ fn series_binary_op_from_code(left: &Series, right: &Series, op: c_int) -> PhsRe
     }
 }
 
+fn series_compare_op_from_code(left: &Series, right: &Series, op: c_int) -> PhsResult<Series> {
+    match op {
+        0 => Ok(left.equal(right)?.into_series()),
+        1 => Ok(left.not_equal(right)?.into_series()),
+        2 => Ok(left.equal_missing(right)?.into_series()),
+        3 => Ok(left.not_equal_missing(right)?.into_series()),
+        4 => Ok(left.gt(right)?.into_series()),
+        5 => Ok(left.gt_eq(right)?.into_series()),
+        6 => Ok(left.lt(right)?.into_series()),
+        7 => Ok(left.lt_eq(right)?.into_series()),
+        _ => Err(PhsError::invalid_argument(format!(
+            "unknown series comparison opcode {op}"
+        ))),
+    }
+}
+
 fn series_stat_from_code(series: &Series, op: c_int, ddof: u8) -> PhsResult<Option<f64>> {
     match op {
         0 => Ok(series.mean()),
@@ -1350,6 +1366,24 @@ pub unsafe extern "C" fn phs_series_binary_op(
         let left = unsafe { series_ref(left) }?;
         let right = unsafe { series_ref(right) }?;
         *out = series_into_raw(series_binary_op_from_code(&left.value, &right.value, op)?);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_compare_op(
+    left: *const phs_series,
+    right: *const phs_series,
+    op: c_int,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let left = unsafe { series_ref(left) }?;
+        let right = unsafe { series_ref(right) }?;
+        *out = series_into_raw(series_compare_op_from_code(&left.value, &right.value, op)?);
         Ok(())
     })
 }
@@ -2704,6 +2738,128 @@ mod tests {
             phs_series_free(text);
             phs_series_free(text_lower);
             phs_series_free(text_upper);
+        }
+    }
+
+    #[test]
+    fn series_compare_ops_return_boolean_masks() {
+        let left = series_into_raw(Series::new(
+            "left".into(),
+            &[Some(1_i64), Some(2), None, Some(4)],
+        ));
+        let right = series_into_raw(Series::new(
+            "right".into(),
+            &[Some(1_i64), Some(3), None, Some(2)],
+        ));
+        let scalar = series_into_raw(Series::new("scalar".into(), &[2_i64]));
+        let text = series_into_raw(Series::new(
+            "text".into(),
+            &[Some("a"), Some("b"), None, Some("d")],
+        ));
+        let text_scalar = series_into_raw(Series::new("text_scalar".into(), ["b"]));
+        let short = series_into_raw(Series::new("short".into(), &[1_i64, 2]));
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_series_compare_op(left, right, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_bool_values(out) },
+            vec![Some(true), Some(false), None, Some(false)]
+        );
+
+        let status = unsafe { phs_series_compare_op(left, right, 1, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_bool_values(out) },
+            vec![Some(false), Some(true), None, Some(true)]
+        );
+
+        let status = unsafe { phs_series_compare_op(left, right, 2, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_bool_values(out) },
+            vec![Some(true), Some(false), Some(true), Some(false)]
+        );
+
+        let status = unsafe { phs_series_compare_op(left, right, 3, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_bool_values(out) },
+            vec![Some(false), Some(true), Some(false), Some(true)]
+        );
+
+        let status = unsafe { phs_series_compare_op(left, right, 4, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_bool_values(out) },
+            vec![Some(false), Some(false), None, Some(true)]
+        );
+
+        let status = unsafe { phs_series_compare_op(left, right, 5, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_bool_values(out) },
+            vec![Some(true), Some(false), None, Some(true)]
+        );
+
+        let status = unsafe { phs_series_compare_op(left, right, 6, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_bool_values(out) },
+            vec![Some(false), Some(true), None, Some(false)]
+        );
+
+        let status = unsafe { phs_series_compare_op(left, right, 7, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_bool_values(out) },
+            vec![Some(true), Some(true), None, Some(false)]
+        );
+
+        let status = unsafe { phs_series_compare_op(left, scalar, 4, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_bool_values(out) },
+            vec![Some(false), Some(false), None, Some(true)]
+        );
+
+        let status = unsafe { phs_series_compare_op(text, text_scalar, 6, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_bool_values(out) },
+            vec![Some(true), Some(false), None, Some(false)]
+        );
+
+        let status = unsafe { phs_series_compare_op(text, text_scalar, 5, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_bool_values(out) },
+            vec![Some(false), Some(true), None, Some(true)]
+        );
+
+        let status = unsafe { phs_series_compare_op(left, short, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_POLARS_ERROR);
+        unsafe { take_error_message(err) };
+
+        let status = unsafe { phs_series_compare_op(left, text_scalar, 4, &mut out, &mut err) };
+        assert_eq!(status, PHS_POLARS_ERROR);
+        unsafe { take_error_message(err) };
+
+        let status = unsafe { phs_series_compare_op(left, right, 99, &mut out, &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        assert_eq!(
+            unsafe { take_error_message(err) },
+            "unknown series comparison opcode 99"
+        );
+
+        unsafe {
+            phs_series_free(left);
+            phs_series_free(right);
+            phs_series_free(scalar);
+            phs_series_free(text);
+            phs_series_free(text_scalar);
+            phs_series_free(short);
         }
     }
 
