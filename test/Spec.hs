@@ -2535,6 +2535,125 @@ main = hspec $ do
                 (_, _, _, _, Left err, _) -> expectationFailure (show err)
                 (_, _, _, _, _, Left err) -> expectationFailure (show err)
 
+        it "searches sorted Series insertion indexes" $ do
+            sortedResult <- Pl.series @Int64 "value" (V.fromList [Just 1, Just 2, Just 2, Just 4])
+            needlesResult <- Pl.series @Int64 "value" (V.fromList [Just 0, Just 2, Just 3, Just 5])
+            descendingSortedResult <- Pl.series @Int64 "value" (V.fromList [Just 4, Just 2, Just 2, Just 1])
+            descendingNeedlesResult <- Pl.series @Int64 "value" (V.fromList [Just 5, Just 2, Just 0])
+            textSortedResult <- Pl.series @T.Text "text" (V.fromList [Just "a", Just "b", Just "b", Just "z"])
+            textNeedlesResult <- Pl.series @T.Text "text" (V.fromList [Just "b", Just "c"])
+            nullsFirstResult <- Pl.series @Int64 "value" (V.fromList [Nothing, Nothing, Just 1, Just 3])
+            nullsLastResult <- Pl.series @Int64 "value" (V.fromList [Just 1, Just 3, Nothing, Nothing])
+            nullNeedlesResult <- Pl.series @Int64 "value" (V.fromList [Nothing, Just 0, Just 3, Just 4])
+            emptyResult <- Pl.series @Int64 "value" V.empty
+            mismatchNeedlesResult <- Pl.series @Double "value" (V.fromList [Just 1.0, Just 2.0])
+            case
+                ( sortedResult
+                , needlesResult
+                , descendingSortedResult
+                , descendingNeedlesResult
+                , textSortedResult
+                , textNeedlesResult
+                , nullsFirstResult
+                , nullsLastResult
+                , nullNeedlesResult
+                , emptyResult
+                , mismatchNeedlesResult
+                ) of
+                ( Right sorted
+                    , Right needles
+                    , Right descendingSorted
+                    , Right descendingNeedles
+                    , Right textSorted
+                    , Right textNeedles
+                    , Right nullsFirst
+                    , Right nullsLast
+                    , Right nullNeedles
+                    , Right empty
+                    , Right mismatchNeedles
+                    ) -> do
+                        left <- Pl.seriesSearchSorted Pl.SearchSortedLeft False sorted needles
+                        right <- Pl.seriesSearchSorted Pl.SearchSortedRight False sorted needles
+                        anySide <- Pl.seriesSearchSorted Pl.SearchSortedAny False sorted needles
+                        descendingLeft <- Pl.seriesSearchSorted Pl.SearchSortedLeft True descendingSorted descendingNeedles
+                        descendingRight <- Pl.seriesSearchSorted Pl.SearchSortedRight True descendingSorted descendingNeedles
+                        textLeft <- Pl.seriesSearchSorted Pl.SearchSortedLeft False textSorted textNeedles
+                        textRight <- Pl.seriesSearchSorted Pl.SearchSortedRight False textSorted textNeedles
+                        nullsFirstLeft <- Pl.seriesSearchSorted Pl.SearchSortedLeft False nullsFirst nullNeedles
+                        nullsFirstRight <- Pl.seriesSearchSorted Pl.SearchSortedRight False nullsFirst nullNeedles
+                        nullsLastLeft <- Pl.seriesSearchSorted Pl.SearchSortedLeft False nullsLast nullNeedles
+                        nullsLastRight <- Pl.seriesSearchSorted Pl.SearchSortedRight False nullsLast nullNeedles
+                        emptyIndexes <- Pl.seriesSearchSorted Pl.SearchSortedLeft False empty needles
+                        mismatch <- Pl.seriesSearchSorted Pl.SearchSortedLeft False sorted mismatchNeedles
+                        case
+                            ( left
+                            , right
+                            , anySide
+                            , descendingLeft
+                            , descendingRight
+                            , textLeft
+                            , textRight
+                            , nullsFirstLeft
+                            , nullsFirstRight
+                            , nullsLastLeft
+                            , nullsLastRight
+                            , emptyIndexes
+                            ) of
+                            ( Right leftOut
+                                , Right rightOut
+                                , Right anyOut
+                                , Right descendingLeftOut
+                                , Right descendingRightOut
+                                , Right textLeftOut
+                                , Right textRightOut
+                                , Right nullsFirstLeftOut
+                                , Right nullsFirstRightOut
+                                , Right nullsLastLeftOut
+                                , Right nullsLastRightOut
+                                , Right emptyOut
+                                ) -> do
+                                    Pl.seriesDataType leftOut `shouldReturn` Right Pl.UInt32
+                                    Pl.seriesWord32 leftOut `shouldReturn` Right (V.fromList [Just 0, Just 1, Just 3, Just 4])
+                                    Pl.seriesWord32 rightOut `shouldReturn` Right (V.fromList [Just 0, Just 3, Just 3, Just 4])
+                                    Pl.seriesWord32 anyOut `shouldReturn` Right (V.fromList [Just 0, Just 1, Just 3, Just 4])
+                                    Pl.seriesWord32 descendingLeftOut `shouldReturn` Right (V.fromList [Just 0, Just 1, Just 4])
+                                    Pl.seriesWord32 descendingRightOut `shouldReturn` Right (V.fromList [Just 0, Just 3, Just 4])
+                                    Pl.seriesWord32 textLeftOut `shouldReturn` Right (V.fromList [Just 1, Just 3])
+                                    Pl.seriesWord32 textRightOut `shouldReturn` Right (V.fromList [Just 3, Just 3])
+                                    Pl.seriesWord32 nullsFirstLeftOut `shouldReturn` Right (V.fromList [Just 0, Just 2, Just 3, Just 4])
+                                    Pl.seriesWord32 nullsFirstRightOut `shouldReturn` Right (V.fromList [Just 2, Just 2, Just 4, Just 4])
+                                    Pl.seriesWord32 nullsLastLeftOut `shouldReturn` Right (V.fromList [Just 2, Just 0, Just 1, Just 2])
+                                    Pl.seriesWord32 nullsLastRightOut `shouldReturn` Right (V.fromList [Just 4, Just 0, Just 2, Just 2])
+                                    Pl.seriesWord32 emptyOut `shouldReturn` Right (V.fromList [Just 0, Just 0, Just 0, Just 0])
+                                    case mismatch of
+                                        Left err -> do
+                                            Pl.polarsErrorCode err `shouldBe` Pl.PolarsFailure
+                                            Pl.polarsErrorMessage err `shouldSatisfy` T.isInfixOf "search_sorted"
+                                        Right _ -> expectationFailure "expected PolarsFailure for dtype mismatch"
+                            (Left err, _, _, _, _, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                            (_, Left err, _, _, _, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                            (_, _, Left err, _, _, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                            (_, _, _, Left err, _, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                            (_, _, _, _, Left err, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                            (_, _, _, _, _, Left err, _, _, _, _, _, _) -> expectationFailure (show err)
+                            (_, _, _, _, _, _, Left err, _, _, _, _, _) -> expectationFailure (show err)
+                            (_, _, _, _, _, _, _, Left err, _, _, _, _) -> expectationFailure (show err)
+                            (_, _, _, _, _, _, _, _, Left err, _, _, _) -> expectationFailure (show err)
+                            (_, _, _, _, _, _, _, _, _, Left err, _, _) -> expectationFailure (show err)
+                            (_, _, _, _, _, _, _, _, _, _, Left err, _) -> expectationFailure (show err)
+                            (_, _, _, _, _, _, _, _, _, _, _, Left err) -> expectationFailure (show err)
+                (Left err, _, _, _, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                (_, Left err, _, _, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                (_, _, Left err, _, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                (_, _, _, Left err, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                (_, _, _, _, Left err, _, _, _, _, _, _) -> expectationFailure (show err)
+                (_, _, _, _, _, Left err, _, _, _, _, _) -> expectationFailure (show err)
+                (_, _, _, _, _, _, Left err, _, _, _, _) -> expectationFailure (show err)
+                (_, _, _, _, _, _, _, Left err, _, _, _) -> expectationFailure (show err)
+                (_, _, _, _, _, _, _, _, Left err, _, _) -> expectationFailure (show err)
+                (_, _, _, _, _, _, _, _, _, Left err, _) -> expectationFailure (show err)
+                (_, _, _, _, _, _, _, _, _, _, Left err) -> expectationFailure (show err)
+
         it "computes Series value counts as a DataFrame" $ do
             colorResult <- Pl.series @T.Text "color" (V.fromList [Just "blue", Just "red", Just "blue", Just "green", Just "blue", Just "red"])
             emptyResult <- Pl.series @T.Text "color" V.empty

@@ -183,6 +183,7 @@ module Polars.Internal.Raw
     , phs_series_reverse
     , phs_series_null_count
     , phs_series_round
+    , phs_series_search_sorted
     , phs_series_shift
     , phs_series_slice
     , phs_series_sort
@@ -683,6 +684,9 @@ foreign import ccall unsafe "phs_series_cast"
 
 foreign import ccall safe "phs_series_pct_change"
     phs_series_pct_change :: Ptr RawSeries -> CLLong -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_series_search_sorted"
+    phs_series_search_sorted :: Ptr RawSeries -> Ptr RawSeries -> CInt -> CBool -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_series_shift"
     phs_series_shift :: Ptr RawSeries -> CLLong -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt

@@ -15,8 +15,10 @@ use polars_ops::series::{
     pct_change as polars_series_pct_change,
     RoundMode,
     RoundSeries,
+    search_sorted as polars_series_search_sorted,
     SeriesMethods,
     SeriesRank,
+    SearchSortedSide as PolarsSearchSortedSide,
     unique_counts as polars_series_unique_counts,
 };
 use polars_ops::chunked_array::mode::mode as polars_series_mode;
@@ -238,6 +240,17 @@ fn rank_method_from_code(code: c_int) -> PhsResult<RankMethod> {
         4 => Ok(RankMethod::Ordinal),
         value => Err(PhsError::invalid_argument(format!(
             "unknown rank method code {value}"
+        ))),
+    }
+}
+
+fn search_sorted_side_from_code(code: c_int) -> PhsResult<PolarsSearchSortedSide> {
+    match code {
+        0 => Ok(PolarsSearchSortedSide::Any),
+        1 => Ok(PolarsSearchSortedSide::Left),
+        2 => Ok(PolarsSearchSortedSide::Right),
+        value => Err(PhsError::invalid_argument(format!(
+            "unknown search sorted side code {value}"
         ))),
     }
 }
@@ -793,6 +806,32 @@ pub unsafe extern "C" fn phs_series_pct_change(
     series_transform(series, out, err, |value| {
         let periods = Series::new(PlSmallStr::EMPTY, [periods]);
         Ok(polars_series_pct_change(value, &periods)?)
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_search_sorted(
+    series: *const phs_series,
+    search_values: *const phs_series,
+    side: c_int,
+    descending: bool,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let series_handle = unsafe { series_ref(series) }?;
+        let search_values_handle = unsafe { series_ref(search_values) }?;
+        let side = search_sorted_side_from_code(side)?;
+        let indexes = polars_series_search_sorted(
+            &series_handle.value,
+            &search_values_handle.value,
+            side,
+            descending,
+        )?;
+        *out = series_into_raw(indexes.into_series());
+        Ok(())
     })
 }
 
@@ -2448,6 +2487,95 @@ mod tests {
             phs_series_free(floats);
             phs_series_free(text);
             phs_series_free(invalid_text);
+        }
+    }
+
+    #[test]
+    fn series_search_sorted_returns_insertion_indexes() {
+        let sorted = series_into_raw(Series::new("value".into(), &[1_i64, 2, 2, 4]));
+        let needles = series_into_raw(Series::new("value".into(), &[0_i64, 2, 3, 5]));
+        let descending_sorted = series_into_raw(Series::new("value".into(), &[9_i64, 7, 7, 3]));
+        let descending_needles = series_into_raw(Series::new("value".into(), &[8_i64, 7, 2, 10]));
+        let text_sorted = series_into_raw(Series::new("text".into(), ["a", "b", "b", "d"]));
+        let text_needles = series_into_raw(Series::new("text".into(), ["b", "c"]));
+        let nullable_sorted = series_into_raw(Series::new(
+            "value".into(),
+            &[None, None, Some(1_i64), Some(3)],
+        ));
+        let nullable_needles = series_into_raw(Series::new("value".into(), &[None, Some(2_i64)]));
+        let empty_sorted = series_into_raw(Series::new("value".into(), Vec::<i64>::new()));
+        let mismatch_needles = series_into_raw(Series::new("value".into(), ["1", "2"]));
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_series_search_sorted(sorted, needles, 1, false, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_u32_values(out) },
+            vec![Some(0), Some(1), Some(3), Some(4)]
+        );
+
+        let status = unsafe { phs_series_search_sorted(sorted, needles, 2, false, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_u32_values(out) },
+            vec![Some(0), Some(3), Some(3), Some(4)]
+        );
+
+        let status = unsafe { phs_series_search_sorted(sorted, needles, 0, false, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_u32_values(out) },
+            vec![Some(0), Some(1), Some(3), Some(4)]
+        );
+
+        let status = unsafe {
+            phs_series_search_sorted(descending_sorted, descending_needles, 2, true, &mut out, &mut err)
+        };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_u32_values(out) },
+            vec![Some(1), Some(3), Some(4), Some(0)]
+        );
+
+        let status = unsafe { phs_series_search_sorted(text_sorted, text_needles, 1, false, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_u32_values(out) }, vec![Some(1), Some(3)]);
+
+        let status =
+            unsafe { phs_series_search_sorted(nullable_sorted, nullable_needles, 1, false, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_u32_values(out) }, vec![Some(0), Some(3)]);
+
+        let status = unsafe { phs_series_search_sorted(empty_sorted, needles, 1, false, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_u32_values(out) },
+            vec![Some(0), Some(0), Some(0), Some(0)]
+        );
+
+        let status = unsafe { phs_series_search_sorted(sorted, mismatch_needles, 1, false, &mut out, &mut err) };
+        assert_eq!(status, PHS_POLARS_ERROR);
+        assert!(unsafe { take_error_message(err) }.contains("search_sorted"));
+
+        let status = unsafe { phs_series_search_sorted(sorted, needles, 99, false, &mut out, &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        assert_eq!(
+            unsafe { take_error_message(err) },
+            "unknown search sorted side code 99"
+        );
+
+        unsafe {
+            phs_series_free(sorted);
+            phs_series_free(needles);
+            phs_series_free(descending_sorted);
+            phs_series_free(descending_needles);
+            phs_series_free(text_sorted);
+            phs_series_free(text_needles);
+            phs_series_free(nullable_sorted);
+            phs_series_free(nullable_needles);
+            phs_series_free(empty_sorted);
+            phs_series_free(mismatch_needles);
         }
     }
 

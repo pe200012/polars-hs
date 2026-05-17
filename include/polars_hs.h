@@ -846,6 +846,13 @@ int phs_series_pct_change(const struct phs_series *series,
                           struct phs_series **out,
                           struct phs_error **err);
 
+int phs_series_search_sorted(const struct phs_series *series,
+                             const struct phs_series *search_values,
+                             int side,
+                             bool descending,
+                             struct phs_series **out,
+                             struct phs_error **err);
+
 int phs_series_head(const struct phs_series *series,
                     uint64_t n,
                     struct phs_series **out,

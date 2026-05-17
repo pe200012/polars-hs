@@ -20,6 +20,7 @@ module Polars.Series
     , SeriesInterpolationMethod (..)
     , SeriesModeOptions (..)
     , SeriesRoundMode (..)
+    , SearchSortedSide (..)
     , SeriesSortOptions (..)
     , SeriesValueCountsOptions (..)
     , defaultSeriesModeOptions
@@ -72,6 +73,7 @@ module Polars.Series
     , seriesReverse
     , seriesRem
     , seriesRound
+    , seriesSearchSorted
     , seriesShift
     , seriesSlice
     , seriesSort
@@ -192,6 +194,7 @@ import Polars.Internal.Raw
     , phs_series_rename
     , phs_series_reverse
     , phs_series_round
+    , phs_series_search_sorted
     , phs_series_shift
     , phs_series_slice
     , phs_series_sort
@@ -238,6 +241,13 @@ defaultSeriesSortOptions =
         , seriesSortMaintainOrder = False
         , seriesSortLimit = Nothing
         }
+
+-- | Side selection for eager Series sorted insertion indexes.
+data SearchSortedSide
+    = SearchSortedAny
+    | SearchSortedLeft
+    | SearchSortedRight
+    deriving stock (Eq, Show)
 
 -- | Controls eager Series mode calculation.
 newtype SeriesModeOptions = SeriesModeOptions
@@ -469,6 +479,22 @@ seriesZipWith mask trueValues falseValues =
         withSeries trueValues $ \truePtr ->
             withSeries falseValues $ \falsePtr ->
                 seriesOut (phs_series_zip_with maskPtr truePtr falsePtr)
+
+-- | Return insertion indexes for search values in a sorted Series.
+--
+-- The first Series is treated as sorted according to the descending flag.
+-- Current non-bigidx builds return index values as a UInt32 Series.
+seriesSearchSorted :: SearchSortedSide -> Bool -> Series -> Series -> IO (Either PolarsError Series)
+seriesSearchSorted side descending sorted searchValues =
+    withSeries sorted $ \sortedPtr ->
+        withSeries searchValues $ \searchPtr ->
+            seriesOut
+                ( phs_series_search_sorted
+                    sortedPtr
+                    searchPtr
+                    (searchSortedSideCode side)
+                    (toCBool descending)
+                )
 
 -- | Count unique Series values into a two-column DataFrame.
 seriesValueCounts :: SeriesValueCountsOptions -> Series -> IO (Either PolarsError DataFrame)
@@ -731,6 +757,11 @@ seriesRoundModeCode RoundHalfAwayFromZero = 1
 seriesDiffNullBehaviorCode :: SeriesDiffNullBehavior -> CInt
 seriesDiffNullBehaviorCode SeriesDiffIgnore = 0
 seriesDiffNullBehaviorCode SeriesDiffDrop = 1
+
+searchSortedSideCode :: SearchSortedSide -> CInt
+searchSortedSideCode SearchSortedAny = 0
+searchSortedSideCode SearchSortedLeft = 1
+searchSortedSideCode SearchSortedRight = 2
 
 seriesInterpolationMethodCode :: SeriesInterpolationMethod -> CInt
 seriesInterpolationMethodCode SeriesInterpolateLinear = 0
