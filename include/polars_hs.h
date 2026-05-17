@@ -824,6 +824,11 @@ int phs_series_value_counts(const struct phs_series *series,
                             struct phs_dataframe **out,
                             struct phs_error **err);
 
+int phs_series_mode(const struct phs_series *series,
+                    bool maintain_order,
+                    struct phs_series **out,
+                    struct phs_error **err);
+
 int phs_series_head(const struct phs_series *series,
                     uint64_t n,
                     struct phs_series **out,

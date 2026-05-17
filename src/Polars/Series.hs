@@ -18,9 +18,11 @@ module Polars.Series
     , SeriesDiffNullBehavior (..)
     , SeriesFrom (..)
     , SeriesInterpolationMethod (..)
+    , SeriesModeOptions (..)
     , SeriesRoundMode (..)
     , SeriesSortOptions (..)
     , SeriesValueCountsOptions (..)
+    , defaultSeriesModeOptions
     , defaultSeriesSortOptions
     , defaultSeriesValueCountsOptions
     , seriesAbs
@@ -60,6 +62,7 @@ module Polars.Series
     , seriesMean
     , seriesMedian
     , seriesMin
+    , seriesMode
     , seriesMul
     , seriesName
     , seriesNUnique
@@ -165,6 +168,7 @@ import Polars.Internal.Raw
     , phs_series_is_null
     , phs_series_is_unique
     , phs_series_len
+    , phs_series_mode
     , phs_series_name
     , phs_series_n_unique
     , phs_series_new_bool
@@ -227,6 +231,18 @@ defaultSeriesSortOptions =
         , seriesSortMultithreaded = True
         , seriesSortMaintainOrder = False
         , seriesSortLimit = Nothing
+        }
+
+-- | Controls eager Series mode calculation.
+newtype SeriesModeOptions = SeriesModeOptions
+    { seriesModeMaintainOrder :: Bool
+    }
+    deriving stock (Eq, Show)
+
+defaultSeriesModeOptions :: SeriesModeOptions
+defaultSeriesModeOptions =
+    SeriesModeOptions
+        { seriesModeMaintainOrder = False
         }
 
 -- | Controls eager Series frequency-table construction.
@@ -422,6 +438,11 @@ seriesRank :: RankOptions -> Series -> IO (Either PolarsError Series)
 seriesRank options input =
     withSeries input $ \ptr ->
         seriesOut (phs_series_rank ptr (rankMethodCode (rankMethod options)) (toCBool (rankDescending options)))
+
+seriesMode :: SeriesModeOptions -> Series -> IO (Either PolarsError Series)
+seriesMode options input =
+    withSeries input $ \ptr ->
+        seriesOut (phs_series_mode ptr (toCBool (seriesModeMaintainOrder options)))
 
 -- | Count unique Series values into a two-column DataFrame.
 seriesValueCounts :: SeriesValueCountsOptions -> Series -> IO (Either PolarsError DataFrame)

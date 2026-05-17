@@ -2342,6 +2342,37 @@ main = hspec $ do
                 (_, _, _, Left err, _) -> expectationFailure (show err)
                 (_, _, _, _, Left err) -> expectationFailure (show err)
 
+        it "returns Series mode values with maintained tie order" $ do
+            numericResult <- Pl.series @Int64 "value" (V.fromList [Just 1, Just 2, Just 2, Just 3, Just 3])
+            textResult <- Pl.series @T.Text "text" (V.fromList [Just "a", Just "b", Just "a", Just "c"])
+            nullResult <- Pl.series @Int64 "nullable" (V.fromList [Nothing, Just 1, Nothing, Just 2])
+            emptyResult <- Pl.series @Int64 "empty" V.empty
+            case (numericResult, textResult, nullResult, emptyResult) of
+                (Right numeric, Right textSeries, Right nullSeries, Right empty) -> do
+                    let orderedOptions =
+                            Pl.defaultSeriesModeOptions
+                                { Pl.seriesModeMaintainOrder = True
+                                }
+                    numericMode <- Pl.seriesMode orderedOptions numeric
+                    textMode <- Pl.seriesMode orderedOptions textSeries
+                    nullMode <- Pl.seriesMode orderedOptions nullSeries
+                    emptyMode <- Pl.seriesMode orderedOptions empty
+                    case (numericMode, textMode, nullMode, emptyMode) of
+                        (Right numericOut, Right textOut, Right nullOut, Right emptyOut) -> do
+                            Pl.seriesInt64 numericOut `shouldReturn` Right (V.fromList [Just 2, Just 3])
+                            Pl.seriesText textOut `shouldReturn` Right (V.fromList [Just "a"])
+                            Pl.seriesInt64 nullOut `shouldReturn` Right (V.fromList [Nothing])
+                            Pl.seriesDataType emptyOut `shouldReturn` Right Pl.Int64
+                            Pl.seriesInt64 emptyOut `shouldReturn` Right V.empty
+                        (Left err, _, _, _) -> expectationFailure (show err)
+                        (_, Left err, _, _) -> expectationFailure (show err)
+                        (_, _, Left err, _) -> expectationFailure (show err)
+                        (_, _, _, Left err) -> expectationFailure (show err)
+                (Left err, _, _, _) -> expectationFailure (show err)
+                (_, Left err, _, _) -> expectationFailure (show err)
+                (_, _, Left err, _) -> expectationFailure (show err)
+                (_, _, _, Left err) -> expectationFailure (show err)
+
         it "computes Series value counts as a DataFrame" $ do
             colorResult <- Pl.series @T.Text "color" (V.fromList [Just "blue", Just "red", Just "blue", Just "green", Just "blue", Just "red"])
             emptyResult <- Pl.series @T.Text "color" V.empty

@@ -161,6 +161,7 @@ module Polars.Internal.Raw
     , phs_series_is_null
     , phs_series_is_unique
     , phs_series_len
+    , phs_series_mode
     , phs_series_name
     , phs_series_n_unique
     , phs_series_new_bool
@@ -718,6 +719,9 @@ foreign import ccall unsafe "phs_series_null_count"
 
 foreign import ccall safe "phs_series_n_unique"
     phs_series_n_unique :: Ptr RawSeries -> Ptr Word64 -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_series_mode"
+    phs_series_mode :: Ptr RawSeries -> CBool -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall safe "phs_series_value_counts"
     phs_series_value_counts :: Ptr RawSeries -> CBool -> CBool -> CString -> CBool -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt

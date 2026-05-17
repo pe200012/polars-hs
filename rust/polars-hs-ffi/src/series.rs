@@ -18,6 +18,7 @@ use polars_ops::series::{
     SeriesRank,
     unique_counts as polars_series_unique_counts,
 };
+use polars_ops::chunked_array::mode::mode as polars_series_mode;
 
 use crate::bytes::{bytes_into_raw, phs_bytes};
 use crate::error::{PhsError, PhsResult, c_str_to_str, ffi_boundary, phs_error, required_mut};
@@ -724,6 +725,18 @@ pub unsafe extern "C" fn phs_series_value_counts(
         let name = unsafe { c_str_to_str(name, "name") }?;
         *out = dataframe_into_raw(handle.value.value_counts(sort, parallel, name.into(), normalize)?);
         Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_mode(
+    series: *const phs_series,
+    maintain_order: bool,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| {
+        Ok(polars_series_mode(value, maintain_order)?)
     })
 }
 
@@ -2085,6 +2098,46 @@ mod tests {
             phs_series_free(text);
             phs_series_free(flag);
             phs_series_free(all_null);
+            phs_series_free(empty);
+        }
+    }
+
+    #[test]
+    fn series_mode_returns_most_frequent_values() {
+        let values = series_into_raw(Series::new(
+            "value".into(),
+            &[Some(1_i64), Some(2), Some(2), Some(3), Some(3)],
+        ));
+        let text = series_into_raw(Series::new("text".into(), &[Some("a"), Some("b"), Some("a"), Some("c")]));
+        let nullable = series_into_raw(Series::new("nullable".into(), &[None, Some(1_i64), None, Some(2)]));
+        let empty = series_into_raw(Series::new("empty".into(), Vec::<Option<i64>>::new()));
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_series_mode(values, true, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_i64_values(out) }, vec![Some(2), Some(3)]);
+
+        let status = unsafe { phs_series_mode(text, true, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { series_ref(out) }.unwrap().value.str().unwrap().into_iter().collect::<Vec<_>>(),
+            vec![Some("a")]
+        );
+        unsafe { phs_series_free(out) };
+
+        let status = unsafe { phs_series_mode(nullable, true, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_i64_values(out) }, vec![None]);
+
+        let status = unsafe { phs_series_mode(empty, true, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_i64_values(out) }, Vec::<Option<i64>>::new());
+
+        unsafe {
+            phs_series_free(values);
+            phs_series_free(text);
+            phs_series_free(nullable);
             phs_series_free(empty);
         }
     }
