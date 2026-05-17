@@ -2446,6 +2446,35 @@ main = hspec $ do
                     (_, _, _, _, _, _, _, _, _, _, Left err, _) -> expectationFailure (show err)
                     (_, _, _, _, _, _, _, _, _, _, _, Left err) -> expectationFailure (show err)
 
+        it "gathers every nth Series value with an offset" $ do
+            numericResult <- Pl.series @Int64 "value" (V.fromList [Just 0, Just 1, Just 2, Just 3, Just 4])
+            textResult <- Pl.series @T.Text "text" (V.fromList [Just "a", Nothing, Just "c", Just "d", Just "e"])
+            case (numericResult, textResult) of
+                (Right numeric, Right textSeries) -> do
+                    evens <- Pl.seriesGatherEvery 2 0 numeric
+                    offsetValues <- Pl.seriesGatherEvery 2 1 textSeries
+                    largeStep <- Pl.seriesGatherEvery 10 0 numeric
+                    emptyOffset <- Pl.seriesGatherEvery 2 5 textSeries
+                    zeroStep <- Pl.seriesGatherEvery 0 0 numeric
+                    negativeStep <- Pl.seriesGatherEvery (-1) 0 numeric
+                    negativeOffset <- Pl.seriesGatherEvery 2 (-1) numeric
+                    case (evens, offsetValues, largeStep, emptyOffset) of
+                        (Right evensOut, Right offsetOut, Right largeStepOut, Right emptyOffsetOut) -> do
+                            Pl.seriesInt64 evensOut `shouldReturn` Right (V.fromList [Just 0, Just 2, Just 4])
+                            Pl.seriesText offsetOut `shouldReturn` Right (V.fromList [Nothing, Just "d"])
+                            Pl.seriesInt64 largeStepOut `shouldReturn` Right (V.fromList [Just 0])
+                            Pl.seriesDataType emptyOffsetOut `shouldReturn` Right Pl.Utf8
+                            Pl.seriesText emptyOffsetOut `shouldReturn` Right V.empty
+                            expectInvalidArgumentMessage "seriesGatherEvery step must be positive" zeroStep
+                            expectInvalidArgumentMessage "seriesGatherEvery step must be positive" negativeStep
+                            expectInvalidArgumentMessage "seriesGatherEvery offset must be non-negative" negativeOffset
+                        (Left err, _, _, _) -> expectationFailure (show err)
+                        (_, Left err, _, _) -> expectationFailure (show err)
+                        (_, _, Left err, _) -> expectationFailure (show err)
+                        (_, _, _, Left err) -> expectationFailure (show err)
+                (Left err, _) -> expectationFailure (show err)
+                (_, Left err) -> expectationFailure (show err)
+
         it "computes Series value counts as a DataFrame" $ do
             colorResult <- Pl.series @T.Text "color" (V.fromList [Just "blue", Just "red", Just "blue", Just "green", Just "blue", Just "red"])
             emptyResult <- Pl.series @T.Text "color" V.empty

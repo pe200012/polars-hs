@@ -761,6 +761,28 @@ pub unsafe extern "C" fn phs_series_zip_with(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_gather_every(
+    series: *const phs_series,
+    step: u64,
+    offset: u64,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| {
+        if step == 0 {
+            return Err(PhsError::invalid_argument(
+                "series gather every step must be positive",
+            ));
+        }
+        let step = usize_from_u64(step, "series gather every step")?;
+        let offset_idx = idx_size_from_u64(offset, "series gather every offset")?;
+        let offset = usize::try_from(offset_idx)
+            .map_err(|_| PhsError::invalid_argument("series gather every offset exceeded usize"))?;
+        Ok(value.gather_every(step, offset)?)
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_series_head(
     series: *const phs_series,
     n: u64,
@@ -2273,6 +2295,68 @@ mod tests {
             phs_series_free(text_false);
             phs_series_free(short_mask);
             phs_series_free(non_bool_mask);
+        }
+    }
+
+    #[test]
+    fn series_gather_every_returns_strided_values() {
+        let numeric = series_into_raw(Series::new(
+            "value".into(),
+            &[0_i64, 1, 2, 3, 4],
+        ));
+        let text = series_into_raw(Series::new(
+            "text".into(),
+            &[Some("a"), None, Some("c"), Some("d"), Some("e")],
+        ));
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_series_gather_every(numeric, 2, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_i64_values(out) }, vec![Some(0), Some(2), Some(4)]);
+
+        let status = unsafe { phs_series_gather_every(text, 2, 1, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { series_ref(out) }
+                .unwrap()
+                .value
+                .str()
+                .unwrap()
+                .into_iter()
+                .collect::<Vec<_>>(),
+            vec![None, Some("d")]
+        );
+        unsafe { phs_series_free(out) };
+
+        let status = unsafe { phs_series_gather_every(numeric, 10, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_i64_values(out) }, vec![Some(0)]);
+
+        let status = unsafe { phs_series_gather_every(text, 2, 5, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { series_ref(out) }
+                .unwrap()
+                .value
+                .str()
+                .unwrap()
+                .into_iter()
+                .collect::<Vec<_>>(),
+            Vec::<Option<&str>>::new()
+        );
+        unsafe { phs_series_free(out) };
+
+        let status = unsafe { phs_series_gather_every(numeric, 0, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        assert_eq!(
+            unsafe { take_error_message(err) },
+            "series gather every step must be positive"
+        );
+
+        unsafe {
+            phs_series_free(numeric);
+            phs_series_free(text);
         }
     }
 

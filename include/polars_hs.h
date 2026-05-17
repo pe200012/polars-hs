@@ -835,6 +835,12 @@ int phs_series_zip_with(const struct phs_series *mask,
                         struct phs_series **out,
                         struct phs_error **err);
 
+int phs_series_gather_every(const struct phs_series *series,
+                            uint64_t step,
+                            uint64_t offset,
+                            struct phs_series **out,
+                            struct phs_error **err);
+
 int phs_series_head(const struct phs_series *series,
                     uint64_t n,
                     struct phs_series **out,

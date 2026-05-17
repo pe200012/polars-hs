@@ -148,6 +148,7 @@ module Polars.Internal.Raw
     , phs_series_fill_null
     , phs_series_floor
     , phs_series_free_finalizer
+    , phs_series_gather_every
     , phs_series_head
     , phs_series_interpolate
     , phs_series_is_duplicated
@@ -669,6 +670,9 @@ foreign import ccall unsafe "phs_series_name"
 
 foreign import ccall unsafe "phs_series_dtype"
     phs_series_dtype :: Ptr RawSeries -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_series_gather_every"
+    phs_series_gather_every :: Ptr RawSeries -> Word64 -> Word64 -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_series_rename"
     phs_series_rename :: Ptr RawSeries -> CString -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt

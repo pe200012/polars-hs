@@ -40,6 +40,7 @@ module Polars.Series
     , seriesFloat
     , seriesFloor
     , seriesHead
+    , seriesGatherEvery
     , seriesInt8
     , seriesInt16
     , seriesInt32
@@ -156,6 +157,7 @@ import Polars.Internal.Raw
     , phs_series_filter
     , phs_series_fill_null
     , phs_series_floor
+    , phs_series_gather_every
     , phs_series_head
     , phs_series_interpolate
     , phs_series_is_duplicated
@@ -386,6 +388,16 @@ seriesSlice :: Int -> Int -> Series -> IO (Either PolarsError Series)
 seriesSlice offset len input
     | len < 0 = pure (Left (invalidArgument "series slice length must be non-negative"))
     | otherwise = withSeries input $ \ptr -> seriesOut (phs_series_slice ptr (fromIntegral offset) (fromIntegral len))
+
+-- | Gather every nth value from a Series, starting at the offset.
+seriesGatherEvery :: Int -> Int -> Series -> IO (Either PolarsError Series)
+seriesGatherEvery step offset input =
+    case (positiveWord64 "seriesGatherEvery step" step, nonNegativeWord64 "seriesGatherEvery offset" offset) of
+        (Left err, _) -> pure (Left err)
+        (_, Left err) -> pure (Left err)
+        (Right stepValue, Right offsetValue) ->
+            withSeries input $ \ptr ->
+                seriesOut (phs_series_gather_every ptr stepValue offsetValue)
 
 seriesToFrame :: Series -> IO (Either PolarsError DataFrame)
 seriesToFrame input = seriesDataFrameOut input phs_series_to_frame
@@ -692,6 +704,16 @@ nonNegativeWord32 label value
     | value < 0 = Left (invalidArgument (label <> " must be non-negative"))
     | value > fromIntegral (maxBound :: Word32) =
         Left (invalidArgument (label <> " exceeds Word32 range"))
+    | otherwise = Right (fromIntegral value)
+
+positiveWord64 :: Text -> Int -> Either PolarsError Word64
+positiveWord64 label value
+    | value <= 0 = Left (invalidArgument (label <> " must be positive"))
+    | otherwise = Right (fromIntegral value)
+
+nonNegativeWord64 :: Text -> Int -> Either PolarsError Word64
+nonNegativeWord64 label value
+    | value < 0 = Left (invalidArgument (label <> " must be non-negative"))
     | otherwise = Right (fromIntegral value)
 
 seriesRoundModeCode :: SeriesRoundMode -> CInt
