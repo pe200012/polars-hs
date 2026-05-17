@@ -12,6 +12,8 @@ module Polars.DataFrame
     ( CsvReadOptions (..)
     , CsvWriteOptions (..)
     , DataFrame
+    , DataFrameJoinOptions (..)
+    , DataFrameJoinType (..)
     , DataFrameSortOptions (..)
     , DataFrameUniqueKeepStrategy (..)
     , DataFrameUniqueOptions (..)
@@ -26,6 +28,7 @@ module Polars.DataFrame
     , dataFrameDropNulls
     , dataFrameFilter
     , dataFrameFillNull
+    , dataFrameJoin
     , dataFrameNullCount
     , dataFrameRename
     , dataFrameReverse
@@ -38,6 +41,7 @@ module Polars.DataFrame
     , height
     , defaultCsvReadOptions
     , defaultCsvWriteOptions
+    , defaultDataFrameJoinOptions
     , defaultDataFrameSortOptions
     , defaultDataFrameUniqueOptions
     , defaultParquetReadOptions
@@ -89,6 +93,7 @@ import Polars.Internal.Raw
     , phs_dataframe_fill_null
     , phs_dataframe_head
     , phs_dataframe_new
+    , phs_dataframe_join
     , phs_dataframe_height
     , phs_dataframe_null_count
     , phs_dataframe_rename
@@ -145,6 +150,33 @@ defaultDataFrameSortOptions =
         , dataFrameSortMultithreaded = True
         , dataFrameSortMaintainOrder = False
         , dataFrameSortLimit = Nothing
+        }
+
+data DataFrameJoinType
+    = DataFrameJoinInner
+    | DataFrameJoinLeft
+    | DataFrameJoinRight
+    | DataFrameJoinFull
+    | DataFrameJoinSemi
+    | DataFrameJoinAnti
+    | DataFrameJoinCross
+    deriving (Eq, Show)
+
+data DataFrameJoinOptions = DataFrameJoinOptions
+    { dataFrameJoinType :: !DataFrameJoinType
+    , dataFrameJoinLeftOn :: ![Text]
+    , dataFrameJoinRightOn :: ![Text]
+    , dataFrameJoinSuffix :: !(Maybe Text)
+    }
+    deriving (Eq, Show)
+
+defaultDataFrameJoinOptions :: DataFrameJoinOptions
+defaultDataFrameJoinOptions =
+    DataFrameJoinOptions
+        { dataFrameJoinType = DataFrameJoinInner
+        , dataFrameJoinLeftOn = []
+        , dataFrameJoinRightOn = []
+        , dataFrameJoinSuffix = Nothing
         }
 
 data DataFrameUniqueKeepStrategy
@@ -297,6 +329,27 @@ dataFrameTake indices df =
     withDataFrame df $ \dfPtr ->
         withArray (V.toList indices) $ \indicesPtr ->
             dataframeOut (phs_dataframe_take dfPtr indicesPtr (fromIntegral (V.length indices)))
+
+dataFrameJoin :: DataFrameJoinOptions -> DataFrame -> DataFrame -> IO (Either PolarsError DataFrame)
+dataFrameJoin options left right = case validateDataFrameJoinOptions options of
+    Left err -> pure (Left err)
+    Right () ->
+        withDataFrame left $ \leftPtr ->
+            withDataFrame right $ \rightPtr ->
+                withCStringList (dataFrameJoinLeftOn options) $ \leftArray leftLen ->
+                    withCStringList (dataFrameJoinRightOn options) $ \rightArray rightLen ->
+                        withMaybeTextCString (dataFrameJoinSuffix options) $ \suffixPtr _ ->
+                            dataframeOut
+                                ( phs_dataframe_join
+                                    leftPtr
+                                    rightPtr
+                                    leftArray
+                                    leftLen
+                                    rightArray
+                                    rightLen
+                                    (dataFrameJoinTypeCode (dataFrameJoinType options))
+                                    suffixPtr
+                                )
 
 dataFrameRename :: [(Text, Text)] -> DataFrame -> IO (Either PolarsError DataFrame)
 dataFrameRename [] _ = pure (Left (invalidArgument "dataFrameRename requires at least one column pair"))
@@ -622,6 +675,28 @@ dataFrameUniqueKeepStrategyCode DataFrameKeepFirst = 0
 dataFrameUniqueKeepStrategyCode DataFrameKeepLast = 1
 dataFrameUniqueKeepStrategyCode DataFrameKeepNone = 2
 dataFrameUniqueKeepStrategyCode DataFrameKeepAny = 3
+
+validateDataFrameJoinOptions :: DataFrameJoinOptions -> Either PolarsError ()
+validateDataFrameJoinOptions options
+    | dataFrameJoinType options == DataFrameJoinCross && (not (null leftKeys) || not (null rightKeys)) =
+        Left (invalidArgument "dataFrameJoin cross join requires empty join key lists")
+    | dataFrameJoinType options == DataFrameJoinCross = Right ()
+    | null leftKeys = Left (invalidArgument "dataFrameJoin left keys must contain at least one column name")
+    | null rightKeys = Left (invalidArgument "dataFrameJoin right keys must contain at least one column name")
+    | length leftKeys /= length rightKeys = Left (invalidArgument "dataFrameJoin left and right key counts must match")
+    | otherwise = Right ()
+  where
+    leftKeys = dataFrameJoinLeftOn options
+    rightKeys = dataFrameJoinRightOn options
+
+dataFrameJoinTypeCode :: DataFrameJoinType -> CInt
+dataFrameJoinTypeCode DataFrameJoinInner = 0
+dataFrameJoinTypeCode DataFrameJoinLeft = 1
+dataFrameJoinTypeCode DataFrameJoinRight = 2
+dataFrameJoinTypeCode DataFrameJoinFull = 3
+dataFrameJoinTypeCode DataFrameJoinSemi = 4
+dataFrameJoinTypeCode DataFrameJoinAnti = 5
+dataFrameJoinTypeCode DataFrameJoinCross = 6
 
 fillNullStrategyCode :: FillNullStrategy -> Either PolarsError (CInt, Bool, Word64)
 fillNullStrategyCode (FillForward limit) = fillNullLimitedStrategy 0 limit

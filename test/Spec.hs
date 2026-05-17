@@ -734,6 +734,180 @@ main = hspec $ do
                 (Left err, _) -> expectationFailure (show err)
                 (_, Left err) -> expectationFailure (show err)
 
+        it "inner joins eager DataFrames by column names" $ do
+            employeesResult <- Pl.readCsv employeesCsv
+            departmentsResult <- Pl.readCsv departmentsCsv
+            case (employeesResult, departmentsResult) of
+                (Right employees, Right departments) -> do
+                    joined <-
+                        Pl.dataFrameJoin
+                            Pl.defaultDataFrameJoinOptions
+                                { Pl.dataFrameJoinLeftOn = ["department"]
+                                , Pl.dataFrameJoinRightOn = ["department"]
+                                }
+                            employees
+                            departments
+                    case joined of
+                        Left err -> expectationFailure (show err)
+                        Right df -> do
+                            Pl.shape df `shouldReturn` Right (3, 6)
+                            schemaResult <- Pl.schema df
+                            fmap (map Pl.fieldName) schemaResult
+                                `shouldBe` Right ["id", "name", "department", "salary", "name_right", "budget"]
+                            textResult <- Pl.toText df
+                            fmap (T.isInfixOf "Grace") textResult `shouldBe` Right True
+                            fmap (T.isInfixOf "Heidi") textResult `shouldBe` Right True
+                (Left err, _) -> expectationFailure (show err)
+                (_, Left err) -> expectationFailure (show err)
+
+        it "supports eager DataFrame outer join modes" $ do
+            employeesResult <- Pl.readCsv employeesCsv
+            departmentsResult <- Pl.readCsv departmentsCsv
+            case (employeesResult, departmentsResult) of
+                (Right employees, Right departments) -> do
+                    leftJoined <-
+                        Pl.dataFrameJoin
+                            Pl.defaultDataFrameJoinOptions
+                                { Pl.dataFrameJoinType = Pl.DataFrameJoinLeft
+                                , Pl.dataFrameJoinLeftOn = ["department"]
+                                , Pl.dataFrameJoinRightOn = ["department"]
+                                }
+                            employees
+                            departments
+                    rightJoined <-
+                        Pl.dataFrameJoin
+                            Pl.defaultDataFrameJoinOptions
+                                { Pl.dataFrameJoinType = Pl.DataFrameJoinRight
+                                , Pl.dataFrameJoinLeftOn = ["department"]
+                                , Pl.dataFrameJoinRightOn = ["department"]
+                                }
+                            employees
+                            departments
+                    fullJoined <-
+                        Pl.dataFrameJoin
+                            Pl.defaultDataFrameJoinOptions
+                                { Pl.dataFrameJoinType = Pl.DataFrameJoinFull
+                                , Pl.dataFrameJoinLeftOn = ["department"]
+                                , Pl.dataFrameJoinRightOn = ["department"]
+                                }
+                            employees
+                            departments
+                    case (leftJoined, rightJoined, fullJoined) of
+                        (Right leftDf, Right rightDf, Right fullDf) -> do
+                            Pl.shape leftDf `shouldReturn` Right (4, 6)
+                            Pl.shape rightDf `shouldReturn` Right (4, 6)
+                            Pl.shape fullDf `shouldReturn` Right (5, 7)
+                            leftText <- Pl.toText leftDf
+                            rightText <- Pl.toText rightDf
+                            fullText <- Pl.toText fullDf
+                            fmap (T.isInfixOf "Support") leftText `shouldBe` Right True
+                            fmap (T.isInfixOf "Finance") rightText `shouldBe` Right True
+                            fmap (T.isInfixOf "Support") fullText `shouldBe` Right True
+                            fmap (T.isInfixOf "Finance") fullText `shouldBe` Right True
+                        (Left err, _, _) -> expectationFailure (show err)
+                        (_, Left err, _) -> expectationFailure (show err)
+                        (_, _, Left err) -> expectationFailure (show err)
+                (Left err, _) -> expectationFailure (show err)
+                (_, Left err) -> expectationFailure (show err)
+
+        it "supports eager DataFrame semi anti and cross joins" $ do
+            employeesResult <- Pl.readCsv employeesCsv
+            departmentsResult <- Pl.readCsv departmentsCsv
+            case (employeesResult, departmentsResult) of
+                (Right employees, Right departments) -> do
+                    semiJoined <-
+                        Pl.dataFrameJoin
+                            Pl.defaultDataFrameJoinOptions
+                                { Pl.dataFrameJoinType = Pl.DataFrameJoinSemi
+                                , Pl.dataFrameJoinLeftOn = ["department"]
+                                , Pl.dataFrameJoinRightOn = ["department"]
+                                }
+                            employees
+                            departments
+                    antiJoined <-
+                        Pl.dataFrameJoin
+                            Pl.defaultDataFrameJoinOptions
+                                { Pl.dataFrameJoinType = Pl.DataFrameJoinAnti
+                                , Pl.dataFrameJoinLeftOn = ["department"]
+                                , Pl.dataFrameJoinRightOn = ["department"]
+                                }
+                            employees
+                            departments
+                    crossJoined <-
+                        Pl.dataFrameJoin
+                            Pl.defaultDataFrameJoinOptions {Pl.dataFrameJoinType = Pl.DataFrameJoinCross}
+                            employees
+                            departments
+                    case (semiJoined, antiJoined, crossJoined) of
+                        (Right semiDf, Right antiDf, Right crossDf) -> do
+                            Pl.shape semiDf `shouldReturn` Right (3, 4)
+                            Pl.column @T.Text semiDf "name"
+                                `shouldReturn` Right (V.fromList [Just "Alice", Just "Bob", Just "Carol"])
+                            Pl.shape antiDf `shouldReturn` Right (1, 4)
+                            Pl.column @T.Text antiDf "name" `shouldReturn` Right (V.fromList [Just "Eve"])
+                            Pl.shape crossDf `shouldReturn` Right (12, 7)
+                            schemaResult <- Pl.schema crossDf
+                            fmap (map Pl.fieldName) schemaResult
+                                `shouldBe` Right ["id", "name", "department", "salary", "department_right", "name_right", "budget"]
+                        (Left err, _, _) -> expectationFailure (show err)
+                        (_, Left err, _) -> expectationFailure (show err)
+                        (_, _, Left err) -> expectationFailure (show err)
+                (Left err, _) -> expectationFailure (show err)
+                (_, Left err) -> expectationFailure (show err)
+
+        it "uses custom suffixes for eager DataFrame joins" $ do
+            employeesResult <- Pl.readCsv employeesCsv
+            departmentsResult <- Pl.readCsv departmentsCsv
+            case (employeesResult, departmentsResult) of
+                (Right employees, Right departments) -> do
+                    joined <-
+                        Pl.dataFrameJoin
+                            Pl.defaultDataFrameJoinOptions
+                                { Pl.dataFrameJoinType = Pl.DataFrameJoinLeft
+                                , Pl.dataFrameJoinLeftOn = ["department"]
+                                , Pl.dataFrameJoinRightOn = ["department"]
+                                , Pl.dataFrameJoinSuffix = Just "_dept"
+                                }
+                            employees
+                            departments
+                    case joined of
+                        Left err -> expectationFailure (show err)
+                        Right df -> do
+                            schemaResult <- Pl.schema df
+                            fmap (map Pl.fieldName) schemaResult
+                                `shouldBe` Right ["id", "name", "department", "salary", "name_dept", "budget"]
+                (Left err, _) -> expectationFailure (show err)
+                (_, Left err) -> expectationFailure (show err)
+
+        it "validates eager DataFrame join options" $ do
+            employeesResult <- Pl.readCsv employeesCsv
+            departmentsResult <- Pl.readCsv departmentsCsv
+            case (employeesResult, departmentsResult) of
+                (Right employees, Right departments) -> do
+                    emptyLeft <- Pl.dataFrameJoin Pl.defaultDataFrameJoinOptions employees departments
+                    mismatched <-
+                        Pl.dataFrameJoin
+                            Pl.defaultDataFrameJoinOptions
+                                { Pl.dataFrameJoinLeftOn = ["department", "name"]
+                                , Pl.dataFrameJoinRightOn = ["department"]
+                                }
+                            employees
+                            departments
+                    keyedCross <-
+                        Pl.dataFrameJoin
+                            Pl.defaultDataFrameJoinOptions
+                                { Pl.dataFrameJoinType = Pl.DataFrameJoinCross
+                                , Pl.dataFrameJoinLeftOn = ["department"]
+                                , Pl.dataFrameJoinRightOn = ["department"]
+                                }
+                            employees
+                            departments
+                    expectInvalidArgumentMessage "dataFrameJoin left keys must contain at least one column name" emptyLeft
+                    expectInvalidArgumentMessage "dataFrameJoin left and right key counts must match" mismatched
+                    expectInvalidArgumentMessage "dataFrameJoin cross join requires empty join key lists" keyedCross
+                (Left err, _) -> expectationFailure (show err)
+                (_, Left err) -> expectationFailure (show err)
+
         it "validates eager DataFrame transform arguments" $ do
             result <- Pl.readCsv valuesCsv
             case result of

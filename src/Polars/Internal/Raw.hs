@@ -49,6 +49,7 @@ module Polars.Internal.Raw
     , phs_dataframe_from_ipc_bytes
     , phs_dataframe_head
     , phs_dataframe_height
+    , phs_dataframe_join
     , phs_dataframe_null_count
     , phs_dataframe_rename
     , phs_dataframe_reverse
@@ -351,6 +352,9 @@ foreign import ccall safe "phs_dataframe_take"
 
 foreign import ccall safe "phs_dataframe_fill_null"
     phs_dataframe_fill_null :: Ptr RawDataFrame -> CInt -> CBool -> Word64 -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_dataframe_join"
+    phs_dataframe_join :: Ptr RawDataFrame -> Ptr RawDataFrame -> Ptr CString -> CSize -> Ptr CString -> CSize -> CInt -> CString -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_dataframe_sort"
     phs_dataframe_sort ::

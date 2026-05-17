@@ -190,6 +190,17 @@ int phs_dataframe_take(const struct phs_dataframe *dataframe,
                        struct phs_dataframe **out,
                        struct phs_error **err);
 
+int phs_dataframe_join(const struct phs_dataframe *left,
+                       const struct phs_dataframe *right,
+                       const char *const *left_on,
+                       uintptr_t left_len,
+                       const char *const *right_on,
+                       uintptr_t right_len,
+                       int join_type,
+                       const char *suffix,
+                       struct phs_dataframe **out,
+                       struct phs_error **err);
+
 int phs_dataframe_fill_null(const struct phs_dataframe *dataframe,
                             int strategy,
                             bool has_limit,

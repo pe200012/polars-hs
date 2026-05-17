@@ -110,6 +110,28 @@ fn unique_keep_strategy_from_code(code: c_int) -> PhsResult<UniqueKeepStrategy> 
     }
 }
 
+fn join_type_from_code(code: c_int) -> PhsResult<JoinType> {
+    match code {
+        0 => Ok(JoinType::Inner),
+        1 => Ok(JoinType::Left),
+        2 => Ok(JoinType::Right),
+        3 => Ok(JoinType::Full),
+        4 => Ok(JoinType::Semi),
+        5 => Ok(JoinType::Anti),
+        6 => Ok(JoinType::Cross),
+        _ => Err(PhsError::invalid_argument(format!("unknown dataframe join type code {code}"))),
+    }
+}
+
+unsafe fn optional_suffix(suffix: *const c_char) -> PhsResult<Option<PlSmallStr>> {
+    if suffix.is_null() {
+        Ok(None)
+    } else {
+        let suffix = unsafe { c_str_to_str(suffix, "suffix") }?;
+        Ok(Some(PlSmallStr::from_str(suffix)))
+    }
+}
+
 fn fill_null_strategy_from_code(
     code: c_int,
     has_limit: bool,
@@ -626,6 +648,52 @@ pub unsafe extern "C" fn phs_dataframe_take(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_join(
+    left: *const phs_dataframe,
+    right: *const phs_dataframe,
+    left_on: *const *const c_char,
+    left_len: usize,
+    right_on: *const *const c_char,
+    right_len: usize,
+    join_type: c_int,
+    suffix: *const c_char,
+    out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let join_type = join_type_from_code(join_type)?;
+        let left_df = unsafe { dataframe_ref(left) }?;
+        let right_df = unsafe { dataframe_ref(right) }?;
+        let left_on = unsafe { name_vec(left_on, left_len, "left_on") }?;
+        let right_on = unsafe { name_vec(right_on, right_len, "right_on") }?;
+        let suffix = unsafe { optional_suffix(suffix) }?;
+        if matches!(join_type, JoinType::Cross) {
+            if left_len != 0 || right_len != 0 {
+                return Err(PhsError::invalid_argument("cross join requires empty join key lists"));
+            }
+        } else {
+            if left_on.is_empty() {
+                return Err(PhsError::invalid_argument("left join keys must contain at least one column name"));
+            }
+            if right_on.is_empty() {
+                return Err(PhsError::invalid_argument("right join keys must contain at least one column name"));
+            }
+            if left_on.len() != right_on.len() {
+                return Err(PhsError::invalid_argument("left and right join key counts must match"));
+            }
+        }
+        let mut args = JoinArgs::new(join_type);
+        if let Some(suffix) = suffix {
+            args = args.with_suffix(Some(suffix));
+        }
+        *out = dataframe_into_raw(left_df.value.join(&right_df.value, &left_on, &right_on, args, None)?);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_dataframe_fill_null(
     dataframe: *const phs_dataframe,
     strategy: c_int,
@@ -1067,10 +1135,6 @@ mod tests {
         data_path("people.csv")
     }
 
-    fn values_fixture_path() -> std::ffi::CString {
-        data_path("values.csv")
-    }
-
     fn data_path(file_name: &str) -> std::ffi::CString {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("..")
@@ -1082,7 +1146,11 @@ mod tests {
     }
 
     fn read_values_dataframe() -> *mut phs_dataframe {
-        let path = values_fixture_path();
+        read_fixture_dataframe("values.csv")
+    }
+
+    fn read_fixture_dataframe(file_name: &str) -> *mut phs_dataframe {
+        let path = data_path(file_name);
         let mut out = ptr::null_mut();
         let mut err = ptr::null_mut();
         let status = unsafe { phs_read_csv(path.as_ptr(), &mut out, &mut err) };
@@ -1232,6 +1300,97 @@ mod tests {
         expected.extend_from_slice(b"Int64");
         assert_eq!(bytes, expected);
         unsafe { crate::handles::phs_dataframe_free(raw) };
+    }
+
+    #[test]
+    fn dataframe_join_inner_returns_expected_shape() {
+        let left = read_fixture_dataframe("employees.csv");
+        let right = read_fixture_dataframe("departments.csv");
+        let key = std::ffi::CString::new("department").unwrap();
+        let left_on = [key.as_ptr()];
+        let right_on = [key.as_ptr()];
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe {
+            phs_dataframe_join(
+                left,
+                right,
+                left_on.as_ptr(),
+                left_on.len(),
+                right_on.as_ptr(),
+                right_on.len(),
+                0,
+                ptr::null(),
+                &mut out,
+                &mut err,
+            )
+        };
+
+        assert_eq!(status, PHS_OK);
+        assert!(err.is_null());
+        assert_eq!(unsafe { dataframe_ref(out) }.unwrap().value.shape(), (3, 6));
+        unsafe {
+            crate::handles::phs_dataframe_free(out);
+            crate::handles::phs_dataframe_free(right);
+            crate::handles::phs_dataframe_free(left);
+        }
+    }
+
+    #[test]
+    fn dataframe_join_rejects_invalid_options() {
+        let left = read_fixture_dataframe("employees.csv");
+        let right = read_fixture_dataframe("departments.csv");
+        let key = std::ffi::CString::new("department").unwrap();
+        let name = std::ffi::CString::new("name").unwrap();
+        let left_on = [key.as_ptr(), name.as_ptr()];
+        let right_on = [key.as_ptr()];
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe {
+            phs_dataframe_join(
+                left,
+                right,
+                left_on.as_ptr(),
+                left_on.len(),
+                right_on.as_ptr(),
+                right_on.len(),
+                0,
+                ptr::null(),
+                &mut out,
+                &mut err,
+            )
+        };
+
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        assert!(out.is_null());
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "left and right join key counts must match");
+
+        let status = unsafe {
+            phs_dataframe_join(
+                left,
+                right,
+                right_on.as_ptr(),
+                right_on.len(),
+                right_on.as_ptr(),
+                right_on.len(),
+                99,
+                ptr::null(),
+                &mut out,
+                &mut err,
+            )
+        };
+
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        assert!(out.is_null());
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "unknown dataframe join type code 99");
+        unsafe {
+            crate::handles::phs_dataframe_free(right);
+            crate::handles::phs_dataframe_free(left);
+        }
     }
 
     #[test]
