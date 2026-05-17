@@ -31,6 +31,10 @@ module Polars.Series
     , seriesInt16
     , seriesInt32
     , seriesInt64
+    , seriesIsFinite
+    , seriesIsInfinite
+    , seriesIsNan
+    , seriesIsNotNan
     , seriesFilter
     , seriesFillNull
     , seriesIsNotNull
@@ -120,6 +124,10 @@ import Polars.Internal.Raw
     , phs_series_filter
     , phs_series_fill_null
     , phs_series_head
+    , phs_series_is_finite
+    , phs_series_is_infinite
+    , phs_series_is_nan
+    , phs_series_is_not_nan
     , phs_series_is_not_null
     , phs_series_is_null
     , phs_series_len
@@ -326,6 +334,18 @@ seriesIsNull input = seriesUnaryOut input phs_series_is_null
 
 seriesIsNotNull :: Series -> IO (Either PolarsError Series)
 seriesIsNotNull input = seriesUnaryOut input phs_series_is_not_null
+
+seriesIsNan :: Series -> IO (Either PolarsError Series)
+seriesIsNan input = seriesUnaryOut input phs_series_is_nan
+
+seriesIsNotNan :: Series -> IO (Either PolarsError Series)
+seriesIsNotNan input = seriesUnaryOut input phs_series_is_not_nan
+
+seriesIsFinite :: Series -> IO (Either PolarsError Series)
+seriesIsFinite input = seriesUnaryOut input phs_series_is_finite
+
+seriesIsInfinite :: Series -> IO (Either PolarsError Series)
+seriesIsInfinite input = seriesUnaryOut input phs_series_is_infinite
 
 seriesFilter :: Series -> Series -> IO (Either PolarsError Series)
 seriesFilter mask input =

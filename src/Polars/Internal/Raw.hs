@@ -139,6 +139,10 @@ module Polars.Internal.Raw
     , phs_series_fill_null
     , phs_series_free_finalizer
     , phs_series_head
+    , phs_series_is_finite
+    , phs_series_is_infinite
+    , phs_series_is_nan
+    , phs_series_is_not_nan
     , phs_series_is_not_null
     , phs_series_is_null
     , phs_series_len
@@ -688,6 +692,18 @@ foreign import ccall unsafe "phs_series_is_null"
 
 foreign import ccall unsafe "phs_series_is_not_null"
     phs_series_is_not_null :: Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_series_is_nan"
+    phs_series_is_nan :: Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_series_is_not_nan"
+    phs_series_is_not_nan :: Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_series_is_finite"
+    phs_series_is_finite :: Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_series_is_infinite"
+    phs_series_is_infinite :: Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_series_filter"
     phs_series_filter :: Ptr RawSeries -> Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt

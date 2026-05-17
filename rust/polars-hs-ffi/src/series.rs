@@ -668,6 +668,42 @@ pub unsafe extern "C" fn phs_series_is_not_null(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_is_nan(
+    series: *const phs_series,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| Ok(value.is_nan()?.into_series()))
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_is_not_nan(
+    series: *const phs_series,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| Ok(value.is_not_nan()?.into_series()))
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_is_finite(
+    series: *const phs_series,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| Ok(value.is_finite()?.into_series()))
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_is_infinite(
+    series: *const phs_series,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| Ok(value.is_infinite()?.into_series()))
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_series_filter(
     series: *const phs_series,
     mask: *const phs_series,
@@ -1067,6 +1103,14 @@ mod tests {
         message
     }
 
+    unsafe fn take_bool_values(raw: *mut phs_series) -> Vec<Option<bool>> {
+        assert!(!raw.is_null());
+        let series = unsafe { series_ref(raw) }.unwrap();
+        let values = series.value.bool().unwrap().into_iter().collect();
+        unsafe { phs_series_free(raw) };
+        values
+    }
+
     fn encoded_i64(values: &[Option<i64>]) -> Vec<u8> {
         let mut bytes = Vec::new();
         for value in values {
@@ -1396,6 +1440,110 @@ mod tests {
             phs_series_free(series);
             phs_dataframe_free(dataframe);
         }
+    }
+
+    #[test]
+    fn series_float_predicates_handle_special_values() {
+        let series = series_into_raw(Series::new(
+            "value".into(),
+            [1.0_f64, f64::NAN, f64::INFINITY, f64::NEG_INFINITY],
+        ));
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_series_is_nan(series, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert!(err.is_null());
+        assert_eq!(
+            unsafe { take_bool_values(out) },
+            vec![Some(false), Some(true), Some(false), Some(false)]
+        );
+
+        let status = unsafe { phs_series_is_not_nan(series, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert!(err.is_null());
+        assert_eq!(
+            unsafe { take_bool_values(out) },
+            vec![Some(true), Some(false), Some(true), Some(true)]
+        );
+
+        let status = unsafe { phs_series_is_finite(series, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert!(err.is_null());
+        assert_eq!(
+            unsafe { take_bool_values(out) },
+            vec![Some(true), Some(false), Some(false), Some(false)]
+        );
+
+        let status = unsafe { phs_series_is_infinite(series, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert!(err.is_null());
+        assert_eq!(
+            unsafe { take_bool_values(out) },
+            vec![Some(false), Some(false), Some(true), Some(true)]
+        );
+
+        unsafe { phs_series_free(series) };
+    }
+
+    #[test]
+    fn series_float_predicates_preserve_integer_null_validity() {
+        let series = series_into_raw(Series::new("numbers".into(), &[Some(1_i64), None, Some(3)]));
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_series_is_nan(series, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_bool_values(out) },
+            vec![Some(false), None, Some(false)]
+        );
+
+        let status = unsafe { phs_series_is_not_nan(series, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_bool_values(out) },
+            vec![Some(true), None, Some(true)]
+        );
+
+        let status = unsafe { phs_series_is_finite(series, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_bool_values(out) },
+            vec![Some(true), None, Some(true)]
+        );
+
+        let status = unsafe { phs_series_is_infinite(series, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_bool_values(out) },
+            vec![Some(false), None, Some(false)]
+        );
+
+        assert!(err.is_null());
+        unsafe { phs_series_free(series) };
+    }
+
+    #[test]
+    fn series_float_predicates_reject_text_dtype() {
+        let series = series_into_raw(Series::new("text".into(), ["a", "b"]));
+        let actions = [
+            phs_series_is_nan as unsafe extern "C" fn(*const phs_series, *mut *mut phs_series, *mut *mut phs_error) -> c_int,
+            phs_series_is_not_nan,
+            phs_series_is_finite,
+            phs_series_is_infinite,
+        ];
+
+        for action in actions {
+            let mut out = ptr::null_mut();
+            let mut err = ptr::null_mut();
+            let status = unsafe { action(series, &mut out, &mut err) };
+            assert_eq!(status, crate::error::PHS_POLARS_ERROR);
+            assert!(out.is_null());
+            assert!(!unsafe { take_error_message(err) }.is_empty());
+        }
+
+        unsafe { phs_series_free(series) };
     }
 
     #[test]

@@ -810,6 +810,22 @@ int phs_series_is_not_null(const struct phs_series *series,
                            struct phs_series **out,
                            struct phs_error **err);
 
+int phs_series_is_nan(const struct phs_series *series,
+                      struct phs_series **out,
+                      struct phs_error **err);
+
+int phs_series_is_not_nan(const struct phs_series *series,
+                          struct phs_series **out,
+                          struct phs_error **err);
+
+int phs_series_is_finite(const struct phs_series *series,
+                         struct phs_series **out,
+                         struct phs_error **err);
+
+int phs_series_is_infinite(const struct phs_series *series,
+                           struct phs_series **out,
+                           struct phs_error **err);
+
 int phs_series_filter(const struct phs_series *series,
                       const struct phs_series *mask,
                       struct phs_series **out,

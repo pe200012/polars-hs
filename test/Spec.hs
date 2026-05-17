@@ -1453,6 +1453,64 @@ main = hspec $ do
                             expectPolarsFailure outOfBounds
                             expectInvalidArgumentMessage "series take index exceeds Polars index size" overflow
 
+        it "computes Series NaN and infinity predicates" $ do
+            result <- Pl.readCsv floatSpecialsCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    valueResult <- Pl.column @Pl.Series df "value"
+                    case valueResult of
+                        Left err -> expectationFailure (show err)
+                        Right value -> do
+                            isNanResult <- Pl.seriesIsNan value
+                            isNotNanResult <- Pl.seriesIsNotNan value
+                            isFiniteResult <- Pl.seriesIsFinite value
+                            isInfiniteResult <- Pl.seriesIsInfinite value
+                            case (isNanResult, isNotNanResult, isFiniteResult, isInfiniteResult) of
+                                (Right isNanSeries, Right isNotNanSeries, Right isFiniteSeries, Right isInfiniteSeries) -> do
+                                    Pl.seriesBool isNanSeries `shouldReturn` Right (V.fromList [Just False, Just True, Just False, Just False])
+                                    Pl.seriesBool isNotNanSeries `shouldReturn` Right (V.fromList [Just True, Just False, Just True, Just True])
+                                    Pl.seriesBool isFiniteSeries `shouldReturn` Right (V.fromList [Just True, Just False, Just False, Just False])
+                                    Pl.seriesBool isInfiniteSeries `shouldReturn` Right (V.fromList [Just False, Just False, Just True, Just True])
+                                (Left err, _, _, _) -> expectationFailure (show err)
+                                (_, Left err, _, _) -> expectationFailure (show err)
+                                (_, _, Left err, _) -> expectationFailure (show err)
+                                (_, _, _, Left err) -> expectationFailure (show err)
+
+        it "preserves null validity for integer Series float predicates" $ do
+            seriesResult <- Pl.series @Int64 "numbers" (V.fromList [Just 1, Nothing, Just 3])
+            case seriesResult of
+                Left err -> expectationFailure (show err)
+                Right numbers -> do
+                    isNanResult <- Pl.seriesIsNan numbers
+                    isNotNanResult <- Pl.seriesIsNotNan numbers
+                    isFiniteResult <- Pl.seriesIsFinite numbers
+                    isInfiniteResult <- Pl.seriesIsInfinite numbers
+                    case (isNanResult, isNotNanResult, isFiniteResult, isInfiniteResult) of
+                        (Right isNanSeries, Right isNotNanSeries, Right isFiniteSeries, Right isInfiniteSeries) -> do
+                            Pl.seriesBool isNanSeries `shouldReturn` Right (V.fromList [Just False, Nothing, Just False])
+                            Pl.seriesBool isNotNanSeries `shouldReturn` Right (V.fromList [Just True, Nothing, Just True])
+                            Pl.seriesBool isFiniteSeries `shouldReturn` Right (V.fromList [Just True, Nothing, Just True])
+                            Pl.seriesBool isInfiniteSeries `shouldReturn` Right (V.fromList [Just False, Nothing, Just False])
+                        (Left err, _, _, _) -> expectationFailure (show err)
+                        (_, Left err, _, _) -> expectationFailure (show err)
+                        (_, _, Left err, _) -> expectationFailure (show err)
+                        (_, _, _, Left err) -> expectationFailure (show err)
+
+        it "reports Polars errors for invalid Series float predicate dtypes" $ do
+            textResult <- Pl.series @T.Text "text" (V.fromList [Just "a", Just "b"])
+            case textResult of
+                Left err -> expectationFailure (show err)
+                Right textSeries -> do
+                    isNanResult <- Pl.seriesIsNan textSeries
+                    isNotNanResult <- Pl.seriesIsNotNan textSeries
+                    isFiniteResult <- Pl.seriesIsFinite textSeries
+                    isInfiniteResult <- Pl.seriesIsInfinite textSeries
+                    expectPolarsFailure isNanResult
+                    expectPolarsFailure isNotNanResult
+                    expectPolarsFailure isFiniteResult
+                    expectPolarsFailure isInfiniteResult
+
         it "fills Series nulls with strategies" $ do
             result <- Pl.readCsv valuesCsv
             case result of
