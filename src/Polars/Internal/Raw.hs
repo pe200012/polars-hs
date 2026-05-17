@@ -177,6 +177,7 @@ module Polars.Internal.Raw
     , phs_series_new_u16
     , phs_series_new_u32
     , phs_series_new_u64
+    , phs_series_pct_change
     , phs_series_rank
     , phs_series_rename
     , phs_series_reverse
@@ -679,6 +680,9 @@ foreign import ccall unsafe "phs_series_rename"
 
 foreign import ccall unsafe "phs_series_cast"
     phs_series_cast :: Ptr RawSeries -> CInt -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_series_pct_change"
+    phs_series_pct_change :: Ptr RawSeries -> CLLong -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_series_shift"
     phs_series_shift :: Ptr RawSeries -> CLLong -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt

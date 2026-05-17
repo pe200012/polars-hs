@@ -79,6 +79,7 @@ module Polars.Series
     , seriesSub
     , seriesSum
     , seriesNullCount
+    , seriesPctChange
     , seriesTail
     , seriesTake
     , seriesText
@@ -186,6 +187,7 @@ import Polars.Internal.Raw
     , phs_series_new_u16
     , phs_series_new_u32
     , phs_series_new_u64
+    , phs_series_pct_change
     , phs_series_rank
     , phs_series_rename
     , phs_series_reverse
@@ -508,6 +510,12 @@ seriesDiff :: Int64 -> SeriesDiffNullBehavior -> Series -> IO (Either PolarsErro
 seriesDiff periods behavior input =
     withSeries input $ \ptr ->
         seriesOut (phs_series_diff ptr (fromIntegral periods) (seriesDiffNullBehaviorCode behavior))
+
+-- | Compute percentage change over a period count using Polars pct_change semantics.
+seriesPctChange :: Int64 -> Series -> IO (Either PolarsError Series)
+seriesPctChange periods input =
+    withSeries input $ \ptr ->
+        seriesOut (phs_series_pct_change ptr (fromIntegral periods))
 
 -- | Fill interior null values using Polars Series interpolation.
 seriesInterpolate :: SeriesInterpolationMethod -> Series -> IO (Either PolarsError Series)

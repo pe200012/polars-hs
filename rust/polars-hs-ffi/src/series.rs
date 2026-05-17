@@ -12,6 +12,7 @@ use polars_ops::series::{
     is_first_distinct as polars_series_is_first_distinct,
     is_last_distinct as polars_series_is_last_distinct,
     is_unique as polars_series_is_unique,
+    pct_change as polars_series_pct_change,
     RoundMode,
     RoundSeries,
     SeriesMethods,
@@ -779,6 +780,19 @@ pub unsafe extern "C" fn phs_series_gather_every(
         let offset = usize::try_from(offset_idx)
             .map_err(|_| PhsError::invalid_argument("series gather every offset exceeded usize"))?;
         Ok(value.gather_every(step, offset)?)
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_pct_change(
+    series: *const phs_series,
+    periods: i64,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| {
+        let periods = Series::new(PlSmallStr::EMPTY, [periods]);
+        Ok(polars_series_pct_change(value, &periods)?)
     })
 }
 
@@ -2357,6 +2371,83 @@ mod tests {
         unsafe {
             phs_series_free(numeric);
             phs_series_free(text);
+        }
+    }
+
+    #[test]
+    fn series_pct_change_returns_relative_change() {
+        let base_values = series_into_raw(Series::new("value".into(), &[10_i64, 15, 30]));
+        let zero_denominator = series_into_raw(Series::new("zero".into(), &[0_i64, 0, 1, -1]));
+        let nullable = series_into_raw(Series::new(
+            "nullable".into(),
+            &[Some(10_i64), None, Some(15), Some(30)],
+        ));
+        let floats = series_into_raw(Series::new("float".into(), &[1.0_f32, 2.0, 4.0]));
+        let text = series_into_raw(Series::new("text".into(), ["10", "15", "30"]));
+        let invalid_text = series_into_raw(Series::new("bad_text".into(), ["a", "b"]));
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_series_pct_change(base_values, 1, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_f64_values(out) }, vec![None, Some(0.5), Some(1.0)]);
+
+        let status = unsafe { phs_series_pct_change(base_values, 2, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_f64_values(out) }, vec![None, None, Some(2.0)]);
+
+        let status = unsafe { phs_series_pct_change(base_values, -1, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_f64_values(out) },
+            vec![Some(-1.0 / 3.0), Some(-0.5), None]
+        );
+
+        let status = unsafe { phs_series_pct_change(zero_denominator, 1, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let values = unsafe { take_f64_values(out) };
+        assert_eq!(values[0], None);
+        assert!(values[1].unwrap().is_nan());
+        assert_eq!(values[2], Some(f64::INFINITY));
+        assert_eq!(values[3], Some(-2.0));
+
+        let status = unsafe { phs_series_pct_change(zero_denominator, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let values = unsafe { take_f64_values(out) };
+        assert!(values[0].unwrap().is_nan());
+        assert!(values[1].unwrap().is_nan());
+        assert_eq!(values[2], Some(0.0));
+        assert_eq!(values[3], Some(-0.0));
+
+        let status = unsafe { phs_series_pct_change(nullable, 1, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_f64_values(out) }, vec![None, None, None, Some(1.0)]);
+
+        let status = unsafe { phs_series_pct_change(floats, 1, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let result = unsafe { series_ref(out) }.unwrap();
+        assert_eq!(result.value.dtype(), &DataType::Float32);
+        assert_eq!(
+            result.value.f32().unwrap().into_iter().collect::<Vec<_>>(),
+            vec![None, Some(1.0), Some(1.0)]
+        );
+        unsafe { phs_series_free(out) };
+
+        let status = unsafe { phs_series_pct_change(text, 1, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_f64_values(out) }, vec![None, Some(0.5), Some(1.0)]);
+
+        let status = unsafe { phs_series_pct_change(invalid_text, 1, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_f64_values(out) }, vec![None, None]);
+
+        unsafe {
+            phs_series_free(base_values);
+            phs_series_free(zero_denominator);
+            phs_series_free(nullable);
+            phs_series_free(floats);
+            phs_series_free(text);
+            phs_series_free(invalid_text);
         }
     }
 

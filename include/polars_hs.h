@@ -841,6 +841,11 @@ int phs_series_gather_every(const struct phs_series *series,
                             struct phs_series **out,
                             struct phs_error **err);
 
+int phs_series_pct_change(const struct phs_series *series,
+                          int64_t periods,
+                          struct phs_series **out,
+                          struct phs_error **err);
+
 int phs_series_head(const struct phs_series *series,
                     uint64_t n,
                     struct phs_series **out,

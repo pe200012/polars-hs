@@ -2475,6 +2475,66 @@ main = hspec $ do
                 (Left err, _) -> expectationFailure (show err)
                 (_, Left err) -> expectationFailure (show err)
 
+        it "computes Series percentage changes with Polars semantics" $ do
+            baseResult <- Pl.series @Int64 "value" (V.fromList [Just 10, Just 15, Just 30])
+            zeroResult <- Pl.series @Int64 "zero" (V.fromList [Just 0, Just 0, Just 1, Just (-1)])
+            nullableResult <- Pl.series @Int64 "nullable" (V.fromList [Just 10, Nothing, Just 15, Just 30])
+            floatResult <- Pl.series @Float "float" (V.fromList [Just 1.0, Just 2.0, Just 4.0])
+            textResult <- Pl.series @T.Text "text" (V.fromList [Just "10", Just "15", Just "30"])
+            invalidTextResult <- Pl.series @T.Text "bad_text" (V.fromList [Just "a", Just "b"])
+            case (baseResult, zeroResult, nullableResult, floatResult, textResult, invalidTextResult) of
+                (Right base, Right zeroSeries, Right nullable, Right floatSeries, Right textSeries, Right invalidText) -> do
+                    pct1 <- Pl.seriesPctChange 1 base
+                    pct2 <- Pl.seriesPctChange 2 base
+                    pctFuture <- Pl.seriesPctChange (-1) base
+                    pctZeroDenom <- Pl.seriesPctChange 1 zeroSeries
+                    pctZeroPeriod <- Pl.seriesPctChange 0 zeroSeries
+                    pctNullable <- Pl.seriesPctChange 1 nullable
+                    pctFloat <- Pl.seriesPctChange 1 floatSeries
+                    pctText <- Pl.seriesPctChange 1 textSeries
+                    pctInvalidText <- Pl.seriesPctChange 1 invalidText
+                    let nan = 0 / 0 :: Double
+                        posInf = 1 / 0 :: Double
+                        expectDouble tolerance expected series =
+                            Pl.seriesDouble series
+                                >>= either (expectationFailure . show) (shouldApproximate tolerance expected)
+                    case (pct1, pct2, pctFuture, pctZeroDenom, pctZeroPeriod, pctNullable, pctFloat, pctText, pctInvalidText) of
+                        ( Right pct1Out
+                            , Right pct2Out
+                            , Right pctFutureOut
+                            , Right pctZeroDenomOut
+                            , Right pctZeroPeriodOut
+                            , Right pctNullableOut
+                            , Right pctFloatOut
+                            , Right pctTextOut
+                            , Right pctInvalidTextOut
+                            ) -> do
+                                expectDouble 1.0e-12 (V.fromList [Nothing, Just 0.5, Just 1.0]) pct1Out
+                                expectDouble 1.0e-12 (V.fromList [Nothing, Nothing, Just 2.0]) pct2Out
+                                expectDouble 1.0e-12 (V.fromList [Just (-(1.0 / 3.0)), Just (-0.5), Nothing]) pctFutureOut
+                                expectDouble 0.0 (V.fromList [Nothing, Just nan, Just posInf, Just (-2.0)]) pctZeroDenomOut
+                                expectDouble 0.0 (V.fromList [Just nan, Just nan, Just 0.0, Just (-0.0)]) pctZeroPeriodOut
+                                expectDouble 1.0e-12 (V.fromList [Nothing, Nothing, Nothing, Just 1.0]) pctNullableOut
+                                Pl.seriesDataType pctFloatOut `shouldReturn` Right Pl.Float32
+                                Pl.seriesFloat pctFloatOut `shouldReturn` Right (V.fromList [Nothing, Just 1.0, Just 1.0])
+                                expectDouble 1.0e-12 (V.fromList [Nothing, Just 0.5, Just 1.0]) pctTextOut
+                                Pl.seriesDouble pctInvalidTextOut `shouldReturn` Right (V.fromList [Nothing, Nothing])
+                        (Left err, _, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                        (_, Left err, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                        (_, _, Left err, _, _, _, _, _, _) -> expectationFailure (show err)
+                        (_, _, _, Left err, _, _, _, _, _) -> expectationFailure (show err)
+                        (_, _, _, _, Left err, _, _, _, _) -> expectationFailure (show err)
+                        (_, _, _, _, _, Left err, _, _, _) -> expectationFailure (show err)
+                        (_, _, _, _, _, _, Left err, _, _) -> expectationFailure (show err)
+                        (_, _, _, _, _, _, _, Left err, _) -> expectationFailure (show err)
+                        (_, _, _, _, _, _, _, _, Left err) -> expectationFailure (show err)
+                (Left err, _, _, _, _, _) -> expectationFailure (show err)
+                (_, Left err, _, _, _, _) -> expectationFailure (show err)
+                (_, _, Left err, _, _, _) -> expectationFailure (show err)
+                (_, _, _, Left err, _, _) -> expectationFailure (show err)
+                (_, _, _, _, Left err, _) -> expectationFailure (show err)
+                (_, _, _, _, _, Left err) -> expectationFailure (show err)
+
         it "computes Series value counts as a DataFrame" $ do
             colorResult <- Pl.series @T.Text "color" (V.fromList [Just "blue", Just "red", Just "blue", Just "green", Just "blue", Just "red"])
             emptyResult <- Pl.series @T.Text "color" V.empty
