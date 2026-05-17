@@ -11,13 +11,14 @@ successful Rust-owned handles in managed ForeignPtr values.
 module Polars.Internal.Series
     ( seriesBytesOut
     , seriesDataFrameOut
+    , seriesMaybeDoubleOut
     , seriesOut
     , seriesWord64Out
     ) where
 
 import qualified Data.ByteString as BS
 import Data.Word (Word64)
-import Foreign.C.Types (CInt)
+import Foreign.C.Types (CBool (..), CDouble (..), CInt)
 import Foreign.Marshal.Alloc (alloca)
 import Foreign.Ptr (Ptr, nullPtr)
 import Foreign.Storable (peek, poke)
@@ -81,6 +82,23 @@ seriesDataFrameOut series action = withSeries series $ \ptr ->
                         then pure (Left (nullPointerError "dataframe output"))
                         else Right <$> mkDataFrame out
                 else Left <$> (consumeError status =<< peek errPtr)
+
+seriesMaybeDoubleOut :: Series -> (Ptr RawSeries -> Ptr CBool -> Ptr CDouble -> Ptr (Ptr RawError) -> IO CInt) -> IO (Either PolarsError (Maybe Double))
+seriesMaybeDoubleOut series action = withSeries series $ \ptr ->
+    alloca $ \hasValuePtr ->
+        alloca $ \valuePtr ->
+            alloca $ \errPtr -> do
+                poke errPtr nullPtr
+                status <- action ptr hasValuePtr valuePtr errPtr
+                if status == 0
+                    then do
+                        CBool hasValue <- peek hasValuePtr
+                        if hasValue == 0
+                            then pure (Right Nothing)
+                            else do
+                                CDouble value <- peek valuePtr
+                                pure (Right (Just value))
+                    else Left <$> (consumeError status =<< peek errPtr)
 
 word64ToInt :: Word64 -> Either PolarsError Int
 word64ToInt value

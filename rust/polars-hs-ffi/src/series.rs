@@ -183,6 +183,30 @@ fn fill_null_strategy_from_code(
     }
 }
 
+fn series_binary_op_from_code(left: &Series, right: &Series, op: c_int) -> PhsResult<Series> {
+    match op {
+        0 => Ok(std::ops::Add::add(left, right)?),
+        1 => Ok(std::ops::Sub::sub(left, right)?),
+        2 => Ok(std::ops::Mul::mul(left, right)?),
+        3 => Ok(std::ops::Div::div(left, right)?),
+        4 => Ok(std::ops::Rem::rem(left, right)?),
+        _ => Err(PhsError::invalid_argument(format!(
+            "unknown series binary op code {op}"
+        ))),
+    }
+}
+
+fn series_stat_from_code(series: &Series, op: c_int, ddof: u8) -> PhsResult<Option<f64>> {
+    match op {
+        0 => Ok(series.mean()),
+        1 => Ok(series.std(ddof)),
+        2 => Ok(series.var(ddof)),
+        _ => Err(PhsError::invalid_argument(format!(
+            "unknown series stat op code {op}"
+        ))),
+    }
+}
+
 fn usize_from_u64(value: u64, label: &str) -> PhsResult<usize> {
     value
         .try_into()
@@ -769,6 +793,47 @@ pub unsafe extern "C" fn phs_series_append(
         let mut output = left.value.clone();
         output.append(&right.value)?;
         *out = series_into_raw(output);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_binary_op(
+    left: *const phs_series,
+    right: *const phs_series,
+    op: c_int,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let left = unsafe { series_ref(left) }?;
+        let right = unsafe { series_ref(right) }?;
+        *out = series_into_raw(series_binary_op_from_code(&left.value, &right.value, op)?);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_stat(
+    series: *const phs_series,
+    op: c_int,
+    ddof: u8,
+    has_value_out: *mut bool,
+    value_out: *mut f64,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let has_value_out = unsafe { required_mut(has_value_out, "has_value_out") }?;
+        let value_out = unsafe { required_mut(value_out, "value_out") }?;
+        *has_value_out = false;
+        *value_out = 0.0;
+        let handle = unsafe { series_ref(series) }?;
+        if let Some(value) = series_stat_from_code(&handle.value, op, ddof)? {
+            *has_value_out = true;
+            *value_out = value;
+        }
         Ok(())
     })
 }

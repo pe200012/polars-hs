@@ -18,9 +18,11 @@ module Polars.Series
     , SeriesFrom (..)
     , SeriesSortOptions (..)
     , defaultSeriesSortOptions
+    , seriesAdd
     , seriesAppend
     , seriesBool
     , seriesDataType
+    , seriesDiv
     , seriesDouble
     , seriesDropNulls
     , seriesFloat
@@ -34,18 +36,24 @@ module Polars.Series
     , seriesIsNotNull
     , seriesIsNull
     , seriesLength
+    , seriesMean
+    , seriesMul
     , seriesName
     , seriesRename
     , seriesReverse
+    , seriesRem
     , seriesShift
     , seriesSlice
     , seriesSort
+    , seriesStd
+    , seriesSub
     , seriesNullCount
     , seriesTail
     , seriesText
     , seriesToFrame
     , seriesUnique
     , seriesUniqueStable
+    , seriesVar
     , seriesWord8
     , seriesWord16
     , seriesWord32
@@ -59,7 +67,7 @@ import qualified Data.Text.Encoding as TE
 import Data.Word (Word16, Word32, Word64, Word8)
 import Data.Vector (Vector)
 import Foreign.C.String (CString)
-import Foreign.C.Types (CBool (..), CInt, CSize)
+import Foreign.C.Types (CBool (..), CInt, CSize, CUChar (..))
 import Foreign.Ptr (Ptr, castPtr)
 
 import Polars.DataFrame (DataFrame, FillNullStrategy (..))
@@ -94,11 +102,12 @@ import Polars.Internal.ColumnDecode
     )
 import Polars.Internal.CString (withTextCString)
 import Polars.Internal.Managed (Series, withSeries)
-import Polars.Internal.Series (seriesBytesOut, seriesDataFrameOut, seriesOut, seriesWord64Out)
+import Polars.Internal.Series (seriesBytesOut, seriesDataFrameOut, seriesMaybeDoubleOut, seriesOut, seriesWord64Out)
 import Polars.Internal.Raw
     ( RawError
     , RawSeries
     , phs_series_append
+    , phs_series_binary_op
     , phs_series_cast
     , phs_series_drop_nulls
     , phs_series_dtype
@@ -126,6 +135,7 @@ import Polars.Internal.Raw
     , phs_series_shift
     , phs_series_slice
     , phs_series_sort
+    , phs_series_stat
     , phs_series_null_count
     , phs_series_tail
     , phs_series_to_frame
@@ -339,6 +349,34 @@ seriesAppend left right =
         withSeries right $ \rightPtr ->
             seriesOut (phs_series_append leftPtr rightPtr)
 
+seriesAdd :: Series -> Series -> IO (Either PolarsError Series)
+seriesAdd = seriesBinaryOp 0
+
+seriesSub :: Series -> Series -> IO (Either PolarsError Series)
+seriesSub = seriesBinaryOp 1
+
+seriesMul :: Series -> Series -> IO (Either PolarsError Series)
+seriesMul = seriesBinaryOp 2
+
+seriesDiv :: Series -> Series -> IO (Either PolarsError Series)
+seriesDiv = seriesBinaryOp 3
+
+seriesRem :: Series -> Series -> IO (Either PolarsError Series)
+seriesRem = seriesBinaryOp 4
+
+seriesMean :: Series -> IO (Either PolarsError (Maybe Double))
+seriesMean = seriesStat 0 (CUChar 0)
+
+seriesStd :: Int -> Series -> IO (Either PolarsError (Maybe Double))
+seriesStd ddof input = case ddofCUChar "series std ddof" ddof of
+    Left err -> pure (Left err)
+    Right value -> seriesStat 1 value input
+
+seriesVar :: Int -> Series -> IO (Either PolarsError (Maybe Double))
+seriesVar ddof input = case ddofCUChar "series var ddof" ddof of
+    Left err -> pure (Left err)
+    Right value -> seriesStat 2 value input
+
 seriesBool :: Series -> IO (Either PolarsError (Vector (Maybe Bool)))
 seriesBool input = seriesBytesOut input phs_series_values_bool decodeBoolColumn
 
@@ -389,11 +427,28 @@ seriesCastWithCode code input = withSeries input $ \ptr -> seriesOut (phs_series
 seriesUnaryOut :: Series -> (Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt) -> IO (Either PolarsError Series)
 seriesUnaryOut input action = withSeries input $ \ptr -> seriesOut (action ptr)
 
+seriesBinaryOp :: CInt -> Series -> Series -> IO (Either PolarsError Series)
+seriesBinaryOp op left right =
+    withSeries left $ \leftPtr ->
+        withSeries right $ \rightPtr ->
+            seriesOut (phs_series_binary_op leftPtr rightPtr op)
+
+seriesStat :: CInt -> CUChar -> Series -> IO (Either PolarsError (Maybe Double))
+seriesStat op ddof input =
+    seriesMaybeDoubleOut input $ \ptr hasValuePtr valuePtr errPtr ->
+        phs_series_stat ptr op ddof hasValuePtr valuePtr errPtr
+
 sortLimitWord64 :: Maybe Int -> Either PolarsError (Bool, Word64)
 sortLimitWord64 Nothing = Right (False, 0)
 sortLimitWord64 (Just value)
     | value < 0 = Left (invalidArgument "series sort limit must be non-negative")
     | otherwise = Right (True, fromIntegral value)
+
+ddofCUChar :: Text -> Int -> Either PolarsError CUChar
+ddofCUChar label value
+    | value < 0 || value > fromIntegral (maxBound :: Word8) =
+        Left (invalidArgument (label <> " must be between 0 and 255"))
+    | otherwise = Right (CUChar (fromIntegral value))
 
 fillNullStrategyCode :: FillNullStrategy -> Either PolarsError (CInt, Bool, Word64)
 fillNullStrategyCode (FillForward limit) = fillNullLimitedStrategy 0 limit

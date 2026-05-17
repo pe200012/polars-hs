@@ -51,6 +51,10 @@ shouldApproximate tolerance expected actual = do
     aIsNaN d = d /= d
     aIsInfinite = isInfinite
 
+shouldApproximateMaybe :: Double -> Maybe Double -> Maybe Double -> IO ()
+shouldApproximateMaybe tolerance expected actual =
+    shouldApproximate tolerance (V.singleton expected) (V.singleton actual)
+
 withTempFilePath :: String -> (FilePath -> IO a) -> IO a
 withTempFilePath suffix =
     bracket
@@ -1397,6 +1401,91 @@ main = hspec $ do
                             overflow <- Pl.seriesFillNull (Pl.FillBackward (Just overflowingLimit)) age
                             expectInvalidArgumentMessage "fill null limit must be non-negative" negative
                             expectInvalidArgumentMessage "fill null limit exceeds Polars index size" overflow
+
+        it "applies Series arithmetic with null propagation" $ do
+            leftResult <- Pl.series @Double "left" (V.fromList [Just 10.0, Nothing, Just 7.5])
+            rightResult <- Pl.series @Double "right" (V.fromList [Just 2.0, Just 4.0, Just 2.5])
+            case (leftResult, rightResult) of
+                (Right left, Right right) -> do
+                    added <- Pl.seriesAdd left right
+                    subtracted <- Pl.seriesSub left right
+                    multiplied <- Pl.seriesMul left right
+                    divided <- Pl.seriesDiv left right
+                    remaindered <- Pl.seriesRem left right
+                    case (added, subtracted, multiplied, divided, remaindered) of
+                        (Right addSeries, Right subSeries, Right mulSeries, Right divSeries, Right remSeries) -> do
+                            addValues <- Pl.seriesDouble addSeries
+                            subValues <- Pl.seriesDouble subSeries
+                            mulValues <- Pl.seriesDouble mulSeries
+                            divValues <- Pl.seriesDouble divSeries
+                            remValues <- Pl.seriesDouble remSeries
+                            case (addValues, subValues, mulValues, divValues, remValues) of
+                                (Right addVec, Right subVec, Right mulVec, Right divVec, Right remVec) -> do
+                                    shouldApproximate 1.0e-12 (V.fromList [Just 12.0, Nothing, Just 10.0]) addVec
+                                    shouldApproximate 1.0e-12 (V.fromList [Just 8.0, Nothing, Just 5.0]) subVec
+                                    shouldApproximate 1.0e-12 (V.fromList [Just 20.0, Nothing, Just 18.75]) mulVec
+                                    shouldApproximate 1.0e-12 (V.fromList [Just 5.0, Nothing, Just 3.0]) divVec
+                                    shouldApproximate 1.0e-12 (V.fromList [Just 0.0, Nothing, Just 0.0]) remVec
+                                (Left err, _, _, _, _) -> expectationFailure (show err)
+                                (_, Left err, _, _, _) -> expectationFailure (show err)
+                                (_, _, Left err, _, _) -> expectationFailure (show err)
+                                (_, _, _, Left err, _) -> expectationFailure (show err)
+                                (_, _, _, _, Left err) -> expectationFailure (show err)
+                        (Left err, _, _, _, _) -> expectationFailure (show err)
+                        (_, Left err, _, _, _) -> expectationFailure (show err)
+                        (_, _, Left err, _, _) -> expectationFailure (show err)
+                        (_, _, _, Left err, _) -> expectationFailure (show err)
+                        (_, _, _, _, Left err) -> expectationFailure (show err)
+                (Left err, _) -> expectationFailure (show err)
+                (_, Left err) -> expectationFailure (show err)
+
+        it "reports Polars errors for invalid Series arithmetic" $ do
+            numbersResult <- Pl.series @Double "numbers" (V.fromList [Just 1.0, Just 2.0, Just 3.0])
+            shortResult <- Pl.series @Double "short" (V.fromList [Just 1.0, Just 2.0])
+            textResult <- Pl.series @T.Text "text" (V.fromList [Just "a", Just "b", Just "c"])
+            case (numbersResult, shortResult, textResult) of
+                (Right numbers, Right short, Right textSeries) -> do
+                    lengthMismatch <- Pl.seriesAdd numbers short
+                    invalidDtype <- Pl.seriesSub textSeries numbers
+                    expectPolarsFailure lengthMismatch
+                    expectPolarsFailure invalidDtype
+                (Left err, _, _) -> expectationFailure (show err)
+                (_, Left err, _) -> expectationFailure (show err)
+                (_, _, Left err) -> expectationFailure (show err)
+
+        it "computes Series scalar statistics" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    scoreResult <- Pl.column @Pl.Series df "score"
+                    case scoreResult of
+                        Left err -> expectationFailure (show err)
+                        Right score -> do
+                            meanResult <- Pl.seriesMean score
+                            stdResult <- Pl.seriesStd 1 score
+                            varResult <- Pl.seriesVar 1 score
+                            case (meanResult, stdResult, varResult) of
+                                (Right meanValue, Right stdValue, Right varValue) -> do
+                                    shouldApproximateMaybe 1.0e-12 (Just 8.875) meanValue
+                                    shouldApproximateMaybe 1.0e-12 (Just 0.8838834764831844) stdValue
+                                    shouldApproximateMaybe 1.0e-12 (Just 0.78125) varValue
+                                (Left err, _, _) -> expectationFailure (show err)
+                                (_, Left err, _) -> expectationFailure (show err)
+                                (_, _, Left err) -> expectationFailure (show err)
+
+        it "handles all-null Series stats and invalid ddof" $ do
+            seriesResult <- Pl.series @Double "all_null" (V.fromList [Nothing, Nothing])
+            case seriesResult of
+                Left err -> expectationFailure (show err)
+                Right allNull -> do
+                    Pl.seriesMean allNull `shouldReturn` Right Nothing
+                    Pl.seriesStd 1 allNull `shouldReturn` Right Nothing
+                    Pl.seriesVar 1 allNull `shouldReturn` Right Nothing
+                    negativeStd <- Pl.seriesStd (-1) allNull
+                    overflowingVar <- Pl.seriesVar 256 allNull
+                    expectInvalidArgumentMessage "series std ddof must be between 0 and 255" negativeStd
+                    expectInvalidArgumentMessage "series var ddof must be between 0 and 255" overflowingVar
 
         it "reports InvalidArgument for negative Series slices" $ do
             result <- Pl.readCsv valuesCsv
