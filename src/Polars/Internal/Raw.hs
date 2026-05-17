@@ -189,6 +189,7 @@ module Polars.Internal.Raw
     , phs_series_to_arrow_array
     , phs_series_to_frame
     , phs_series_unique
+    , phs_series_unique_counts
     , phs_series_unique_stable
     , phs_series_value_counts
     , phs_series_values_bool
@@ -690,6 +691,9 @@ foreign import ccall safe "phs_series_arg_sort"
 
 foreign import ccall unsafe "phs_series_unique"
     phs_series_unique :: Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_series_unique_counts"
+    phs_series_unique_counts :: Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_series_unique_stable"
     phs_series_unique_stable :: Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt

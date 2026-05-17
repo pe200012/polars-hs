@@ -80,6 +80,7 @@ module Polars.Series
     , seriesText
     , seriesToFrame
     , seriesUnique
+    , seriesUniqueCounts
     , seriesUniqueStable
     , seriesValueCounts
     , seriesVar
@@ -191,6 +192,7 @@ import Polars.Internal.Raw
     , phs_series_tail
     , phs_series_to_frame
     , phs_series_unique
+    , phs_series_unique_counts
     , phs_series_unique_stable
     , phs_series_value_counts
     , phs_series_values_bool
@@ -406,6 +408,9 @@ seriesArgSort options input = case sortLimitWord64WithLabel "series arg sort lim
 
 seriesUnique :: Series -> IO (Either PolarsError Series)
 seriesUnique input = seriesUnaryOut input phs_series_unique
+
+seriesUniqueCounts :: Series -> IO (Either PolarsError Series)
+seriesUniqueCounts input = seriesUnaryOut input phs_series_unique_counts
 
 seriesUniqueStable :: Series -> IO (Either PolarsError Series)
 seriesUniqueStable input = seriesUnaryOut input phs_series_unique_stable

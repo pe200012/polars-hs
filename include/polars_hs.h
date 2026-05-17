@@ -955,6 +955,10 @@ int phs_series_unique(const struct phs_series *series,
                       struct phs_series **out,
                       struct phs_error **err);
 
+int phs_series_unique_counts(const struct phs_series *series,
+                             struct phs_series **out,
+                             struct phs_error **err);
+
 int phs_series_unique_stable(const struct phs_series *series,
                              struct phs_series **out,
                              struct phs_error **err);

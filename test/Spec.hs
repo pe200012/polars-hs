@@ -2310,6 +2310,38 @@ main = hspec $ do
                 (_, _, _, _, Left err, _) -> expectationFailure (show err)
                 (_, _, _, _, _, Left err) -> expectationFailure (show err)
 
+        it "counts unique Series values in first-seen order" $ do
+            numericResult <- Pl.series @Int64 "value" (V.fromList [Just 1, Just 2, Just 1, Nothing, Just 3, Nothing])
+            textResult <- Pl.series @T.Text "text" (V.fromList [Just "b", Just "a", Nothing, Just "b", Just "a"])
+            boolResult <- Pl.series @Bool "flag" (V.fromList [Just True, Just False, Nothing, Just True, Just False])
+            allNullResult <- Pl.series @Double "all_null" (V.fromList [Nothing, Nothing, Nothing])
+            emptyResult <- Pl.series @Double "empty" V.empty
+            case (numericResult, textResult, boolResult, allNullResult, emptyResult) of
+                (Right numeric, Right textSeries, Right boolSeries, Right allNull, Right empty) -> do
+                    numericCounts <- Pl.seriesUniqueCounts numeric
+                    textCounts <- Pl.seriesUniqueCounts textSeries
+                    boolCounts <- Pl.seriesUniqueCounts boolSeries
+                    allNullCounts <- Pl.seriesUniqueCounts allNull
+                    emptyCounts <- Pl.seriesUniqueCounts empty
+                    case (numericCounts, textCounts, boolCounts, allNullCounts, emptyCounts) of
+                        (Right numericOut, Right textOut, Right boolOut, Right allNullOut, Right emptyOut) -> do
+                            Pl.seriesDataType numericOut `shouldReturn` Right Pl.UInt32
+                            Pl.seriesWord32 numericOut `shouldReturn` Right (V.fromList [Just 2, Just 1, Just 2, Just 1])
+                            Pl.seriesWord32 textOut `shouldReturn` Right (V.fromList [Just 2, Just 2, Just 1])
+                            Pl.seriesWord32 boolOut `shouldReturn` Right (V.fromList [Just 2, Just 2, Just 1])
+                            Pl.seriesWord32 allNullOut `shouldReturn` Right (V.fromList [Just 3])
+                            Pl.seriesWord32 emptyOut `shouldReturn` Right V.empty
+                        (Left err, _, _, _, _) -> expectationFailure (show err)
+                        (_, Left err, _, _, _) -> expectationFailure (show err)
+                        (_, _, Left err, _, _) -> expectationFailure (show err)
+                        (_, _, _, Left err, _) -> expectationFailure (show err)
+                        (_, _, _, _, Left err) -> expectationFailure (show err)
+                (Left err, _, _, _, _) -> expectationFailure (show err)
+                (_, Left err, _, _, _) -> expectationFailure (show err)
+                (_, _, Left err, _, _) -> expectationFailure (show err)
+                (_, _, _, Left err, _) -> expectationFailure (show err)
+                (_, _, _, _, Left err) -> expectationFailure (show err)
+
         it "computes Series value counts as a DataFrame" $ do
             colorResult <- Pl.series @T.Text "color" (V.fromList [Just "blue", Just "red", Just "blue", Just "green", Just "blue", Just "red"])
             emptyResult <- Pl.series @T.Text "color" V.empty

@@ -16,6 +16,7 @@ use polars_ops::series::{
     RoundSeries,
     SeriesMethods,
     SeriesRank,
+    unique_counts as polars_series_unique_counts,
 };
 
 use crate::bytes::{bytes_into_raw, phs_bytes};
@@ -1070,6 +1071,15 @@ pub unsafe extern "C" fn phs_series_unique(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_unique_counts(
+    series: *const phs_series,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| Ok(polars_series_unique_counts(value)?))
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_series_unique_stable(
     series: *const phs_series,
     out: *mut *mut phs_series,
@@ -2023,6 +2033,57 @@ mod tests {
             phs_series_free(null_values);
             phs_series_free(descending_values);
             phs_series_free(text_values);
+            phs_series_free(all_null);
+            phs_series_free(empty);
+        }
+    }
+
+    #[test]
+    fn series_unique_counts_returns_counts_in_first_seen_order() {
+        let values = series_into_raw(Series::new(
+            "value".into(),
+            &[Some(1_i64), Some(2), Some(1), None, Some(3), None],
+        ));
+        let text = series_into_raw(Series::new(
+            "text".into(),
+            &[Some("b"), Some("a"), None, Some("b"), Some("a")],
+        ));
+        let flag = series_into_raw(Series::new(
+            "flag".into(),
+            &[Some(true), Some(false), None, Some(true), Some(false)],
+        ));
+        let all_null = series_into_raw(Series::new("all_null".into(), &[None::<f64>, None, None]));
+        let empty = series_into_raw(Series::new("empty".into(), Vec::<Option<f64>>::new()));
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_series_unique_counts(values, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_u32_values(out) },
+            vec![Some(2), Some(1), Some(2), Some(1)]
+        );
+
+        let status = unsafe { phs_series_unique_counts(text, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_u32_values(out) }, vec![Some(2), Some(2), Some(1)]);
+
+        let status = unsafe { phs_series_unique_counts(flag, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_u32_values(out) }, vec![Some(2), Some(2), Some(1)]);
+
+        let status = unsafe { phs_series_unique_counts(all_null, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_u32_values(out) }, vec![Some(3)]);
+
+        let status = unsafe { phs_series_unique_counts(empty, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_u32_values(out) }, Vec::<Option<u32>>::new());
+
+        unsafe {
+            phs_series_free(values);
+            phs_series_free(text);
+            phs_series_free(flag);
             phs_series_free(all_null);
             phs_series_free(empty);
         }
