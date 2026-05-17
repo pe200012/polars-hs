@@ -47,10 +47,39 @@ unsafe fn csv_read_options(
     separator: c_uchar,
     has_null_value: bool,
     null_value: *const c_char,
+    has_n_rows: bool,
+    n_rows: u64,
+    skip_rows: u64,
+    skip_rows_after_header: u64,
+    has_infer_schema_length: bool,
+    infer_schema_length: u64,
+    ignore_errors: bool,
+    truncate_ragged_lines: bool,
+    missing_is_null: bool,
+    low_memory: bool,
+    rechunk: bool,
 ) -> PhsResult<CsvReadOptions> {
+    let n_rows = if has_n_rows { Some(usize_from_u64(n_rows, "csv n rows")?) } else { None };
+    let infer_schema_length = if has_infer_schema_length {
+        Some(usize_from_u64(infer_schema_length, "csv infer schema length")?)
+    } else {
+        None
+    };
     let mut options = CsvReadOptions::default()
         .with_has_header(has_header)
-        .map_parse_options(|parse_options| parse_options.with_separator(separator));
+        .with_n_rows(n_rows)
+        .with_skip_rows(usize_from_u64(skip_rows, "csv skip rows")?)
+        .with_skip_rows_after_header(usize_from_u64(skip_rows_after_header, "csv skip rows after header")?)
+        .with_infer_schema_length(infer_schema_length)
+        .with_ignore_errors(ignore_errors)
+        .with_low_memory(low_memory)
+        .with_rechunk(rechunk)
+        .map_parse_options(|parse_options| {
+            parse_options
+                .with_separator(separator)
+                .with_truncate_ragged_lines(truncate_ragged_lines)
+                .with_missing_is_null(missing_is_null)
+        });
     if has_null_value {
         let value = unsafe { c_str_to_str(null_value, "csv null value") }?;
         let null_values = Some(NullValues::AllColumnsSingle(value.into()));
@@ -129,7 +158,28 @@ pub unsafe extern "C" fn phs_read_csv(
     out: *mut *mut phs_dataframe,
     err: *mut *mut phs_error,
 ) -> c_int {
-    unsafe { phs_read_csv_options(path, true, b',', false, ptr::null(), out, err) }
+    unsafe {
+        phs_read_csv_options(
+            path,
+            true,
+            b',',
+            false,
+            ptr::null(),
+            false,
+            0,
+            0,
+            0,
+            true,
+            100,
+            false,
+            false,
+            true,
+            false,
+            false,
+            out,
+            err,
+        )
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -139,6 +189,17 @@ pub unsafe extern "C" fn phs_read_csv_options(
     separator: c_uchar,
     has_null_value: bool,
     null_value: *const c_char,
+    has_n_rows: bool,
+    n_rows: u64,
+    skip_rows: u64,
+    skip_rows_after_header: u64,
+    has_infer_schema_length: bool,
+    infer_schema_length: u64,
+    ignore_errors: bool,
+    truncate_ragged_lines: bool,
+    missing_is_null: bool,
+    low_memory: bool,
+    rechunk: bool,
     out: *mut *mut phs_dataframe,
     err: *mut *mut phs_error,
 ) -> c_int {
@@ -146,9 +207,27 @@ pub unsafe extern "C" fn phs_read_csv_options(
         let out = unsafe { required_mut(out, "out") }?;
         *out = ptr::null_mut();
         let path = unsafe { c_path(path) }?;
-        let df = unsafe { csv_read_options(has_header, separator, has_null_value, null_value) }?
-            .try_into_reader_with_file_path(Some(path))?
-            .finish()?;
+        let df = unsafe {
+            csv_read_options(
+                has_header,
+                separator,
+                has_null_value,
+                null_value,
+                has_n_rows,
+                n_rows,
+                skip_rows,
+                skip_rows_after_header,
+                has_infer_schema_length,
+                infer_schema_length,
+                ignore_errors,
+                truncate_ragged_lines,
+                missing_is_null,
+                low_memory,
+                rechunk,
+            )
+        }?
+        .try_into_reader_with_file_path(Some(path))?
+        .finish()?;
         *out = dataframe_into_raw(df);
         Ok(())
     })

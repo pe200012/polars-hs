@@ -266,6 +266,62 @@ main = hspec $ do
                         Pl.column @T.Text df "column_1" `shouldReturn` Right (V.fromList [Just "Alice", Just "Bob"])
                         Pl.column @Int64 df "column_2" `shouldReturn` Right (V.fromList [Just 34, Nothing])
 
+        it "reads CSV files with row controls" $
+            withTempFileContent "polars-hs-row-controls.csv" "metadata,skip\nname,age\nSkip,0\nAlice,34\nBob,29\nCarol,31\n" $ \path -> do
+                let options =
+                        Pl.defaultCsvReadOptions
+                            { Pl.csvReadSkipRows = 1
+                            , Pl.csvReadSkipRowsAfterHeader = 1
+                            , Pl.csvReadNRows = Just 2
+                            , Pl.csvReadLowMemory = True
+                            , Pl.csvReadRechunk = True
+                            }
+                result <- Pl.readCsvWith options path
+                case result of
+                    Left err -> expectationFailure (show err)
+                    Right df -> do
+                        Pl.shape df `shouldReturn` Right (2, 2)
+                        Pl.column @T.Text df "name" `shouldReturn` Right (V.fromList [Just "Alice", Just "Bob"])
+                        Pl.column @Int64 df "age" `shouldReturn` Right (V.fromList [Just 34, Just 29])
+
+        it "reads CSV files with inference and ragged-line controls" $
+            withTempFileContent "polars-hs-ragged.csv" "value,label\n1,one,extra\nbad,two\n3,three\n" $ \path -> do
+                let options =
+                        Pl.defaultCsvReadOptions
+                            { Pl.csvReadInferSchemaLength = Just 1
+                            , Pl.csvReadIgnoreErrors = True
+                            , Pl.csvReadTruncateRaggedLines = True
+                            , Pl.csvReadMissingIsNull = True
+                            }
+                result <- Pl.readCsvWith options path
+                case result of
+                    Left err -> expectationFailure (show err)
+                    Right df -> do
+                        Pl.shape df `shouldReturn` Right (3, 2)
+                        Pl.column @Int64 df "value" `shouldReturn` Right (V.fromList [Just 1, Nothing, Just 3])
+                        Pl.column @T.Text df "label" `shouldReturn` Right (V.fromList [Just "one", Just "two", Just "three"])
+
+        it "reads CSV files with missing-field null controls" $
+            withTempFileContent "polars-hs-missing-fields.csv" "name,score\nAlice,10\nBob\n" $ \path -> do
+                let nullOptions =
+                        Pl.defaultCsvReadOptions
+                            { Pl.csvReadInferSchemaLength = Just 0
+                            , Pl.csvReadMissingIsNull = True
+                            }
+                    emptyOptions =
+                        Pl.defaultCsvReadOptions
+                            { Pl.csvReadInferSchemaLength = Just 0
+                            , Pl.csvReadMissingIsNull = False
+                            }
+                nullResult <- Pl.readCsvWith nullOptions path
+                emptyResult <- Pl.readCsvWith emptyOptions path
+                case (nullResult, emptyResult) of
+                    (Right nullDf, Right emptyDf) -> do
+                        Pl.column @T.Text nullDf "score" `shouldReturn` Right (V.fromList [Just "10", Nothing])
+                        Pl.column @T.Text emptyDf "score" `shouldReturn` Right (V.fromList [Just "10", Just ""])
+                    (Left err, _) -> expectationFailure (show err)
+                    (_, Left err) -> expectationFailure (show err)
+
         it "writes CSV files with writer options" $
             withTempFilePath "polars-hs-custom-write.csv" $ \path -> do
                 result <- Pl.readCsv valuesCsv
@@ -339,6 +395,16 @@ main = hspec $ do
         it "reports InvalidArgument for negative Parquet row limits" $ do
             result <- Pl.readParquetWith Pl.defaultParquetReadOptions {Pl.parquetReadNRows = Just (-1)} valuesCsv
             expectInvalidArgumentMessage "parquetReadNRows must be non-negative" result
+
+        it "reports InvalidArgument for negative CSV read controls" $ do
+            nRowsResult <- Pl.readCsvWith Pl.defaultCsvReadOptions {Pl.csvReadNRows = Just (-1)} valuesCsv
+            skipRowsResult <- Pl.readCsvWith Pl.defaultCsvReadOptions {Pl.csvReadSkipRows = -1} valuesCsv
+            skipRowsAfterHeaderResult <- Pl.readCsvWith Pl.defaultCsvReadOptions {Pl.csvReadSkipRowsAfterHeader = -1} valuesCsv
+            inferResult <- Pl.readCsvWith Pl.defaultCsvReadOptions {Pl.csvReadInferSchemaLength = Just (-1)} valuesCsv
+            expectInvalidArgumentMessage "csvReadNRows must be non-negative" nRowsResult
+            expectInvalidArgumentMessage "csvReadSkipRows must be non-negative" skipRowsResult
+            expectInvalidArgumentMessage "csvReadSkipRowsAfterHeader must be non-negative" skipRowsAfterHeaderResult
+            expectInvalidArgumentMessage "csvReadInferSchemaLength must be non-negative" inferResult
 
         it "returns writer errors for paths below missing directories" $
             withTempFilePath "polars-hs-writer-anchor" $ \anchor -> do
@@ -542,6 +608,27 @@ main = hspec $ do
                             Right df -> do
                                 Pl.shape df `shouldReturn` Right (2, 2)
                                 Pl.column @Int64 df "column_2" `shouldReturn` Right (V.fromList [Just 34, Nothing])
+
+        it "scans CSV files with row controls" $
+            withTempFileContent "polars-hs-scan-row-controls.csv" "metadata,skip\nname,age\nSkip,0\nAlice,34\nBob,29\nCarol,31\n" $ \path -> do
+                let options =
+                        Pl.defaultCsvReadOptions
+                            { Pl.csvReadSkipRows = 1
+                            , Pl.csvReadSkipRowsAfterHeader = 1
+                            , Pl.csvReadNRows = Just 2
+                            , Pl.csvReadLowMemory = True
+                            , Pl.csvReadRechunk = True
+                            }
+                scanResult <- Pl.scanCsvWith options path
+                case scanResult of
+                    Left err -> expectationFailure (show err)
+                    Right lf -> do
+                        collected <- Pl.collect lf
+                        case collected of
+                            Left err -> expectationFailure (show err)
+                            Right df -> do
+                                Pl.shape df `shouldReturn` Right (2, 2)
+                                Pl.column @T.Text df "name" `shouldReturn` Right (V.fromList [Just "Alice", Just "Bob"])
 
         it "scans Parquet files with scan options" $
             withTempFilePath "polars-hs-scan-options.parquet" $ \path -> do
@@ -756,6 +843,24 @@ main = hspec $ do
                             , Pl.csvReadNullValue = Just "NA"
                             }
                 oracle <- runRustOracle ["csv-read-options", path]
+                result <- Pl.readCsvWith options path
+                case result of
+                    Left err -> expectationFailure (show err)
+                    Right df -> do
+                        actual <- canonicalDataFrameCsv df
+                        actual `shouldBe` oracle
+
+        it "matches Rust Polars for CSV row controls" $
+            withTempFileContent "polars-hs-oracle-csv-rows.csv" "metadata,skip\nname,age\nSkip,0\nAlice,34\nBob,29\nCarol,31\n" $ \path -> do
+                let options =
+                        Pl.defaultCsvReadOptions
+                            { Pl.csvReadSkipRows = 1
+                            , Pl.csvReadSkipRowsAfterHeader = 1
+                            , Pl.csvReadNRows = Just 2
+                            , Pl.csvReadLowMemory = True
+                            , Pl.csvReadRechunk = True
+                            }
+                oracle <- runRustOracle ["csv-read-row-options", path]
                 result <- Pl.readCsvWith options path
                 case result of
                     Left err -> expectationFailure (show err)

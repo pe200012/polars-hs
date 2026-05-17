@@ -248,6 +248,17 @@ foreign import ccall safe "phs_read_csv_options"
         CUChar ->
         CBool ->
         CString ->
+        CBool ->
+        Word64 ->
+        Word64 ->
+        Word64 ->
+        CBool ->
+        Word64 ->
+        CBool ->
+        CBool ->
+        CBool ->
+        CBool ->
+        CBool ->
         Ptr (Ptr RawDataFrame) ->
         Ptr (Ptr RawError) ->
         IO CInt
@@ -417,6 +428,17 @@ foreign import ccall safe "phs_scan_csv_options"
         CUChar ->
         CBool ->
         CString ->
+        CBool ->
+        Word64 ->
+        Word64 ->
+        Word64 ->
+        CBool ->
+        Word64 ->
+        CBool ->
+        CBool ->
+        CBool ->
+        CBool ->
+        CBool ->
         Ptr (Ptr RawLazyFrame) ->
         Ptr (Ptr RawError) ->
         IO CInt

@@ -109,16 +109,30 @@ readCsv = readCsvWith defaultCsvReadOptions
 
 readCsvWith :: CsvReadOptions -> FilePath -> IO (Either PolarsError DataFrame)
 readCsvWith options path =
-    withFilePathCString path $ \cPath ->
-        withMaybeTextCString (csvReadNullValue options) $ \cNullValue hasNullValue ->
-            dataframeOut
-                ( phs_read_csv_options
-                    cPath
-                    (toCBool (csvReadHasHeader options))
-                    (CUChar (csvReadSeparator options))
-                    (toCBool hasNullValue)
-                    cNullValue
-                )
+    case csvReadWordOptions options of
+        Left err -> pure (Left err)
+        Right (hasNRows, nRows, skipRows, skipRowsAfterHeader, hasInferSchemaLength, inferSchemaLength) ->
+            withFilePathCString path $ \cPath ->
+                withMaybeTextCString (csvReadNullValue options) $ \cNullValue hasNullValue ->
+                    dataframeOut
+                        ( phs_read_csv_options
+                            cPath
+                            (toCBool (csvReadHasHeader options))
+                            (CUChar (csvReadSeparator options))
+                            (toCBool hasNullValue)
+                            cNullValue
+                            (toCBool hasNRows)
+                            nRows
+                            skipRows
+                            skipRowsAfterHeader
+                            (toCBool hasInferSchemaLength)
+                            inferSchemaLength
+                            (toCBool (csvReadIgnoreErrors options))
+                            (toCBool (csvReadTruncateRaggedLines options))
+                            (toCBool (csvReadMissingIsNull options))
+                            (toCBool (csvReadLowMemory options))
+                            (toCBool (csvReadRechunk options))
+                        )
 
 readParquet :: FilePath -> IO (Either PolarsError DataFrame)
 readParquet = readParquetWith defaultParquetReadOptions
@@ -394,6 +408,14 @@ optionalNonNegativeWord64 _ Nothing = Right (False, 0)
 optionalNonNegativeWord64 label (Just value) = do
     word <- nonNegativeWord64 label value
     Right (True, word)
+
+csvReadWordOptions :: CsvReadOptions -> Either PolarsError (Bool, Word64, Word64, Word64, Bool, Word64)
+csvReadWordOptions options = do
+    (hasNRows, nRows) <- optionalNonNegativeWord64 "csvReadNRows" (csvReadNRows options)
+    skipRows <- nonNegativeWord64 "csvReadSkipRows" (csvReadSkipRows options)
+    skipRowsAfterHeader <- nonNegativeWord64 "csvReadSkipRowsAfterHeader" (csvReadSkipRowsAfterHeader options)
+    (hasInferSchemaLength, inferSchemaLength) <- optionalNonNegativeWord64 "csvReadInferSchemaLength" (csvReadInferSchemaLength options)
+    Right (hasNRows, nRows, skipRows, skipRowsAfterHeader, hasInferSchemaLength, inferSchemaLength)
 
 parquetCompressionCode :: ParquetCompression -> CInt
 parquetCompressionCode ParquetDefaultCompression = 0

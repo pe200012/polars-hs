@@ -23,6 +23,17 @@ fn csv_read_options(path: PathBuf) -> Result<DataFrame, Box<dyn Error>> {
         .finish()?)
 }
 
+fn csv_read_row_options(path: PathBuf) -> Result<DataFrame, Box<dyn Error>> {
+    Ok(CsvReadOptions::default()
+        .with_skip_rows(1)
+        .with_skip_rows_after_header(1)
+        .with_n_rows(Some(2))
+        .with_low_memory(true)
+        .with_rechunk(true)
+        .try_into_reader_with_file_path(Some(path))?
+        .finish()?)
+}
+
 fn parquet_read_n_rows(path: PathBuf) -> Result<DataFrame, Box<dyn Error>> {
     let file = File::open(path)?;
     Ok(ParquetReader::new(file).with_slice(Some((0, 2))).finish()?)
@@ -52,6 +63,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let path = PathBuf::from(required_arg(&mut args, "path")?);
     let dataframe = match command.as_str() {
         "csv-read-options" => csv_read_options(path)?,
+        "csv-read-row-options" => csv_read_row_options(path)?,
         "parquet-read-n-rows" => parquet_read_n_rows(path)?,
         other => return Err(format!("unknown oracle command: {other}").into()),
     };
