@@ -23,7 +23,7 @@ import Foreign.Ptr (Ptr, nullPtr)
 import Foreign.Storable (peek, poke)
 
 import Polars.DataFrame (DataFrame)
-import Polars.Error (PolarsError)
+import Polars.Error (PolarsError (..), PolarsErrorCode (InvalidArgument))
 import Polars.Internal.Bytes (copyAndFreeBytes)
 import Polars.Internal.Managed (Series, mkDataFrame, mkSeries, withSeries)
 import Polars.Internal.Raw (RawBytes, RawDataFrame, RawError, RawSeries)
@@ -85,4 +85,4 @@ seriesDataFrameOut series action = withSeries series $ \ptr ->
 word64ToInt :: Word64 -> Either PolarsError Int
 word64ToInt value
     | value <= fromIntegral (maxBound :: Int) = Right (fromIntegral value)
-    | otherwise = Left (nullPointerError "integer conversion")
+    | otherwise = Left (PolarsError InvalidArgument "integer conversion exceeds Haskell Int range")

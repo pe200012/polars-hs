@@ -232,16 +232,16 @@ foreign import ccall unsafe "&phs_expr_free"
 foreign import ccall unsafe "&phs_series_free"
     phs_series_free_finalizer :: FinalizerPtr RawSeries
 
-foreign import ccall unsafe "phs_read_csv"
+foreign import ccall safe "phs_read_csv"
     phs_read_csv :: CString -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
 
-foreign import ccall unsafe "phs_read_parquet"
+foreign import ccall safe "phs_read_parquet"
     phs_read_parquet :: CString -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
 
-foreign import ccall unsafe "phs_write_csv"
+foreign import ccall safe "phs_write_csv"
     phs_write_csv :: CString -> Ptr RawDataFrame -> Ptr (Ptr RawError) -> IO CInt
 
-foreign import ccall unsafe "phs_write_parquet"
+foreign import ccall safe "phs_write_parquet"
     phs_write_parquet :: CString -> Ptr RawDataFrame -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_dataframe_new"
@@ -268,16 +268,16 @@ foreign import ccall unsafe "phs_dataframe_drop_nulls"
 foreign import ccall unsafe "phs_dataframe_null_count"
     phs_dataframe_null_count :: Ptr RawDataFrame -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
 
-foreign import ccall unsafe "phs_dataframe_from_arrow_record_batch"
+foreign import ccall safe "phs_dataframe_from_arrow_record_batch"
     phs_dataframe_from_arrow_record_batch :: Ptr () -> Ptr () -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
 
-foreign import ccall unsafe "phs_dataframe_to_arrow_record_batch"
+foreign import ccall safe "phs_dataframe_to_arrow_record_batch"
     phs_dataframe_to_arrow_record_batch :: Ptr RawDataFrame -> Ptr (Ptr RawArrowRecordBatch) -> Ptr (Ptr RawError) -> IO CInt
 
-foreign import ccall unsafe "phs_series_from_arrow_array"
+foreign import ccall safe "phs_series_from_arrow_array"
     phs_series_from_arrow_array :: Ptr () -> Ptr () -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
 
-foreign import ccall unsafe "phs_series_to_arrow_array"
+foreign import ccall safe "phs_series_to_arrow_array"
     phs_series_to_arrow_array :: Ptr RawSeries -> Ptr (Ptr RawArrowSeries) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_dataframe_shape"
@@ -367,19 +367,19 @@ foreign import ccall unsafe "phs_expr_binary"
 foreign import ccall unsafe "phs_expr_agg"
     phs_expr_agg :: CInt -> Ptr RawExpr -> Ptr (Ptr RawExpr) -> Ptr (Ptr RawError) -> IO CInt
 
-foreign import ccall unsafe "phs_scan_csv"
+foreign import ccall safe "phs_scan_csv"
     phs_scan_csv :: CString -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
 
-foreign import ccall unsafe "phs_scan_parquet"
+foreign import ccall safe "phs_scan_parquet"
     phs_scan_parquet :: CString -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
 
-foreign import ccall unsafe "phs_lazyframe_collect"
+foreign import ccall safe "phs_lazyframe_collect"
     phs_lazyframe_collect :: Ptr RawLazyFrame -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
 
-foreign import ccall unsafe "phs_lazyframe_explain"
+foreign import ccall safe "phs_lazyframe_explain"
     phs_lazyframe_explain :: Ptr RawLazyFrame -> CBool -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt
 
-foreign import ccall unsafe "phs_lazyframe_profile"
+foreign import ccall safe "phs_lazyframe_profile"
     phs_lazyframe_profile :: Ptr RawLazyFrame -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_lazyframe_filter"
@@ -433,16 +433,16 @@ foreign import ccall unsafe "phs_lazyframe_group_by_agg"
 foreign import ccall unsafe "phs_lazyframe_join"
     phs_lazyframe_join :: Ptr RawLazyFrame -> Ptr RawLazyFrame -> Ptr (Ptr RawExpr) -> CSize -> Ptr (Ptr RawExpr) -> CSize -> CInt -> CString -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
 
-foreign import ccall unsafe "phs_dataframe_to_ipc_bytes"
+foreign import ccall safe "phs_dataframe_to_ipc_bytes"
     phs_dataframe_to_ipc_bytes :: Ptr RawDataFrame -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt
 
-foreign import ccall unsafe "phs_dataframe_from_ipc_bytes"
+foreign import ccall safe "phs_dataframe_from_ipc_bytes"
     phs_dataframe_from_ipc_bytes :: Ptr Word8 -> CSize -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
 
-foreign import ccall unsafe "phs_read_ipc_file"
+foreign import ccall safe "phs_read_ipc_file"
     phs_read_ipc_file :: CString -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
 
-foreign import ccall unsafe "phs_write_ipc_file"
+foreign import ccall safe "phs_write_ipc_file"
     phs_write_ipc_file :: CString -> Ptr RawDataFrame -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_series_new_bool"

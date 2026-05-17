@@ -154,12 +154,12 @@ schema df = bytesOut df phs_dataframe_schema (parseSchemaBytes . BS.split 0)
 
 head :: Int -> DataFrame -> IO (Either PolarsError DataFrame)
 head n df
-    | n < 0 = pure (Left (nullPointerError "head count"))
+    | n < 0 = pure (Left (invalidArgument "head count must be non-negative"))
     | otherwise = withDataFrame df $ \ptr -> dataframeOut (phs_dataframe_head ptr (fromIntegral n))
 
 tail :: Int -> DataFrame -> IO (Either PolarsError DataFrame)
 tail n df
-    | n < 0 = pure (Left (nullPointerError "tail count"))
+    | n < 0 = pure (Left (invalidArgument "tail count must be non-negative"))
     | otherwise = withDataFrame df $ \ptr -> dataframeOut (phs_dataframe_tail ptr (fromIntegral n))
 
 toText :: DataFrame -> IO (Either PolarsError Text)
@@ -256,7 +256,7 @@ parseSchemaBytes chunks = go (dropTrailingEmpty chunks)
 word64ToInt :: Word64 -> Either PolarsError Int
 word64ToInt value
     | value <= fromIntegral (maxBound :: Int) = Right (fromIntegral value)
-    | otherwise = Left (nullPointerError "integer conversion")
+    | otherwise = Left (invalidArgument "integer conversion exceeds Haskell Int range")
 
 nonNegativeWord64 :: Text -> Int -> Either PolarsError Word64
 nonNegativeWord64 label value

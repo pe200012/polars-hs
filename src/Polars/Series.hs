@@ -133,7 +133,6 @@ import Polars.Internal.Raw
     , phs_series_values_u32
     , phs_series_values_u64
     )
-import Polars.Internal.Result (nullPointerError)
 import Polars.Schema (DataType, parseDataType)
 
 data SeriesSortOptions = SeriesSortOptions
@@ -247,12 +246,12 @@ seriesNullCount input = seriesWord64Out input phs_series_null_count
 
 seriesHead :: Int -> Series -> IO (Either PolarsError Series)
 seriesHead n input
-    | n < 0 = pure (Left (nullPointerError "series head count"))
+    | n < 0 = pure (Left (invalidArgument "series head count must be non-negative"))
     | otherwise = withSeries input $ \ptr -> seriesOut (phs_series_head ptr (fromIntegral n))
 
 seriesTail :: Int -> Series -> IO (Either PolarsError Series)
 seriesTail n input
-    | n < 0 = pure (Left (nullPointerError "series tail count"))
+    | n < 0 = pure (Left (invalidArgument "series tail count must be non-negative"))
     | otherwise = withSeries input $ \ptr -> seriesOut (phs_series_tail ptr (fromIntegral n))
 
 seriesToFrame :: Series -> IO (Either PolarsError DataFrame)
@@ -352,8 +351,11 @@ seriesUnaryOut input action = withSeries input $ \ptr -> seriesOut (action ptr)
 sortLimitWord64 :: Maybe Int -> Either PolarsError (Bool, Word64)
 sortLimitWord64 Nothing = Right (False, 0)
 sortLimitWord64 (Just value)
-    | value < 0 = Left (nullPointerError "series sort limit")
+    | value < 0 = Left (invalidArgument "series sort limit must be non-negative")
     | otherwise = Right (True, fromIntegral value)
+
+invalidArgument :: Text -> PolarsError
+invalidArgument = PolarsError InvalidArgument
 
 toCBool :: Bool -> CBool
 toCBool False = CBool 0

@@ -69,6 +69,14 @@ expectPolarsFailure result =
         Left err -> Pl.polarsErrorCode err `shouldBe` Pl.PolarsFailure
         Right value -> expectationFailure ("expected writer error, received " <> show value)
 
+expectInvalidArgumentMessage :: T.Text -> Either Pl.PolarsError a -> IO ()
+expectInvalidArgumentMessage expected result =
+    case result of
+        Left err -> do
+            Pl.polarsErrorCode err `shouldBe` Pl.InvalidArgument
+            Pl.polarsErrorMessage err `shouldBe` expected
+        Right _ -> expectationFailure ("expected InvalidArgument: " <> T.unpack expected)
+
 expectValuesFrame :: Pl.DataFrame -> IO ()
 expectValuesFrame df = do
     Pl.shape df `shouldReturn` Right (3, 4)
@@ -257,6 +265,8 @@ main = hspec $ do
                     dropResult <- Pl.dataFrameDropColumns [] df
                     renameResult <- Pl.dataFrameRename [] df
                     sliceResult <- Pl.dataFrameSlice 0 (-1) df
+                    headResult <- Pl.head (-1) df
+                    tailResult <- Pl.tail (-1) df
                     dropNullsResult <- Pl.dataFrameDropNulls (Just []) df
                     case selectResult of
                         Right _ -> expectationFailure "expected InvalidArgument for empty dataFrameSelect"
@@ -270,6 +280,8 @@ main = hspec $ do
                     case sliceResult of
                         Right _ -> expectationFailure "expected InvalidArgument for negative dataFrameSlice length"
                         Left err -> Pl.polarsErrorCode err `shouldBe` Pl.InvalidArgument
+                    expectInvalidArgumentMessage "head count must be non-negative" headResult
+                    expectInvalidArgumentMessage "tail count must be non-negative" tailResult
                     case dropNullsResult of
                         Right _ -> expectationFailure "expected InvalidArgument for empty dataFrameDropNulls subset"
                         Left err -> Pl.polarsErrorCode err `shouldBe` Pl.InvalidArgument
@@ -744,13 +756,9 @@ main = hspec $ do
                         Left err -> expectationFailure (show err)
                         Right age -> do
                             headResult <- Pl.seriesHead (-1) age
-                            case headResult of
-                                Right _ -> expectationFailure "expected InvalidArgument for negative Series head count"
-                                Left err -> Pl.polarsErrorCode err `shouldBe` Pl.InvalidArgument
                             tailResult <- Pl.seriesTail (-1) age
-                            case tailResult of
-                                Right _ -> expectationFailure "expected InvalidArgument for negative Series tail count"
-                                Left err -> Pl.polarsErrorCode err `shouldBe` Pl.InvalidArgument
+                            expectInvalidArgumentMessage "series head count must be non-negative" headResult
+                            expectInvalidArgumentMessage "series tail count must be non-negative" tailResult
 
         it "keeps Series handles usable after DataFrame ownership leaves scope" $ do
             seriesResult <- do
@@ -887,9 +895,21 @@ main = hspec $ do
                         Right age -> do
                             let options = Pl.defaultSeriesSortOptions { Pl.seriesSortLimit = Just (-1) }
                             sortedResult <- Pl.seriesSort options age
-                            case sortedResult of
-                                Right _ -> expectationFailure "expected InvalidArgument for negative Series sort limit"
-                                Left err -> Pl.polarsErrorCode err `shouldBe` Pl.InvalidArgument
+                            expectInvalidArgumentMessage "series sort limit must be non-negative" sortedResult
+
+        it "reports InvalidArgument when Series sort limit exceeds Polars index size" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    seriesResult <- Pl.column @Pl.Series df "age"
+                    case seriesResult of
+                        Left err -> expectationFailure (show err)
+                        Right age -> do
+                            let overflowingLimit = fromIntegral (maxBound :: Word32) + 1
+                                options = Pl.defaultSeriesSortOptions { Pl.seriesSortLimit = Just overflowingLimit }
+                            sortedResult <- Pl.seriesSort options age
+                            expectInvalidArgumentMessage "series sort limit exceeds Polars index size" sortedResult
 
         it "uniques, reverses, and drops nulls from Series handles" $ do
             result <- Pl.readCsv valuesCsv

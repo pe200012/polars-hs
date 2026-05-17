@@ -153,6 +153,12 @@ fn dtype_from_code(code: c_int) -> PhsResult<DataType> {
     }
 }
 
+fn idx_size_from_u64(value: u64, label: &str) -> PhsResult<IdxSize> {
+    value
+        .try_into()
+        .map_err(|_| PhsError::invalid_argument(format!("{label} exceeds Polars index size")))
+}
+
 fn raw_bytes<'a>(data: *const u8, len: usize, name: &str) -> PhsResult<&'a [u8]> {
     if len == 0 {
         Ok(&[])
@@ -602,7 +608,7 @@ pub unsafe extern "C" fn phs_series_sort(
             .with_multithreaded(multithreaded)
             .with_maintain_order(maintain_order);
         if has_limit {
-            options.limit = Some(limit as IdxSize);
+            options.limit = Some(idx_size_from_u64(limit, "series sort limit")?);
         }
         Ok(value.sort(options)?)
     })
@@ -786,8 +792,9 @@ mod tests {
     use super::*;
     use crate::bytes::{phs_bytes_data, phs_bytes_free, phs_bytes_len};
     use crate::dataframe::{phs_dataframe_column, phs_dataframe_new, phs_read_csv};
-    use crate::error::{PHS_OK, phs_error_free};
+    use crate::error::{PHS_INVALID_ARGUMENT, PHS_OK, phs_error_free, phs_error_message};
     use crate::handles::{phs_dataframe_free, phs_series_free};
+    use std::ffi::CStr;
     use std::path::PathBuf;
 
     fn values_fixture_path() -> std::ffi::CString {
@@ -832,6 +839,16 @@ mod tests {
         let bytes = unsafe { std::slice::from_raw_parts(data, len) }.to_vec();
         unsafe { phs_bytes_free(raw) };
         bytes
+    }
+
+    unsafe fn take_error_message(raw: *mut phs_error) -> String {
+        assert!(!raw.is_null());
+        let message = unsafe { CStr::from_ptr(phs_error_message(raw)) }
+            .to_str()
+            .unwrap()
+            .to_owned();
+        unsafe { phs_error_free(raw) };
+        message
     }
 
     fn encoded_i64(values: &[Option<i64>]) -> Vec<u8> {
@@ -1034,6 +1051,22 @@ mod tests {
             phs_series_free(out);
             phs_series_free(series);
         }
+    }
+
+    #[test]
+    fn series_sort_rejects_limit_overflow() {
+        let series = read_age_series();
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        let overflowing_limit = u64::from(u32::MAX) + 1;
+
+        let status = unsafe { phs_series_sort(series, false, false, true, false, true, overflowing_limit, &mut out, &mut err) };
+
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        assert!(out.is_null());
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "series sort limit exceeds Polars index size");
+        unsafe { phs_series_free(series) };
     }
 
     #[test]
