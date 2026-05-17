@@ -34,6 +34,7 @@ module Polars.DataFrame
 import Prelude hiding (head, tail)
 
 import qualified Data.ByteString as BS
+import Data.Bits ((.|.), shiftL)
 import Data.Text (Text)
 import qualified Data.Text.Encoding as TE
 import Foreign.C.String (CString)
@@ -74,7 +75,10 @@ import Polars.Internal.Raw
     , phs_write_parquet
     )
 import Polars.Internal.Result (consumeError, nullPointerError)
-import Polars.Schema (Field (..), parseDataType)
+import Polars.Schema (Field (..), dataTypeFromSchemaTag)
+
+schemaMagic :: BS.ByteString
+schemaMagic = "PHS1SCH\0"
 
 readCsv :: FilePath -> IO (Either PolarsError DataFrame)
 readCsv path = withFilePathCString path $ \cPath -> dataframeOut (phs_read_csv cPath)
@@ -150,7 +154,7 @@ shape df = withDataFrame df $ \ptr ->
                     else Left <$> (consumeError status =<< peek errPtr)
 
 schema :: DataFrame -> IO (Either PolarsError [Field])
-schema df = bytesOut df phs_dataframe_schema (parseSchemaBytes . BS.split 0)
+schema df = bytesEitherOut df phs_dataframe_schema parseSchemaBytes
 
 head :: Int -> DataFrame -> IO (Either PolarsError DataFrame)
 head n df
@@ -240,18 +244,71 @@ bytesOut df action decode = withDataFrame df $ \ptr ->
                     pure (Right (decode bytes))
                 else Left <$> (consumeError (fromIntegralStatus status) =<< peek errPtr)
 
-parseSchemaBytes :: [BS.ByteString] -> [Field]
-parseSchemaBytes chunks = go (dropTrailingEmpty chunks)
-  where
-    go (nameBytes : dtypeBytes : rest) =
-        let name = TE.decodeUtf8 nameBytes
-            dtype = parseDataType (TE.decodeUtf8 dtypeBytes)
-         in Field name dtype : go rest
-    go _ = []
+bytesEitherOut :: DataFrame -> (Ptr RawDataFrame -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt) -> (BS.ByteString -> Either PolarsError a) -> IO (Either PolarsError a)
+bytesEitherOut df action decode = withDataFrame df $ \ptr ->
+    alloca $ \outPtr ->
+        alloca $ \errPtr -> do
+            poke outPtr nullPtr
+            poke errPtr nullPtr
+            status <- action ptr outPtr errPtr
+            if fromIntegralStatus status == 0
+                then do
+                    bytes <- copyAndFreeBytes =<< peek outPtr
+                    pure (decode bytes)
+                else Left <$> (consumeError (fromIntegralStatus status) =<< peek errPtr)
 
-    dropTrailingEmpty xs = case reverse xs of
-        (empty : rest) | BS.null empty -> reverse rest
-        _ -> xs
+parseSchemaBytes :: BS.ByteString -> Either PolarsError [Field]
+parseSchemaBytes bytes0 = do
+    bytes1 <- stripSchemaMagic bytes0
+    (fieldCount, bytes2) <- takeWord64 "schema field count" bytes1
+    parseFields fieldCount bytes2 []
+  where
+    parseFields 0 rest acc
+        | BS.null rest = Right (reverse acc)
+        | otherwise = Left (invalidArgument "schema payload contained trailing bytes")
+    parseFields remaining bytes acc = do
+        (nameLen, bytes1) <- takeWord64 "schema field name length" bytes
+        (nameBytes, bytes2) <- takeBytes "schema field name" nameLen bytes1
+        name <- decodeUtf8Schema "schema field name" nameBytes
+        (dtypeTag, bytes3) <- takeWord16 "schema dtype tag" bytes2
+        (detailLen, bytes4) <- takeWord64 "schema dtype detail length" bytes3
+        (detailBytes, bytes5) <- takeBytes "schema dtype detail" detailLen bytes4
+        detail <- decodeUtf8Schema "schema dtype detail" detailBytes
+        let dtype = dataTypeFromSchemaTag dtypeTag detail
+        parseFields (remaining - 1) bytes5 (Field name dtype : acc)
+
+stripSchemaMagic :: BS.ByteString -> Either PolarsError BS.ByteString
+stripSchemaMagic bytes
+    | schemaMagic `BS.isPrefixOf` bytes = Right (BS.drop (BS.length schemaMagic) bytes)
+    | otherwise = Left (invalidArgument "schema payload has unsupported format")
+
+takeBytes :: Text -> Int -> BS.ByteString -> Either PolarsError (BS.ByteString, BS.ByteString)
+takeBytes label len bytes
+    | len < 0 = Left (invalidArgument (label <> " length exceeds Haskell Int range"))
+    | BS.length bytes < len = Left (invalidArgument (label <> " ended early"))
+    | otherwise = Right (BS.splitAt len bytes)
+
+takeWord64 :: Text -> BS.ByteString -> Either PolarsError (Int, BS.ByteString)
+takeWord64 label bytes = do
+    (wordBytes, rest) <- takeBytes label 8 bytes
+    value <- word64ToInt (foldWordLE wordBytes)
+    Right (value, rest)
+  where
+    foldWordLE :: BS.ByteString -> Word64
+    foldWordLE = BS.foldr' (\byte acc -> (acc `shiftL` 8) .|. fromIntegral byte) 0
+
+takeWord16 :: Text -> BS.ByteString -> Either PolarsError (Int, BS.ByteString)
+takeWord16 label bytes = do
+    (wordBytes, rest) <- takeBytes label 2 bytes
+    Right (fromIntegral (foldWordLE wordBytes), rest)
+  where
+    foldWordLE :: BS.ByteString -> Word64
+    foldWordLE = BS.foldr' (\byte acc -> (acc `shiftL` 8) .|. fromIntegral byte) 0
+
+decodeUtf8Schema :: Text -> BS.ByteString -> Either PolarsError Text
+decodeUtf8Schema label bytes = case TE.decodeUtf8' bytes of
+    Left _ -> Left (invalidArgument (label <> " contained invalid UTF-8"))
+    Right text -> Right text
 
 word64ToInt :: Word64 -> Either PolarsError Int
 word64ToInt value

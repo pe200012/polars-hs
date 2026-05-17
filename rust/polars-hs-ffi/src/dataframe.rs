@@ -16,6 +16,8 @@ use crate::series::{
     encode_u32_series, encode_u64_series,
 };
 
+const SCHEMA_MAGIC: &[u8; 8] = b"PHS1SCH\0";
+
 unsafe fn c_path(path: *const c_char) -> PhsResult<PathBuf> {
     Ok(PathBuf::from(unsafe { c_str_to_str(path, "path") }?))
 }
@@ -37,6 +39,57 @@ unsafe fn name_vec(names: *const *const c_char, len: usize, label: &str) -> PhsR
 
 fn usize_from_u64(value: u64, label: &str) -> PhsResult<usize> {
     usize::try_from(value).map_err(|_| PhsError::invalid_argument(format!("{label} exceeded usize")))
+}
+
+fn push_u64_le(bytes: &mut Vec<u8>, value: u64) {
+    bytes.extend_from_slice(&value.to_le_bytes());
+}
+
+fn push_u16_le(bytes: &mut Vec<u8>, value: u16) {
+    bytes.extend_from_slice(&value.to_le_bytes());
+}
+
+fn schema_dtype_tag(dtype: &DataType) -> u16 {
+    match dtype {
+        DataType::Boolean => 0,
+        DataType::Int8 => 1,
+        DataType::Int16 => 2,
+        DataType::Int32 => 3,
+        DataType::Int64 => 4,
+        DataType::UInt8 => 5,
+        DataType::UInt16 => 6,
+        DataType::UInt32 => 7,
+        DataType::UInt64 => 8,
+        DataType::Float32 => 9,
+        DataType::Float64 => 10,
+        DataType::String => 11,
+        DataType::Date => 12,
+        DataType::Datetime(_, _) => 13,
+        DataType::Duration(_) => 14,
+        DataType::Time => 15,
+        DataType::Binary | DataType::BinaryOffset => 16,
+        DataType::Null => 17,
+        dtype if dtype.is_categorical() || dtype.is_enum() => 18,
+        _ => 255,
+    }
+}
+
+fn encode_schema_bytes(dataframe: &DataFrame) -> Vec<u8> {
+    let schema = dataframe.schema();
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(SCHEMA_MAGIC);
+    push_u64_le(&mut bytes, schema.len() as u64);
+    for field in schema.iter_fields() {
+        let name = field.name().as_str().as_bytes();
+        let dtype = field.dtype();
+        let detail = format!("{dtype:?}");
+        push_u64_le(&mut bytes, name.len() as u64);
+        bytes.extend_from_slice(name);
+        push_u16_le(&mut bytes, schema_dtype_tag(dtype));
+        push_u64_le(&mut bytes, detail.len() as u64);
+        bytes.extend_from_slice(detail.as_bytes());
+    }
+    bytes
 }
 
 #[unsafe(no_mangle)]
@@ -340,14 +393,7 @@ pub unsafe extern "C" fn phs_dataframe_schema(
         let out = unsafe { required_mut(out, "out") }?;
         *out = ptr::null_mut();
         let handle = unsafe { dataframe_ref(dataframe) }?;
-        let mut bytes = Vec::new();
-        for field in handle.value.schema().iter_fields() {
-            bytes.extend_from_slice(field.name().as_str().as_bytes());
-            bytes.push(0);
-            bytes.extend_from_slice(format!("{:?}", field.dtype()).as_bytes());
-            bytes.push(0);
-        }
-        *out = bytes_into_raw(bytes);
+        *out = bytes_into_raw(encode_schema_bytes(&handle.value));
         Ok(())
     })
 }
@@ -701,6 +747,30 @@ mod tests {
         expected.extend_from_slice(b"Carol");
         assert_eq!(bytes, expected);
         unsafe { crate::handles::phs_dataframe_free(df) };
+    }
+
+    #[test]
+    fn schema_encoding_preserves_nul_field_names() {
+        let column = Series::new("a\0b".into(), [1_i64, 2]).into();
+        let df = DataFrame::new_infer_height(vec![column]).unwrap();
+        let raw = dataframe_into_raw(df);
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_dataframe_schema(raw, &mut out, &mut err) };
+
+        assert_eq!(status, PHS_OK);
+        assert!(err.is_null());
+        let bytes = unsafe { take_raw_bytes(out) };
+        let mut expected = b"PHS1SCH\0".to_vec();
+        expected.extend_from_slice(&1_u64.to_le_bytes());
+        expected.extend_from_slice(&3_u64.to_le_bytes());
+        expected.extend_from_slice(b"a\0b");
+        expected.extend_from_slice(&4_u16.to_le_bytes());
+        expected.extend_from_slice(&5_u64.to_le_bytes());
+        expected.extend_from_slice(b"Int64");
+        assert_eq!(bytes, expected);
+        unsafe { crate::handles::phs_dataframe_free(raw) };
     }
 
     #[test]

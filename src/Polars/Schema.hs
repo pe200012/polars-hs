@@ -11,6 +11,7 @@ Haskell datatype and preserves unknown names for forward compatibility.
 module Polars.Schema
     ( DataType (..)
     , Field (..)
+    , dataTypeFromSchemaTag
     , parseDataType
     ) where
 
@@ -70,3 +71,27 @@ parseDataType "Binary" = Binary
 parseDataType "Null" = Null
 parseDataType value | "Categorical" `T.isPrefixOf` value = Categorical
 parseDataType value = UnknownType value
+
+dataTypeFromSchemaTag :: Int -> Text -> DataType
+dataTypeFromSchemaTag 0 _ = Boolean
+dataTypeFromSchemaTag 1 _ = Int8
+dataTypeFromSchemaTag 2 _ = Int16
+dataTypeFromSchemaTag 3 _ = Int32
+dataTypeFromSchemaTag 4 _ = Int64
+dataTypeFromSchemaTag 5 _ = UInt8
+dataTypeFromSchemaTag 6 _ = UInt16
+dataTypeFromSchemaTag 7 _ = UInt32
+dataTypeFromSchemaTag 8 _ = UInt64
+dataTypeFromSchemaTag 9 _ = Float32
+dataTypeFromSchemaTag 10 _ = Float64
+dataTypeFromSchemaTag 11 _ = Utf8
+dataTypeFromSchemaTag 12 _ = Date
+dataTypeFromSchemaTag 13 _ = Datetime
+dataTypeFromSchemaTag 14 _ = Duration
+dataTypeFromSchemaTag 15 _ = Time
+dataTypeFromSchemaTag 16 _ = Binary
+dataTypeFromSchemaTag 17 _ = Null
+dataTypeFromSchemaTag 18 _ = Categorical
+dataTypeFromSchemaTag _ detail
+    | T.null detail = UnknownType "unknown schema datatype"
+    | otherwise = UnknownType detail
