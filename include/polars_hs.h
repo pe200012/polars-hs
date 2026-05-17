@@ -854,6 +854,11 @@ int phs_series_diff(const struct phs_series *series,
                     struct phs_series **out,
                     struct phs_error **err);
 
+int phs_series_interpolate(const struct phs_series *series,
+                           int method,
+                           struct phs_series **out,
+                           struct phs_error **err);
+
 int phs_series_is_null(const struct phs_series *series,
                        struct phs_series **out,
                        struct phs_error **err);

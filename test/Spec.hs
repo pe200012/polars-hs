@@ -1984,6 +1984,46 @@ main = hspec $ do
                 (_, _, _, _, _, Left err, _) -> expectationFailure (show err)
                 (_, _, _, _, _, _, Left err) -> expectationFailure (show err)
 
+        it "interpolates Series nulls" $ do
+            valuesResult <- Pl.series @Word32 "value" (V.fromList [Nothing, Just 1, Nothing, Nothing, Just 4, Just 5, Nothing])
+            descendingResult <- Pl.series @Word32 "descending" (V.fromList [Just 4, Nothing, Nothing, Just 1])
+            doubleResult <- Pl.series @Double "double" (V.fromList [Just 1.5, Nothing, Just 4.5])
+            allNullResult <- Pl.series @Word32 "all_null" (V.fromList [Nothing, Nothing, Nothing])
+            textResult <- Pl.series @T.Text "text" (V.fromList [Just "a", Nothing, Just "b"])
+            boolResult <- Pl.series @Bool "flag" (V.fromList [Just True, Nothing, Just False])
+            case (valuesResult, descendingResult, doubleResult, allNullResult, textResult, boolResult) of
+                (Right values, Right descending, Right doubles, Right allNull, Right textSeries, Right boolSeries) -> do
+                    linearResult <- Pl.seriesInterpolate Pl.SeriesInterpolateLinear values
+                    nearestResult <- Pl.seriesInterpolate Pl.SeriesInterpolateNearest values
+                    descendingResult' <- Pl.seriesInterpolate Pl.SeriesInterpolateLinear descending
+                    doubleResult' <- Pl.seriesInterpolate Pl.SeriesInterpolateLinear doubles
+                    allNullResult' <- Pl.seriesInterpolate Pl.SeriesInterpolateLinear allNull
+                    linearTextResult <- Pl.seriesInterpolate Pl.SeriesInterpolateLinear textSeries
+                    nearestTextResult <- Pl.seriesInterpolate Pl.SeriesInterpolateNearest textSeries
+                    nearestBoolResult <- Pl.seriesInterpolate Pl.SeriesInterpolateNearest boolSeries
+                    case (linearResult, nearestResult, descendingResult', doubleResult', allNullResult', linearTextResult) of
+                        (Right linear, Right nearest, Right descendingLinear, Right doubleLinear, Right allNullLinear, Right linearText) -> do
+                            Pl.seriesDouble linear `shouldReturn` Right (V.fromList [Nothing, Just 1.0, Just 2.0, Just 3.0, Just 4.0, Just 5.0, Nothing])
+                            Pl.seriesWord32 nearest `shouldReturn` Right (V.fromList [Nothing, Just 1, Just 1, Just 4, Just 4, Just 5, Nothing])
+                            Pl.seriesDouble descendingLinear `shouldReturn` Right (V.fromList [Just 4.0, Just 3.0, Just 2.0, Just 1.0])
+                            Pl.seriesDouble doubleLinear `shouldReturn` Right (V.fromList [Just 1.5, Just 3.0, Just 4.5])
+                            Pl.seriesDouble allNullLinear `shouldReturn` Right (V.fromList [Nothing, Nothing, Nothing])
+                            Pl.seriesText linearText `shouldReturn` Right (V.fromList [Just "a", Nothing, Just "b"])
+                        (Left err, _, _, _, _, _) -> expectationFailure (show err)
+                        (_, Left err, _, _, _, _) -> expectationFailure (show err)
+                        (_, _, Left err, _, _, _) -> expectationFailure (show err)
+                        (_, _, _, Left err, _, _) -> expectationFailure (show err)
+                        (_, _, _, _, Left err, _) -> expectationFailure (show err)
+                        (_, _, _, _, _, Left err) -> expectationFailure (show err)
+                    expectInvalidArgumentMessage "series interpolate nearest is unsupported for dtype String" nearestTextResult
+                    expectInvalidArgumentMessage "series interpolate nearest is unsupported for dtype Boolean" nearestBoolResult
+                (Left err, _, _, _, _, _) -> expectationFailure (show err)
+                (_, Left err, _, _, _, _) -> expectationFailure (show err)
+                (_, _, Left err, _, _, _) -> expectationFailure (show err)
+                (_, _, _, Left err, _, _) -> expectationFailure (show err)
+                (_, _, _, _, Left err, _) -> expectationFailure (show err)
+                (_, _, _, _, _, Left err) -> expectationFailure (show err)
+
         it "fills Series nulls with strategies" $ do
             result <- Pl.readCsv valuesCsv
             case result of

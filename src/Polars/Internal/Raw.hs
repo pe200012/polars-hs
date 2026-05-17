@@ -147,6 +147,7 @@ module Polars.Internal.Raw
     , phs_series_floor
     , phs_series_free_finalizer
     , phs_series_head
+    , phs_series_interpolate
     , phs_series_is_duplicated
     , phs_series_is_finite
     , phs_series_is_first_distinct
@@ -726,6 +727,9 @@ foreign import ccall safe "phs_series_ceil"
 
 foreign import ccall safe "phs_series_diff"
     phs_series_diff :: Ptr RawSeries -> CLLong -> CInt -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_series_interpolate"
+    phs_series_interpolate :: Ptr RawSeries -> CInt -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_series_is_null"
     phs_series_is_null :: Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt

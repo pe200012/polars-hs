@@ -17,6 +17,7 @@ module Polars.Series
     , SeriesCast (..)
     , SeriesDiffNullBehavior (..)
     , SeriesFrom (..)
+    , SeriesInterpolationMethod (..)
     , SeriesRoundMode (..)
     , SeriesSortOptions (..)
     , defaultSeriesSortOptions
@@ -37,6 +38,7 @@ module Polars.Series
     , seriesInt16
     , seriesInt32
     , seriesInt64
+    , seriesInterpolate
     , seriesIsDuplicated
     , seriesIsFinite
     , seriesIsFirstDistinct
@@ -139,6 +141,7 @@ import Polars.Internal.Raw
     , phs_series_fill_null
     , phs_series_floor
     , phs_series_head
+    , phs_series_interpolate
     , phs_series_is_duplicated
     , phs_series_is_finite
     , phs_series_is_first_distinct
@@ -218,6 +221,12 @@ data SeriesRoundMode
 data SeriesDiffNullBehavior
     = SeriesDiffIgnore
     | SeriesDiffDrop
+    deriving stock (Eq, Show)
+
+-- | Interpolation algorithm for filling interior nulls in a 'Series'.
+data SeriesInterpolationMethod
+    = SeriesInterpolateLinear
+    | SeriesInterpolateNearest
     deriving stock (Eq, Show)
 
 class SeriesCast a where
@@ -379,6 +388,12 @@ seriesDiff :: Int64 -> SeriesDiffNullBehavior -> Series -> IO (Either PolarsErro
 seriesDiff periods behavior input =
     withSeries input $ \ptr ->
         seriesOut (phs_series_diff ptr (fromIntegral periods) (seriesDiffNullBehaviorCode behavior))
+
+-- | Fill interior null values using Polars Series interpolation.
+seriesInterpolate :: SeriesInterpolationMethod -> Series -> IO (Either PolarsError Series)
+seriesInterpolate method input =
+    withSeries input $ \ptr ->
+        seriesOut (phs_series_interpolate ptr (seriesInterpolationMethodCode method))
 
 seriesIsNull :: Series -> IO (Either PolarsError Series)
 seriesIsNull input = seriesUnaryOut input phs_series_is_null
@@ -569,6 +584,10 @@ seriesRoundModeCode RoundHalfAwayFromZero = 1
 seriesDiffNullBehaviorCode :: SeriesDiffNullBehavior -> CInt
 seriesDiffNullBehaviorCode SeriesDiffIgnore = 0
 seriesDiffNullBehaviorCode SeriesDiffDrop = 1
+
+seriesInterpolationMethodCode :: SeriesInterpolationMethod -> CInt
+seriesInterpolationMethodCode SeriesInterpolateLinear = 0
+seriesInterpolationMethodCode SeriesInterpolateNearest = 1
 
 fillNullStrategyCode :: FillNullStrategy -> Either PolarsError (CInt, Bool, Word64)
 fillNullStrategyCode (FillForward limit) = fillNullLimitedStrategy 0 limit

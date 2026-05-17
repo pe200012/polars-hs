@@ -6,6 +6,8 @@ use polars::series::ops::NullBehavior;
 use polars_ops::series::{
     abs as polars_series_abs,
     diff as polars_series_diff,
+    interpolate as polars_series_interpolate,
+    InterpolationMethod,
     is_duplicated as polars_series_is_duplicated,
     is_first_distinct as polars_series_is_first_distinct,
     is_last_distinct as polars_series_is_last_distinct,
@@ -210,6 +212,35 @@ fn null_behavior_from_code(code: c_int) -> PhsResult<NullBehavior> {
             "unknown null behavior code {code}"
         ))),
     }
+}
+
+fn interpolation_method_from_code(code: c_int) -> PhsResult<InterpolationMethod> {
+    match code {
+        0 => Ok(InterpolationMethod::Linear),
+        1 => Ok(InterpolationMethod::Nearest),
+        _ => Err(PhsError::invalid_argument(format!(
+            "unknown interpolation method code {code}"
+        ))),
+    }
+}
+
+fn ensure_interpolation_dtype(series: &Series, method: InterpolationMethod) -> PhsResult<()> {
+    if method == InterpolationMethod::Nearest {
+        match series.dtype() {
+            DataType::Boolean
+            | DataType::String
+            | DataType::BinaryOffset
+            | DataType::Null
+            | DataType::Unknown(_) => {
+                return Err(PhsError::invalid_argument(format!(
+                    "series interpolate nearest is unsupported for dtype {:?}",
+                    series.dtype()
+                )));
+            },
+            _ => {},
+        }
+    }
+    Ok(())
 }
 
 fn ensure_diff_period_in_bounds(series: &Series, n: i64, null_behavior: NullBehavior) -> PhsResult<()> {
@@ -742,6 +773,20 @@ pub unsafe extern "C" fn phs_series_diff(
         let null_behavior = null_behavior_from_code(null_behavior)?;
         ensure_diff_period_in_bounds(value, n, null_behavior)?;
         Ok(polars_series_diff(value, n, null_behavior)?)
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_interpolate(
+    series: *const phs_series,
+    method: c_int,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| {
+        let method = interpolation_method_from_code(method)?;
+        ensure_interpolation_dtype(value, method)?;
+        Ok(polars_series_interpolate(value, method))
     })
 }
 
@@ -2046,6 +2091,113 @@ mod tests {
         assert_eq!(unsafe { take_error_message(err) }, "unknown null behavior code 99");
 
         unsafe { phs_series_free(text) };
+    }
+
+    #[test]
+    fn series_interpolate_returns_expected_values() {
+        let values = series_into_raw(Series::new(
+            "value".into(),
+            &[None, Some(1_u32), None, None, Some(4), Some(5), None],
+        ));
+        let descending = series_into_raw(Series::new(
+            "descending".into(),
+            &[Some(4_u32), None, None, Some(1)],
+        ));
+        let all_null = series_into_raw(Series::new("all_null".into(), &[None::<u32>, None, None]));
+        let text = series_into_raw(Series::new("text".into(), &[Some("a"), None, Some("b")]));
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_series_interpolate(values, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_f64_values(out) },
+            vec![None, Some(1.0), Some(2.0), Some(3.0), Some(4.0), Some(5.0), None]
+        );
+
+        let status = unsafe { phs_series_interpolate(values, 1, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { series_ref(out) }.unwrap().value.u32().unwrap().into_iter().collect::<Vec<_>>(),
+            vec![None, Some(1), Some(1), Some(4), Some(4), Some(5), None]
+        );
+        unsafe { phs_series_free(out) };
+
+        let status = unsafe { phs_series_interpolate(descending, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_f64_values(out) },
+            vec![Some(4.0), Some(3.0), Some(2.0), Some(1.0)]
+        );
+
+        let status = unsafe { phs_series_interpolate(all_null, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_f64_values(out) }, vec![None, None, None]);
+
+        let status = unsafe { phs_series_interpolate(text, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { series_ref(out) }.unwrap().value.str().unwrap().into_iter().collect::<Vec<_>>(),
+            vec![Some("a"), None, Some("b")]
+        );
+        unsafe { phs_series_free(out) };
+
+        assert!(err.is_null());
+        unsafe {
+            phs_series_free(values);
+            phs_series_free(descending);
+            phs_series_free(all_null);
+            phs_series_free(text);
+        }
+    }
+
+    #[test]
+    fn series_interpolate_rejects_nearest_unsupported_dtypes() {
+        let text = series_into_raw(Series::new("text".into(), &[Some("a"), None, Some("b")]));
+        let flag = series_into_raw(Series::new(
+            "flag".into(),
+            &[Some(true), None, Some(false)],
+        ));
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_series_interpolate(text, 1, &mut out, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        assert!(out.is_null());
+        assert_eq!(
+            unsafe { take_error_message(err) },
+            "series interpolate nearest is unsupported for dtype String"
+        );
+
+        let status = unsafe { phs_series_interpolate(flag, 1, &mut out, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        assert!(out.is_null());
+        assert_eq!(
+            unsafe { take_error_message(err) },
+            "series interpolate nearest is unsupported for dtype Boolean"
+        );
+
+        unsafe {
+            phs_series_free(text);
+            phs_series_free(flag);
+        }
+    }
+
+    #[test]
+    fn series_interpolate_rejects_unknown_method_code() {
+        let values = series_into_raw(Series::new("value".into(), &[Some(1_u32), None, Some(3)]));
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_series_interpolate(values, 99, &mut out, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        assert!(out.is_null());
+        assert_eq!(
+            unsafe { take_error_message(err) },
+            "unknown interpolation method code 99"
+        );
+
+        unsafe { phs_series_free(values) };
     }
 
     #[test]
