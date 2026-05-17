@@ -162,6 +162,7 @@ module Polars.Internal.Raw
     , phs_series_sort
     , phs_series_stat
     , phs_series_tail
+    , phs_series_take
     , phs_series_to_arrow_array
     , phs_series_to_frame
     , phs_series_unique
@@ -674,6 +675,9 @@ foreign import ccall unsafe "phs_series_tail"
 
 foreign import ccall unsafe "phs_series_slice"
     phs_series_slice :: Ptr RawSeries -> CLLong -> Word64 -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_series_take"
+    phs_series_take :: Ptr RawSeries -> Ptr Word64 -> CSize -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_series_is_null"
     phs_series_is_null :: Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt

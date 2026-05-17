@@ -49,6 +49,7 @@ module Polars.Series
     , seriesSub
     , seriesNullCount
     , seriesTail
+    , seriesTake
     , seriesText
     , seriesToFrame
     , seriesUnique
@@ -66,8 +67,10 @@ import Data.Text (Text)
 import qualified Data.Text.Encoding as TE
 import Data.Word (Word16, Word32, Word64, Word8)
 import Data.Vector (Vector)
+import qualified Data.Vector as V
 import Foreign.C.String (CString)
 import Foreign.C.Types (CBool (..), CInt, CSize, CUChar (..))
+import Foreign.Marshal.Array (withArray)
 import Foreign.Ptr (Ptr, castPtr)
 
 import Polars.DataFrame (DataFrame, FillNullStrategy (..))
@@ -137,6 +140,7 @@ import Polars.Internal.Raw
     , phs_series_sort
     , phs_series_stat
     , phs_series_null_count
+    , phs_series_take
     , phs_series_tail
     , phs_series_to_frame
     , phs_series_unique
@@ -325,6 +329,12 @@ seriesFilter mask input =
     withSeries input $ \seriesPtr ->
         withSeries mask $ \maskPtr ->
             seriesOut (phs_series_filter seriesPtr maskPtr)
+
+seriesTake :: Vector Word64 -> Series -> IO (Either PolarsError Series)
+seriesTake indices input =
+    withSeries input $ \seriesPtr ->
+        withArray (V.toList indices) $ \indicesPtr ->
+            seriesOut (phs_series_take seriesPtr indicesPtr (fromIntegral (V.length indices)))
 
 seriesFillNull :: FillNullStrategy -> Series -> IO (Either PolarsError Series)
 seriesFillNull strategy input = case fillNullStrategyCode strategy of

@@ -1366,6 +1366,54 @@ main = hspec $ do
                 (Left err, _) -> expectationFailure (show err)
                 (_, Left err) -> expectationFailure (show err)
 
+        it "takes Series values by explicit indices" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    ageResult <- Pl.column @Pl.Series df "age"
+                    case ageResult of
+                        Left err -> expectationFailure (show err)
+                        Right age -> do
+                            taken <- Pl.seriesTake (V.fromList [2, 0, 2]) age
+                            empty <- Pl.seriesTake V.empty age
+                            case (taken, empty) of
+                                (Right takenAge, Right emptyAge) -> do
+                                    Pl.seriesInt64 takenAge `shouldReturn` Right (V.fromList [Just 29, Just 34, Just 29])
+                                    Pl.seriesLength emptyAge `shouldReturn` Right 0
+                                (Left err, _) -> expectationFailure (show err)
+                                (_, Left err) -> expectationFailure (show err)
+
+        it "preserves nulls when taking Series values by index" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    ageResult <- Pl.column @Pl.Series df "age"
+                    case ageResult of
+                        Left err -> expectationFailure (show err)
+                        Right age -> do
+                            taken <- Pl.seriesTake (V.fromList [1, 2, 1, 0]) age
+                            case taken of
+                                Left err -> expectationFailure (show err)
+                                Right takenAge ->
+                                    Pl.seriesInt64 takenAge `shouldReturn` Right (V.fromList [Nothing, Just 29, Nothing, Just 34])
+
+        it "reports errors for invalid Series take indices" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    ageResult <- Pl.column @Pl.Series df "age"
+                    case ageResult of
+                        Left err -> expectationFailure (show err)
+                        Right age -> do
+                            outOfBounds <- Pl.seriesTake (V.fromList [0, 3]) age
+                            let overflowingIndex = fromIntegral (maxBound :: Word32) + 1
+                            overflow <- Pl.seriesTake (V.fromList [overflowingIndex]) age
+                            expectPolarsFailure outOfBounds
+                            expectInvalidArgumentMessage "series take index exceeds Polars index size" overflow
+
         it "fills Series nulls with strategies" $ do
             result <- Pl.readCsv valuesCsv
             case result of

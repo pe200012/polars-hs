@@ -809,6 +809,12 @@ int phs_series_filter(const struct phs_series *series,
                       struct phs_series **out,
                       struct phs_error **err);
 
+int phs_series_take(const struct phs_series *series,
+                    const uint64_t *indices,
+                    uintptr_t len,
+                    struct phs_series **out,
+                    struct phs_error **err);
+
 int phs_series_fill_null(const struct phs_series *series,
                          int strategy,
                          bool has_limit,

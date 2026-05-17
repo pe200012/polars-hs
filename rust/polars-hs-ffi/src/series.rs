@@ -213,6 +213,24 @@ fn usize_from_u64(value: u64, label: &str) -> PhsResult<usize> {
         .map_err(|_| PhsError::invalid_argument(format!("{label} exceeded usize")))
 }
 
+unsafe fn raw_u64_slice<'a>(data: *const u64, len: usize, name: &str) -> PhsResult<&'a [u64]> {
+    if len == 0 {
+        Ok(&[])
+    } else if data.is_null() {
+        Err(PhsError::invalid_argument(format!("{name} pointer was null")))
+    } else {
+        Ok(unsafe { std::slice::from_raw_parts(data, len) })
+    }
+}
+
+fn idx_ca_from_u64_slice(values: &[u64], label: &str) -> PhsResult<IdxCa> {
+    let indices = values
+        .iter()
+        .map(|value| idx_size_from_u64(*value, label))
+        .collect::<PhsResult<Vec<IdxSize>>>()?;
+    Ok(IdxCa::from_vec(PlSmallStr::EMPTY, indices))
+}
+
 fn raw_bytes<'a>(data: *const u8, len: usize, name: &str) -> PhsResult<&'a [u8]> {
     if len == 0 {
         Ok(&[])
@@ -643,6 +661,25 @@ pub unsafe extern "C" fn phs_series_filter(
         let mask = unsafe { series_ref(mask) }?;
         let mask = mask.value.bool()?;
         *out = series_into_raw(series.value.filter(mask)?);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_take(
+    series: *const phs_series,
+    indices: *const u64,
+    len: usize,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let series = unsafe { series_ref(series) }?;
+        let indices = unsafe { raw_u64_slice(indices, len, "indices") }?;
+        let indices = idx_ca_from_u64_slice(indices, "series take index")?;
+        *out = series_into_raw(series.value.take(&indices)?);
         Ok(())
     })
 }
@@ -1225,6 +1262,64 @@ mod tests {
         assert!(out.is_null());
         let message = unsafe { take_error_message(err) };
         assert_eq!(message, "series sort limit exceeds Polars index size");
+        unsafe { phs_series_free(series) };
+    }
+
+    #[test]
+    fn series_take_handles_empty_and_reordered_indices() {
+        let series = read_age_series();
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        let indices = [2_u64, 0, 1, 1];
+
+        let status = unsafe { phs_series_take(series, indices.as_ptr(), indices.len(), &mut out, &mut err) };
+
+        assert_eq!(status, PHS_OK);
+        assert!(err.is_null());
+        let taken = unsafe { series_ref(out) }.unwrap();
+        assert_eq!(taken.value.len(), 4);
+        assert_eq!(taken.value.null_count(), 2);
+        unsafe { phs_series_free(out) };
+
+        let status = unsafe { phs_series_take(series, ptr::null(), 0, &mut out, &mut err) };
+
+        assert_eq!(status, PHS_OK);
+        assert!(err.is_null());
+        assert_eq!(unsafe { series_ref(out) }.unwrap().value.len(), 0);
+        unsafe {
+            phs_series_free(out);
+            phs_series_free(series);
+        }
+    }
+
+    #[test]
+    fn series_take_rejects_null_indices_pointer_with_positive_length() {
+        let series = read_age_series();
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_series_take(series, ptr::null(), 1, &mut out, &mut err) };
+
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        assert!(out.is_null());
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "indices pointer was null");
+        unsafe { phs_series_free(series) };
+    }
+
+    #[test]
+    fn series_take_rejects_index_overflow() {
+        let series = read_age_series();
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        let indices = [u64::from(u32::MAX) + 1];
+
+        let status = unsafe { phs_series_take(series, indices.as_ptr(), indices.len(), &mut out, &mut err) };
+
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        assert!(out.is_null());
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "series take index exceeds Polars index size");
         unsafe { phs_series_free(series) };
     }
 
