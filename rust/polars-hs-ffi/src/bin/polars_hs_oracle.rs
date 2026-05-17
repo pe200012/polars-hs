@@ -39,6 +39,16 @@ fn parquet_read_n_rows(path: PathBuf) -> Result<DataFrame, Box<dyn Error>> {
     Ok(ParquetReader::new(file).with_slice(Some((0, 2))).finish()?)
 }
 
+fn parquet_read_options_phase2(path: PathBuf) -> Result<DataFrame, Box<dyn Error>> {
+    let file = File::open(path)?;
+    Ok(ParquetReader::new(file)
+        .read_parallel(ParallelStrategy::RowGroups)
+        .set_low_memory(true)
+        .set_rechunk(true)
+        .with_slice(Some((0, 2)))
+        .finish()?)
+}
+
 fn write_canonical_csv(mut dataframe: DataFrame) -> Result<(), Box<dyn Error>> {
     let mut bytes = Vec::new();
     CsvWriter::new(&mut bytes)
@@ -65,6 +75,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         "csv-read-options" => csv_read_options(path)?,
         "csv-read-row-options" => csv_read_row_options(path)?,
         "parquet-read-n-rows" => parquet_read_n_rows(path)?,
+        "parquet-read-options-phase2" => parquet_read_options_phase2(path)?,
         other => return Err(format!("unknown oracle command: {other}").into()),
     };
     write_canonical_csv(dataframe)

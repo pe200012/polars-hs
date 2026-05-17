@@ -101,6 +101,19 @@ fn parquet_compression_from_code(code: c_int) -> PhsResult<ParquetCompression> {
     }
 }
 
+fn parquet_parallel_from_code(code: c_int) -> PhsResult<ParallelStrategy> {
+    match code {
+        0 => Ok(ParallelStrategy::Auto),
+        1 => Ok(ParallelStrategy::None),
+        2 => Ok(ParallelStrategy::Columns),
+        3 => Ok(ParallelStrategy::RowGroups),
+        4 => Ok(ParallelStrategy::Prefiltered),
+        _ => Err(PhsError::invalid_argument(format!(
+            "unknown parquet parallel strategy code {code}"
+        ))),
+    }
+}
+
 fn push_u64_le(bytes: &mut Vec<u8>, value: u64) {
     bytes.extend_from_slice(&value.to_le_bytes());
 }
@@ -239,7 +252,7 @@ pub unsafe extern "C" fn phs_read_parquet(
     out: *mut *mut phs_dataframe,
     err: *mut *mut phs_error,
 ) -> c_int {
-    unsafe { phs_read_parquet_options(path, false, 0, out, err) }
+    unsafe { phs_read_parquet_options(path, false, 0, 0, false, false, out, err) }
 }
 
 #[unsafe(no_mangle)]
@@ -247,6 +260,9 @@ pub unsafe extern "C" fn phs_read_parquet_options(
     path: *const c_char,
     has_n_rows: bool,
     n_rows: u64,
+    parallel: c_int,
+    low_memory: bool,
+    rechunk: bool,
     out: *mut *mut phs_dataframe,
     err: *mut *mut phs_error,
 ) -> c_int {
@@ -255,7 +271,10 @@ pub unsafe extern "C" fn phs_read_parquet_options(
         *out = ptr::null_mut();
         let path = unsafe { c_path(path) }?;
         let file = File::open(path)?;
-        let mut reader = ParquetReader::new(file);
+        let mut reader = ParquetReader::new(file)
+            .read_parallel(parquet_parallel_from_code(parallel)?)
+            .set_low_memory(low_memory)
+            .set_rechunk(rechunk);
         if has_n_rows {
             reader = reader.with_slice(Some((0, usize_from_u64(n_rows, "parquet n rows")?)));
         }
@@ -304,7 +323,11 @@ pub unsafe extern "C" fn phs_write_parquet(
     dataframe: *const phs_dataframe,
     err: *mut *mut phs_error,
 ) -> c_int {
-    unsafe { phs_write_parquet_options(path, dataframe, 0, false, 0, err) }
+    unsafe {
+        phs_write_parquet_options(
+            path, dataframe, 0, false, 0, false, 0, true, true, false, true, true, err,
+        )
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -314,6 +337,13 @@ pub unsafe extern "C" fn phs_write_parquet_options(
     compression: c_int,
     has_row_group_size: bool,
     row_group_size: u64,
+    has_data_page_size: bool,
+    data_page_size: u64,
+    statistics_min_value: bool,
+    statistics_max_value: bool,
+    statistics_distinct_count: bool,
+    statistics_null_count: bool,
+    parallel: bool,
     err: *mut *mut phs_error,
 ) -> c_int {
     ffi_boundary(err, || {
@@ -322,11 +352,25 @@ pub unsafe extern "C" fn phs_write_parquet_options(
         let mut df = handle.value.clone();
         let file = File::create(path)?;
         let mut writer =
-            ParquetWriter::new(file).with_compression(parquet_compression_from_code(compression)?);
+            ParquetWriter::new(file)
+                .with_compression(parquet_compression_from_code(compression)?)
+                .with_statistics(StatisticsOptions {
+                    min_value: statistics_min_value,
+                    max_value: statistics_max_value,
+                    distinct_count: statistics_distinct_count,
+                    null_count: statistics_null_count,
+                })
+                .set_parallel(parallel);
         if has_row_group_size {
             writer = writer.with_row_group_size(Some(usize_from_u64(
                 row_group_size,
                 "parquet row group size",
+            )?));
+        }
+        if has_data_page_size {
+            writer = writer.with_data_page_size(Some(usize_from_u64(
+                data_page_size,
+                "parquet data page size",
             )?));
         }
         let _bytes = writer.finish(&mut df)?;

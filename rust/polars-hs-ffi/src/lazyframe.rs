@@ -106,6 +106,19 @@ fn usize_from_u64(value: u64, label: &str) -> PhsResult<usize> {
         .map_err(|_| PhsError::invalid_argument(format!("{label} exceeded usize")))
 }
 
+fn parquet_parallel_from_code(code: c_int) -> PhsResult<ParallelStrategy> {
+    match code {
+        0 => Ok(ParallelStrategy::Auto),
+        1 => Ok(ParallelStrategy::None),
+        2 => Ok(ParallelStrategy::Columns),
+        3 => Ok(ParallelStrategy::RowGroups),
+        4 => Ok(ParallelStrategy::Prefiltered),
+        _ => Err(PhsError::invalid_argument(format!(
+            "unknown parquet parallel strategy code {code}"
+        ))),
+    }
+}
+
 fn empty_profile_frame() -> DataFrame {
     let schema = Schema::from_iter([
         Field::new(PlSmallStr::from_static("node"), DataType::String),
@@ -209,7 +222,7 @@ pub unsafe extern "C" fn phs_scan_parquet(
     err: *mut *mut phs_error,
 ) -> c_int {
     unsafe {
-        phs_scan_parquet_options(path, false, 0, true, false, false, true, out, err)
+        phs_scan_parquet_options(path, false, 0, 0, true, false, false, true, out, err)
     }
 }
 
@@ -218,6 +231,7 @@ pub unsafe extern "C" fn phs_scan_parquet_options(
     path: *const c_char,
     has_n_rows: bool,
     n_rows: u64,
+    parallel: c_int,
     use_statistics: bool,
     low_memory: bool,
     rechunk: bool,
@@ -230,6 +244,7 @@ pub unsafe extern "C" fn phs_scan_parquet_options(
         *out = ptr::null_mut();
         let path = unsafe { path_string(path) }?;
         let mut args = ScanArgsParquet {
+            parallel: parquet_parallel_from_code(parallel)?,
             use_statistics,
             low_memory,
             rechunk,

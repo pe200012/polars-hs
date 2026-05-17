@@ -375,6 +375,12 @@ main = hspec $ do
                                 Pl.defaultParquetWriteOptions
                                     { Pl.parquetWriteCompression = Pl.ParquetSnappy
                                     , Pl.parquetWriteRowGroupSize = Just 1
+                                    , Pl.parquetWriteDataPageSize = Just 1024
+                                    , Pl.parquetWriteStatistics =
+                                        Pl.defaultParquetStatisticsOptions
+                                            { Pl.parquetStatisticsDistinctCount = True
+                                            }
+                                    , Pl.parquetWriteParallel = False
                                     }
                         writeResult <- Pl.writeParquetWith writeOptions path sourceDf
                         writeResult `shouldBe` Right ()
@@ -384,7 +390,12 @@ main = hspec $ do
                             Right df -> expectValuesFrame df
                         limited <-
                             Pl.readParquetWith
-                                Pl.defaultParquetReadOptions {Pl.parquetReadNRows = Just 2}
+                                Pl.defaultParquetReadOptions
+                                    { Pl.parquetReadNRows = Just 2
+                                    , Pl.parquetReadParallel = Pl.ParquetParallelRowGroups
+                                    , Pl.parquetReadLowMemory = True
+                                    , Pl.parquetReadRechunk = True
+                                    }
                                 path
                         case limited of
                             Left err -> expectationFailure (show err)
@@ -395,6 +406,18 @@ main = hspec $ do
         it "reports InvalidArgument for negative Parquet row limits" $ do
             result <- Pl.readParquetWith Pl.defaultParquetReadOptions {Pl.parquetReadNRows = Just (-1)} valuesCsv
             expectInvalidArgumentMessage "parquetReadNRows must be non-negative" result
+
+        it "reports InvalidArgument for negative Parquet writer controls" $ do
+            sourceResult <- Pl.readCsv valuesCsv
+            case sourceResult of
+                Left err -> expectationFailure (show err)
+                Right sourceDf -> do
+                    result <-
+                        Pl.writeParquetWith
+                            Pl.defaultParquetWriteOptions {Pl.parquetWriteDataPageSize = Just (-1)}
+                            "test/data/unused-negative.parquet"
+                            sourceDf
+                    expectInvalidArgumentMessage "parquetWriteDataPageSize must be non-negative" result
 
         it "reports InvalidArgument for negative CSV read controls" $ do
             nRowsResult <- Pl.readCsvWith Pl.defaultCsvReadOptions {Pl.csvReadNRows = Just (-1)} valuesCsv
@@ -642,6 +665,7 @@ main = hspec $ do
                             Pl.scanParquetWith
                                 Pl.defaultParquetScanOptions
                                     { Pl.parquetScanNRows = Just 2
+                                    , Pl.parquetScanParallel = Pl.ParquetParallelColumns
                                     , Pl.parquetScanUseStatistics = True
                                     , Pl.parquetScanLowMemory = True
                                     , Pl.parquetScanRechunk = True
@@ -868,7 +892,7 @@ main = hspec $ do
                         actual <- canonicalDataFrameCsv df
                         actual `shouldBe` oracle
 
-        it "matches Rust Polars for Parquet row limits" $
+        it "matches Rust Polars for Parquet read options" $
             withTempFilePath "polars-hs-oracle.parquet" $ \path -> do
                 sourceResult <- Pl.readCsv valuesCsv
                 case sourceResult of
@@ -876,10 +900,15 @@ main = hspec $ do
                     Right sourceDf -> do
                         writeResult <- Pl.writeParquet path sourceDf
                         writeResult `shouldBe` Right ()
-                        oracle <- runRustOracle ["parquet-read-n-rows", path]
+                        oracle <- runRustOracle ["parquet-read-options-phase2", path]
                         result <-
                             Pl.readParquetWith
-                                Pl.defaultParquetReadOptions {Pl.parquetReadNRows = Just 2}
+                                Pl.defaultParquetReadOptions
+                                    { Pl.parquetReadNRows = Just 2
+                                    , Pl.parquetReadParallel = Pl.ParquetParallelRowGroups
+                                    , Pl.parquetReadLowMemory = True
+                                    , Pl.parquetReadRechunk = True
+                                    }
                                 path
                         case result of
                             Left err -> expectationFailure (show err)

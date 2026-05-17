@@ -267,7 +267,16 @@ foreign import ccall safe "phs_read_parquet"
     phs_read_parquet :: CString -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall safe "phs_read_parquet_options"
-    phs_read_parquet_options :: CString -> CBool -> Word64 -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
+    phs_read_parquet_options ::
+        CString ->
+        CBool ->
+        Word64 ->
+        CInt ->
+        CBool ->
+        CBool ->
+        Ptr (Ptr RawDataFrame) ->
+        Ptr (Ptr RawError) ->
+        IO CInt
 
 foreign import ccall safe "phs_write_csv"
     phs_write_csv :: CString -> Ptr RawDataFrame -> Ptr (Ptr RawError) -> IO CInt
@@ -292,6 +301,13 @@ foreign import ccall safe "phs_write_parquet_options"
         CInt ->
         CBool ->
         Word64 ->
+        CBool ->
+        Word64 ->
+        CBool ->
+        CBool ->
+        CBool ->
+        CBool ->
+        CBool ->
         Ptr (Ptr RawError) ->
         IO CInt
 
@@ -451,6 +467,7 @@ foreign import ccall safe "phs_scan_parquet_options"
         CString ->
         CBool ->
         Word64 ->
+        CInt ->
         CBool ->
         CBool ->
         CBool ->

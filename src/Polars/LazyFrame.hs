@@ -11,6 +11,7 @@ Expression inputs are compiled from pure Haskell AST nodes at each FFI boundary.
 module Polars.LazyFrame
     ( CsvReadOptions (..)
     , LazyFrame
+    , ParquetParallelStrategy (..)
     , ParquetScanOptions (..)
     , RenameOptions (..)
     , UniqueKeepStrategy (..)
@@ -90,6 +91,7 @@ import Polars.Internal.Raw
     )
 import Polars.IO
     ( CsvReadOptions (..)
+    , ParquetParallelStrategy (..)
     , ParquetScanOptions (..)
     , defaultCsvReadOptions
     , defaultParquetScanOptions
@@ -170,6 +172,7 @@ scanParquetWith options path =
                         cPath
                         (toCBool hasNRows)
                         nRows
+                        (parquetParallelCode (parquetScanParallel options))
                         (toCBool (parquetScanUseStatistics options))
                         (toCBool (parquetScanLowMemory options))
                         (toCBool (parquetScanRechunk options))
@@ -384,6 +387,13 @@ csvReadWordOptions options = do
     skipRowsAfterHeader <- nonNegativeWord64 "csvReadSkipRowsAfterHeader" (csvReadSkipRowsAfterHeader options)
     (hasInferSchemaLength, inferSchemaLength) <- optionalNonNegativeWord64 "csvReadInferSchemaLength" (csvReadInferSchemaLength options)
     Right (hasNRows, nRows, skipRows, skipRowsAfterHeader, hasInferSchemaLength, inferSchemaLength)
+
+parquetParallelCode :: ParquetParallelStrategy -> CInt
+parquetParallelCode ParquetParallelAuto = 0
+parquetParallelCode ParquetParallelNone = 1
+parquetParallelCode ParquetParallelColumns = 2
+parquetParallelCode ParquetParallelRowGroups = 3
+parquetParallelCode ParquetParallelPrefiltered = 4
 
 keepStrategyCode :: UniqueKeepStrategy -> CInt
 keepStrategyCode KeepFirst = 0

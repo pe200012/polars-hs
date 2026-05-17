@@ -12,13 +12,16 @@ module Polars.IO
     ( CsvReadOptions (..)
     , CsvWriteOptions (..)
     , ParquetCompression (..)
+    , ParquetParallelStrategy (..)
     , ParquetReadOptions (..)
     , ParquetScanOptions (..)
+    , ParquetStatisticsOptions (..)
     , ParquetWriteOptions (..)
     , defaultCsvReadOptions
     , defaultCsvWriteOptions
     , defaultParquetReadOptions
     , defaultParquetScanOptions
+    , defaultParquetStatisticsOptions
     , defaultParquetWriteOptions
     ) where
 
@@ -73,8 +76,19 @@ defaultCsvWriteOptions =
         , csvWriteNullValue = ""
         }
 
-newtype ParquetReadOptions = ParquetReadOptions
-    { parquetReadNRows :: Maybe Int
+data ParquetParallelStrategy
+    = ParquetParallelAuto
+    | ParquetParallelNone
+    | ParquetParallelColumns
+    | ParquetParallelRowGroups
+    | ParquetParallelPrefiltered
+    deriving stock (Eq, Show)
+
+data ParquetReadOptions = ParquetReadOptions
+    { parquetReadNRows :: !(Maybe Int)
+    , parquetReadParallel :: !ParquetParallelStrategy
+    , parquetReadLowMemory :: !Bool
+    , parquetReadRechunk :: !Bool
     }
     deriving stock (Eq, Show)
 
@@ -82,6 +96,9 @@ defaultParquetReadOptions :: ParquetReadOptions
 defaultParquetReadOptions =
     ParquetReadOptions
         { parquetReadNRows = Nothing
+        , parquetReadParallel = ParquetParallelAuto
+        , parquetReadLowMemory = False
+        , parquetReadRechunk = False
         }
 
 data ParquetCompression
@@ -91,9 +108,29 @@ data ParquetCompression
     | ParquetZstd
     deriving stock (Eq, Show)
 
+data ParquetStatisticsOptions = ParquetStatisticsOptions
+    { parquetStatisticsMinValue :: !Bool
+    , parquetStatisticsMaxValue :: !Bool
+    , parquetStatisticsDistinctCount :: !Bool
+    , parquetStatisticsNullCount :: !Bool
+    }
+    deriving stock (Eq, Show)
+
+defaultParquetStatisticsOptions :: ParquetStatisticsOptions
+defaultParquetStatisticsOptions =
+    ParquetStatisticsOptions
+        { parquetStatisticsMinValue = True
+        , parquetStatisticsMaxValue = True
+        , parquetStatisticsDistinctCount = False
+        , parquetStatisticsNullCount = True
+        }
+
 data ParquetWriteOptions = ParquetWriteOptions
     { parquetWriteCompression :: !ParquetCompression
     , parquetWriteRowGroupSize :: !(Maybe Int)
+    , parquetWriteDataPageSize :: !(Maybe Int)
+    , parquetWriteStatistics :: !ParquetStatisticsOptions
+    , parquetWriteParallel :: !Bool
     }
     deriving stock (Eq, Show)
 
@@ -102,10 +139,14 @@ defaultParquetWriteOptions =
     ParquetWriteOptions
         { parquetWriteCompression = ParquetDefaultCompression
         , parquetWriteRowGroupSize = Nothing
+        , parquetWriteDataPageSize = Nothing
+        , parquetWriteStatistics = defaultParquetStatisticsOptions
+        , parquetWriteParallel = True
         }
 
 data ParquetScanOptions = ParquetScanOptions
     { parquetScanNRows :: !(Maybe Int)
+    , parquetScanParallel :: !ParquetParallelStrategy
     , parquetScanUseStatistics :: !Bool
     , parquetScanLowMemory :: !Bool
     , parquetScanRechunk :: !Bool
@@ -117,6 +158,7 @@ defaultParquetScanOptions :: ParquetScanOptions
 defaultParquetScanOptions =
     ParquetScanOptions
         { parquetScanNRows = Nothing
+        , parquetScanParallel = ParquetParallelAuto
         , parquetScanUseStatistics = True
         , parquetScanLowMemory = False
         , parquetScanRechunk = False

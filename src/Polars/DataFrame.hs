@@ -13,7 +13,9 @@ module Polars.DataFrame
     , CsvWriteOptions (..)
     , DataFrame
     , ParquetCompression (..)
+    , ParquetParallelStrategy (..)
     , ParquetReadOptions (..)
+    , ParquetStatisticsOptions (..)
     , ParquetWriteOptions (..)
     , dataFrame
     , dataFrameDropColumns
@@ -28,6 +30,7 @@ module Polars.DataFrame
     , defaultCsvReadOptions
     , defaultCsvWriteOptions
     , defaultParquetReadOptions
+    , defaultParquetStatisticsOptions
     , defaultParquetWriteOptions
     , readCsv
     , readCsvWith
@@ -91,11 +94,14 @@ import Polars.IO
     ( CsvReadOptions (..)
     , CsvWriteOptions (..)
     , ParquetCompression (..)
+    , ParquetParallelStrategy (..)
     , ParquetReadOptions (..)
+    , ParquetStatisticsOptions (..)
     , ParquetWriteOptions (..)
     , defaultCsvReadOptions
     , defaultCsvWriteOptions
     , defaultParquetReadOptions
+    , defaultParquetStatisticsOptions
     , defaultParquetWriteOptions
     )
 import Polars.Internal.Result (consumeError, nullPointerError)
@@ -143,7 +149,15 @@ readParquetWith options path =
         Left err -> pure (Left err)
         Right (hasNRows, nRows) ->
             withFilePathCString path $ \cPath ->
-                dataframeOut (phs_read_parquet_options cPath (toCBool hasNRows) nRows)
+                dataframeOut
+                    ( phs_read_parquet_options
+                        cPath
+                        (toCBool hasNRows)
+                        nRows
+                        (parquetParallelCode (parquetReadParallel options))
+                        (toCBool (parquetReadLowMemory options))
+                        (toCBool (parquetReadRechunk options))
+                    )
 
 writeCsv :: FilePath -> DataFrame -> IO (Either PolarsError ())
 writeCsv = writeCsvWith defaultCsvWriteOptions
@@ -167,11 +181,13 @@ writeParquet = writeParquetWith defaultParquetWriteOptions
 
 writeParquetWith :: ParquetWriteOptions -> FilePath -> DataFrame -> IO (Either PolarsError ())
 writeParquetWith options path df =
-    case optionalNonNegativeWord64 "parquetWriteRowGroupSize" (parquetWriteRowGroupSize options) of
+    case parquetWriteWordOptions options of
         Left err -> pure (Left err)
-        Right (hasRowGroupSize, rowGroupSize) ->
+        Right (hasRowGroupSize, rowGroupSize, hasDataPageSize, dataPageSize) ->
             withFilePathCString path $ \cPath ->
                 withDataFrame df $ \ptr ->
+                    let statistics = parquetWriteStatistics options
+                     in
                     unitOut
                         ( phs_write_parquet_options
                             cPath
@@ -179,6 +195,13 @@ writeParquetWith options path df =
                             (parquetCompressionCode (parquetWriteCompression options))
                             (toCBool hasRowGroupSize)
                             rowGroupSize
+                            (toCBool hasDataPageSize)
+                            dataPageSize
+                            (toCBool (parquetStatisticsMinValue statistics))
+                            (toCBool (parquetStatisticsMaxValue statistics))
+                            (toCBool (parquetStatisticsDistinctCount statistics))
+                            (toCBool (parquetStatisticsNullCount statistics))
+                            (toCBool (parquetWriteParallel options))
                         )
 
 dataFrame :: [Series] -> IO (Either PolarsError DataFrame)
@@ -422,6 +445,19 @@ parquetCompressionCode ParquetDefaultCompression = 0
 parquetCompressionCode ParquetUncompressed = 1
 parquetCompressionCode ParquetSnappy = 2
 parquetCompressionCode ParquetZstd = 3
+
+parquetParallelCode :: ParquetParallelStrategy -> CInt
+parquetParallelCode ParquetParallelAuto = 0
+parquetParallelCode ParquetParallelNone = 1
+parquetParallelCode ParquetParallelColumns = 2
+parquetParallelCode ParquetParallelRowGroups = 3
+parquetParallelCode ParquetParallelPrefiltered = 4
+
+parquetWriteWordOptions :: ParquetWriteOptions -> Either PolarsError (Bool, Word64, Bool, Word64)
+parquetWriteWordOptions options = do
+    (hasRowGroupSize, rowGroupSize) <- optionalNonNegativeWord64 "parquetWriteRowGroupSize" (parquetWriteRowGroupSize options)
+    (hasDataPageSize, dataPageSize) <- optionalNonNegativeWord64 "parquetWriteDataPageSize" (parquetWriteDataPageSize options)
+    Right (hasRowGroupSize, rowGroupSize, hasDataPageSize, dataPageSize)
 
 invalidArgument :: Text -> PolarsError
 invalidArgument = PolarsError InvalidArgument

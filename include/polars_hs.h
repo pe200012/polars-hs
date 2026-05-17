@@ -116,6 +116,9 @@ int phs_read_parquet(const char *path, struct phs_dataframe **out, struct phs_er
 int phs_read_parquet_options(const char *path,
                              bool has_n_rows,
                              uint64_t n_rows,
+                             int parallel,
+                             bool low_memory,
+                             bool rechunk,
                              struct phs_dataframe **out,
                              struct phs_error **err);
 
@@ -137,6 +140,13 @@ int phs_write_parquet_options(const char *path,
                               int compression,
                               bool has_row_group_size,
                               uint64_t row_group_size,
+                              bool has_data_page_size,
+                              uint64_t data_page_size,
+                              bool statistics_min_value,
+                              bool statistics_max_value,
+                              bool statistics_distinct_count,
+                              bool statistics_null_count,
+                              bool parallel,
                               struct phs_error **err);
 
 int phs_dataframe_new(const struct phs_series *const *series,
@@ -521,6 +531,7 @@ int phs_scan_parquet(const char *path, struct phs_lazyframe **out, struct phs_er
 int phs_scan_parquet_options(const char *path,
                              bool has_n_rows,
                              uint64_t n_rows,
+                             int parallel,
                              bool use_statistics,
                              bool low_memory,
                              bool rechunk,
