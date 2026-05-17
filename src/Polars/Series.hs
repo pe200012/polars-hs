@@ -20,7 +20,9 @@ module Polars.Series
     , SeriesInterpolationMethod (..)
     , SeriesRoundMode (..)
     , SeriesSortOptions (..)
+    , SeriesValueCountsOptions (..)
     , defaultSeriesSortOptions
+    , defaultSeriesValueCountsOptions
     , seriesAbs
     , seriesAdd
     , seriesAppend
@@ -77,6 +79,7 @@ module Polars.Series
     , seriesToFrame
     , seriesUnique
     , seriesUniqueStable
+    , seriesValueCounts
     , seriesVar
     , seriesWord8
     , seriesWord16
@@ -184,6 +187,7 @@ import Polars.Internal.Raw
     , phs_series_to_frame
     , phs_series_unique
     , phs_series_unique_stable
+    , phs_series_value_counts
     , phs_series_values_bool
     , phs_series_values_f32
     , phs_series_values_f64
@@ -216,6 +220,25 @@ defaultSeriesSortOptions =
         , seriesSortMultithreaded = True
         , seriesSortMaintainOrder = False
         , seriesSortLimit = Nothing
+        }
+
+-- | Controls eager Series frequency-table construction.
+data SeriesValueCountsOptions = SeriesValueCountsOptions
+    { seriesValueCountsSort :: !Bool
+    , seriesValueCountsParallel :: !Bool
+    , seriesValueCountsName :: !Text
+    , seriesValueCountsNormalize :: !Bool
+    }
+    deriving stock (Eq, Show)
+
+-- | Default value-count settings: unsorted counts in a column named @"count"@.
+defaultSeriesValueCountsOptions :: SeriesValueCountsOptions
+defaultSeriesValueCountsOptions =
+    SeriesValueCountsOptions
+        { seriesValueCountsSort = False
+        , seriesValueCountsParallel = False
+        , seriesValueCountsName = "count"
+        , seriesValueCountsNormalize = False
         }
 
 data SeriesRoundMode
@@ -369,6 +392,20 @@ seriesUniqueStable input = seriesUnaryOut input phs_series_unique_stable
 
 seriesArgUnique :: Series -> IO (Either PolarsError Series)
 seriesArgUnique input = seriesUnaryOut input phs_series_arg_unique
+
+-- | Count unique Series values into a two-column DataFrame.
+seriesValueCounts :: SeriesValueCountsOptions -> Series -> IO (Either PolarsError DataFrame)
+seriesValueCounts options input =
+    withTextCString (seriesValueCountsName options) $ \cName ->
+        seriesDataFrameOut input $ \ptr out err ->
+            phs_series_value_counts
+                ptr
+                (toCBool (seriesValueCountsSort options))
+                (toCBool (seriesValueCountsParallel options))
+                cName
+                (toCBool (seriesValueCountsNormalize options))
+                out
+                err
 
 seriesReverse :: Series -> IO (Either PolarsError Series)
 seriesReverse input = seriesUnaryOut input phs_series_reverse

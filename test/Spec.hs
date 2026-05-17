@@ -2202,6 +2202,55 @@ main = hspec $ do
                 (_, _, _, Left err, _) -> expectationFailure (show err)
                 (_, _, _, _, Left err) -> expectationFailure (show err)
 
+        it "computes Series value counts as a DataFrame" $ do
+            colorResult <- Pl.series @T.Text "color" (V.fromList [Just "blue", Just "red", Just "blue", Just "green", Just "blue", Just "red"])
+            emptyResult <- Pl.series @T.Text "color" V.empty
+            case (colorResult, emptyResult) of
+                (Right colors, Right emptyColors) -> do
+                    let sortedOptions =
+                            Pl.defaultSeriesValueCountsOptions
+                                { Pl.seriesValueCountsSort = True
+                                , Pl.seriesValueCountsName = "n"
+                                }
+                        normalizedOptions =
+                            sortedOptions
+                                { Pl.seriesValueCountsName = "fraction"
+                                , Pl.seriesValueCountsNormalize = True
+                                }
+                        duplicateNameOptions =
+                            sortedOptions { Pl.seriesValueCountsName = "color" }
+                    countsResult <- Pl.seriesValueCounts sortedOptions colors
+                    normalizedResult <- Pl.seriesValueCounts normalizedOptions colors
+                    duplicateResult <- Pl.seriesValueCounts duplicateNameOptions colors
+                    emptyCountsResult <- Pl.seriesValueCounts sortedOptions emptyColors
+                    case (countsResult, normalizedResult, emptyCountsResult) of
+                        (Right countsDf, Right normalizedDf, Right emptyCountsDf) -> do
+                            Pl.shape countsDf `shouldReturn` Right (3, 2)
+                            Pl.column @T.Text countsDf "color" `shouldReturn` Right (V.fromList [Just "blue", Just "red", Just "green"])
+                            Pl.column @Word32 countsDf "n" `shouldReturn` Right (V.fromList [Just 3, Just 2, Just 1])
+
+                            Pl.shape normalizedDf `shouldReturn` Right (3, 2)
+                            Pl.column @T.Text normalizedDf "color" `shouldReturn` Right (V.fromList [Just "blue", Just "red", Just "green"])
+                            fractionResult <- Pl.column @Double normalizedDf "fraction"
+                            case fractionResult of
+                                Left err -> expectationFailure (show err)
+                                Right fractions ->
+                                    shouldApproximate 1.0e-12 (V.fromList [Just 0.5, Just (1.0 / 3.0), Just (1.0 / 6.0)]) fractions
+
+                            Pl.shape emptyCountsDf `shouldReturn` Right (0, 2)
+                            Pl.column @T.Text emptyCountsDf "color" `shouldReturn` Right V.empty
+                            Pl.column @Word32 emptyCountsDf "n" `shouldReturn` Right V.empty
+                        (Left err, _, _) -> expectationFailure (show err)
+                        (_, Left err, _) -> expectationFailure (show err)
+                        (_, _, Left err) -> expectationFailure (show err)
+                    case duplicateResult of
+                        Left err -> do
+                            Pl.polarsErrorCode err `shouldBe` Pl.PolarsFailure
+                            Pl.polarsErrorMessage err `shouldSatisfy` T.isInfixOf "duplicate column names"
+                        Right _ -> expectationFailure "expected PolarsFailure for duplicate value-count column name"
+                (Left err, _) -> expectationFailure (show err)
+                (_, Left err) -> expectationFailure (show err)
+
         it "computes Series sum min and max" $ do
             result <- Pl.readCsv valuesCsv
             case result of

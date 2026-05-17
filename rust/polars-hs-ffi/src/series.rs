@@ -14,6 +14,7 @@ use polars_ops::series::{
     is_unique as polars_series_is_unique,
     RoundMode,
     RoundSeries,
+    SeriesMethods,
 };
 
 use crate::bytes::{bytes_into_raw, phs_bytes};
@@ -692,6 +693,26 @@ pub unsafe extern "C" fn phs_series_n_unique(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_value_counts(
+    series: *const phs_series,
+    sort: bool,
+    parallel: bool,
+    name: *const c_char,
+    normalize: bool,
+    out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { series_ref(series) }?;
+        let name = unsafe { c_str_to_str(name, "name") }?;
+        *out = dataframe_into_raw(handle.value.value_counts(sort, parallel, name.into(), normalize)?);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_series_head(
     series: *const phs_series,
     n: u64,
@@ -1255,7 +1276,7 @@ mod tests {
     use super::*;
     use crate::bytes::{phs_bytes_data, phs_bytes_free, phs_bytes_len};
     use crate::dataframe::{phs_dataframe_column, phs_dataframe_new, phs_read_csv};
-    use crate::error::{PHS_INVALID_ARGUMENT, PHS_OK, phs_error_free, phs_error_message};
+    use crate::error::{PHS_INVALID_ARGUMENT, PHS_OK, PHS_POLARS_ERROR, phs_error_free, phs_error_message};
     use crate::handles::{phs_dataframe_free, phs_series_free};
     use std::ffi::CStr;
     use std::path::PathBuf;
@@ -1773,6 +1794,87 @@ mod tests {
             phs_series_free(text);
             phs_series_free(flag);
             phs_series_free(all_null);
+            phs_series_free(empty);
+        }
+    }
+
+    #[test]
+    fn series_value_counts_returns_count_and_proportion_frames() {
+        let colors = series_into_raw(Series::new(
+            "color".into(),
+            ["blue", "red", "blue", "green", "blue", "red"],
+        ));
+        let empty = series_into_raw(Series::new("color".into(), Vec::<&str>::new()));
+        let count_name = std::ffi::CString::new("n").unwrap();
+        let fraction_name = std::ffi::CString::new("fraction").unwrap();
+        let duplicate_name = std::ffi::CString::new("color").unwrap();
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe {
+            phs_series_value_counts(colors, true, false, count_name.as_ptr(), false, &mut out, &mut err)
+        };
+        assert_eq!(status, PHS_OK);
+        assert!(err.is_null());
+        let frame = unsafe { crate::handles::dataframe_ref(out) }.unwrap();
+        assert_eq!(frame.value.shape(), (3, 2));
+        let color_values: Vec<Option<&str>> = frame
+            .value
+            .column("color")
+            .unwrap()
+            .as_materialized_series()
+            .str()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(color_values, vec![Some("blue"), Some("red"), Some("green")]);
+        let count_values: Vec<Option<u32>> = frame
+            .value
+            .column("n")
+            .unwrap()
+            .as_materialized_series()
+            .u32()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(count_values, vec![Some(3), Some(2), Some(1)]);
+        unsafe { phs_dataframe_free(out) };
+
+        let status = unsafe {
+            phs_series_value_counts(colors, true, false, fraction_name.as_ptr(), true, &mut out, &mut err)
+        };
+        assert_eq!(status, PHS_OK);
+        assert!(err.is_null());
+        let frame = unsafe { crate::handles::dataframe_ref(out) }.unwrap();
+        let fraction_values: Vec<Option<f64>> = frame
+            .value
+            .column("fraction")
+            .unwrap()
+            .as_materialized_series()
+            .f64()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(fraction_values, vec![Some(0.5), Some(2.0 / 6.0), Some(1.0 / 6.0)]);
+        unsafe { phs_dataframe_free(out) };
+
+        let status = unsafe {
+            phs_series_value_counts(empty, true, false, count_name.as_ptr(), false, &mut out, &mut err)
+        };
+        assert_eq!(status, PHS_OK);
+        assert!(err.is_null());
+        let frame = unsafe { crate::handles::dataframe_ref(out) }.unwrap();
+        assert_eq!(frame.value.shape(), (0, 2));
+        unsafe { phs_dataframe_free(out) };
+
+        let status = unsafe {
+            phs_series_value_counts(colors, true, false, duplicate_name.as_ptr(), false, &mut out, &mut err)
+        };
+        assert_eq!(status, PHS_POLARS_ERROR);
+        assert!(unsafe { take_error_message(err) }.contains("duplicate column names"));
+
+        unsafe {
+            phs_series_free(colors);
             phs_series_free(empty);
         }
     }

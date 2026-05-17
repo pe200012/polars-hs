@@ -816,6 +816,14 @@ int phs_series_null_count(const struct phs_series *series, uint64_t *out, struct
 
 int phs_series_n_unique(const struct phs_series *series, uint64_t *out, struct phs_error **err);
 
+int phs_series_value_counts(const struct phs_series *series,
+                            bool sort,
+                            bool parallel,
+                            const char *name,
+                            bool normalize,
+                            struct phs_dataframe **out,
+                            struct phs_error **err);
+
 int phs_series_head(const struct phs_series *series,
                     uint64_t n,
                     struct phs_series **out,
