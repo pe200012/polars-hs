@@ -814,6 +814,8 @@ int phs_series_len(const struct phs_series *series, uint64_t *out, struct phs_er
 
 int phs_series_null_count(const struct phs_series *series, uint64_t *out, struct phs_error **err);
 
+int phs_series_n_unique(const struct phs_series *series, uint64_t *out, struct phs_error **err);
+
 int phs_series_head(const struct phs_series *series,
                     uint64_t n,
                     struct phs_series **out,

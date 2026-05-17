@@ -2132,6 +2132,44 @@ main = hspec $ do
                                 (_, Left err, _) -> expectationFailure (show err)
                                 (_, _, Left err) -> expectationFailure (show err)
 
+        it "computes Series median and unique counts" $ do
+            result <- Pl.readCsv valuesCsv
+            textResult <- Pl.series @T.Text "text" (V.fromList [Just "a", Just "b", Just "a", Nothing])
+            boolResult <- Pl.series @Bool "flag" (V.fromList [Just True, Just False, Nothing, Just True])
+            allNullResult <- Pl.series @Double "all_null" (V.fromList [Nothing, Nothing])
+            emptyResult <- Pl.series @Double "empty" V.empty
+            case (result, textResult, boolResult, allNullResult, emptyResult) of
+                (Right df, Right textSeries, Right boolSeries, Right allNull, Right empty) -> do
+                    scoreResult <- Pl.column @Pl.Series df "score"
+                    case scoreResult of
+                        Left err -> expectationFailure (show err)
+                        Right score -> do
+                            medianResult <- Pl.seriesMedian score
+                            textMedianResult <- Pl.seriesMedian textSeries
+                            allNullMedianResult <- Pl.seriesMedian allNull
+                            emptyMedianResult <- Pl.seriesMedian empty
+                            scoreNUnique <- Pl.seriesNUnique score
+                            textNUnique <- Pl.seriesNUnique textSeries
+                            boolNUnique <- Pl.seriesNUnique boolSeries
+                            allNullNUnique <- Pl.seriesNUnique allNull
+                            emptyNUnique <- Pl.seriesNUnique empty
+                            case medianResult of
+                                Left err -> expectationFailure (show err)
+                                Right medianValue -> shouldApproximateMaybe 1.0e-12 (Just 8.875) medianValue
+                            textMedianResult `shouldBe` Right Nothing
+                            allNullMedianResult `shouldBe` Right Nothing
+                            emptyMedianResult `shouldBe` Right Nothing
+                            scoreNUnique `shouldBe` Right 3
+                            textNUnique `shouldBe` Right 3
+                            boolNUnique `shouldBe` Right 3
+                            allNullNUnique `shouldBe` Right 1
+                            emptyNUnique `shouldBe` Right 0
+                (Left err, _, _, _, _) -> expectationFailure (show err)
+                (_, Left err, _, _, _) -> expectationFailure (show err)
+                (_, _, Left err, _, _) -> expectationFailure (show err)
+                (_, _, _, Left err, _) -> expectationFailure (show err)
+                (_, _, _, _, Left err) -> expectationFailure (show err)
+
         it "computes Series sum min and max" $ do
             result <- Pl.readCsv valuesCsv
             case result of

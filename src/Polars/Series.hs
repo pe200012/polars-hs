@@ -54,9 +54,11 @@ module Polars.Series
     , seriesLength
     , seriesMax
     , seriesMean
+    , seriesMedian
     , seriesMin
     , seriesMul
     , seriesName
+    , seriesNUnique
     , seriesRename
     , seriesReverse
     , seriesRem
@@ -154,6 +156,7 @@ import Polars.Internal.Raw
     , phs_series_is_unique
     , phs_series_len
     , phs_series_name
+    , phs_series_n_unique
     , phs_series_new_bool
     , phs_series_new_f32
     , phs_series_new_f64
@@ -496,6 +499,12 @@ seriesMin = seriesStat 4 (CUChar 0)
 
 seriesMax :: Series -> IO (Either PolarsError (Maybe Double))
 seriesMax = seriesStat 5 (CUChar 0)
+
+seriesMedian :: Series -> IO (Either PolarsError (Maybe Double))
+seriesMedian = seriesStat 6 (CUChar 0)
+
+seriesNUnique :: Series -> IO (Either PolarsError Int)
+seriesNUnique input = seriesWord64Out input phs_series_n_unique
 
 seriesBool :: Series -> IO (Either PolarsError (Vector (Maybe Bool)))
 seriesBool input = seriesBytesOut input phs_series_values_bool decodeBoolColumn

@@ -285,6 +285,7 @@ fn series_stat_from_code(series: &Series, op: c_int, ddof: u8) -> PhsResult<Opti
             ensure_numeric_stat_dtype(series, "series max")?;
             Ok(series.max::<f64>()?)
         },
+        6 => Ok(series.median()),
         _ => Err(PhsError::invalid_argument(format!(
             "unknown series stat op code {op}"
         ))),
@@ -672,6 +673,20 @@ pub unsafe extern "C" fn phs_series_null_count(
         let out = unsafe { required_mut(out, "out") }?;
         let handle = unsafe { series_ref(series) }?;
         *out = handle.value.null_count() as u64;
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_n_unique(
+    series: *const phs_series,
+    out: *mut u64,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        let handle = unsafe { series_ref(series) }?;
+        *out = handle.value.n_unique()? as u64;
         Ok(())
     })
 }
@@ -1626,6 +1641,67 @@ mod tests {
         assert!(has_value);
         assert_eq!(value, 34.0);
         unsafe { phs_series_free(series) };
+    }
+
+    #[test]
+    fn series_median_and_n_unique_return_expected_values() {
+        let values = series_into_raw(Series::new(
+            "value".into(),
+            &[Some(9.5_f64), None, Some(8.25)],
+        ));
+        let text = series_into_raw(Series::new("text".into(), &[Some("a"), Some("b"), Some("a"), None]));
+        let flag = series_into_raw(Series::new("flag".into(), &[Some(true), Some(false), None, Some(true)]));
+        let all_null = series_into_raw(Series::new("all_null".into(), &[None::<f64>, None]));
+        let empty = series_into_raw(Series::new("empty".into(), Vec::<Option<f64>>::new()));
+        let mut err = ptr::null_mut();
+        let mut has_value = false;
+        let mut value = 0.0;
+        let mut count = 0_u64;
+
+        let status = unsafe { phs_series_stat(values, 6, 0, &mut has_value, &mut value, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert!(has_value);
+        assert_eq!(value, 8.875);
+
+        let status = unsafe { phs_series_stat(text, 6, 0, &mut has_value, &mut value, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert!(!has_value);
+
+        let status = unsafe { phs_series_stat(all_null, 6, 0, &mut has_value, &mut value, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert!(!has_value);
+
+        let status = unsafe { phs_series_stat(empty, 6, 0, &mut has_value, &mut value, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert!(!has_value);
+
+        let status = unsafe { phs_series_n_unique(values, &mut count, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(count, 3);
+
+        let status = unsafe { phs_series_n_unique(text, &mut count, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(count, 3);
+
+        let status = unsafe { phs_series_n_unique(flag, &mut count, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(count, 3);
+
+        let status = unsafe { phs_series_n_unique(all_null, &mut count, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(count, 1);
+
+        let status = unsafe { phs_series_n_unique(empty, &mut count, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(count, 0);
+
+        unsafe {
+            phs_series_free(values);
+            phs_series_free(text);
+            phs_series_free(flag);
+            phs_series_free(all_null);
+            phs_series_free(empty);
+        }
     }
 
     #[test]
