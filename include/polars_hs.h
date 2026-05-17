@@ -179,6 +179,11 @@ int phs_dataframe_slice(const struct phs_dataframe *dataframe,
                         struct phs_dataframe **out,
                         struct phs_error **err);
 
+int phs_dataframe_filter(const struct phs_dataframe *dataframe,
+                         const struct phs_series *mask,
+                         struct phs_dataframe **out,
+                         struct phs_error **err);
+
 int phs_dataframe_reverse(const struct phs_dataframe *dataframe,
                           struct phs_dataframe **out,
                           struct phs_error **err);
@@ -754,6 +759,25 @@ int phs_series_tail(const struct phs_series *series,
                     uint64_t n,
                     struct phs_series **out,
                     struct phs_error **err);
+
+int phs_series_slice(const struct phs_series *series,
+                     int64_t offset,
+                     uint64_t len,
+                     struct phs_series **out,
+                     struct phs_error **err);
+
+int phs_series_is_null(const struct phs_series *series,
+                       struct phs_series **out,
+                       struct phs_error **err);
+
+int phs_series_is_not_null(const struct phs_series *series,
+                           struct phs_series **out,
+                           struct phs_error **err);
+
+int phs_series_filter(const struct phs_series *series,
+                      const struct phs_series *mask,
+                      struct phs_series **out,
+                      struct phs_error **err);
 
 int phs_series_to_frame(const struct phs_series *series,
                         struct phs_dataframe **out,

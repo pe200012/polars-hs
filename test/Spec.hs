@@ -73,11 +73,11 @@ removeFileIfExists path = do
     exists <- doesFileExist path
     when exists (removeFile path)
 
-expectPolarsFailure :: (Show a) => Either Pl.PolarsError a -> IO ()
+expectPolarsFailure :: Either Pl.PolarsError a -> IO ()
 expectPolarsFailure result =
     case result of
         Left err -> Pl.polarsErrorCode err `shouldBe` Pl.PolarsFailure
-        Right value -> expectationFailure ("expected writer error, received " <> show value)
+        Right _ -> expectationFailure "expected PolarsFailure"
 
 expectInvalidArgumentMessage :: T.Text -> Either Pl.PolarsError a -> IO ()
 expectInvalidArgumentMessage expected result =
@@ -488,6 +488,59 @@ main = hspec $ do
                         (_, _, Left err, _, _) -> expectationFailure (show err)
                         (_, _, _, Left err, _) -> expectationFailure (show err)
                         (_, _, _, _, Left err) -> expectationFailure (show err)
+
+        it "filters eager DataFrames with boolean Series masks" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    ageResult <- Pl.column @Pl.Series df "age"
+                    case ageResult of
+                        Left err -> expectationFailure (show err)
+                        Right age -> do
+                            presentMask <- Pl.seriesIsNotNull age
+                            missingMask <- Pl.seriesIsNull age
+                            case (presentMask, missingMask) of
+                                (Right present, Right missing) -> do
+                                    presentRows <- Pl.dataFrameFilter present df
+                                    missingRows <- Pl.dataFrameFilter missing df
+                                    case (presentRows, missingRows) of
+                                        (Right presentDf, Right missingDf) -> do
+                                            Pl.column @T.Text presentDf "name" `shouldReturn` Right (V.fromList [Just "Alice", Just "Carol"])
+                                            Pl.column @T.Text missingDf "name" `shouldReturn` Right (V.fromList [Just "Bob"])
+                                        (Left err, _) -> expectationFailure (show err)
+                                        (_, Left err) -> expectationFailure (show err)
+                                (Left err, _) -> expectationFailure (show err)
+                                (_, Left err) -> expectationFailure (show err)
+
+        it "reports Polars errors for invalid eager DataFrame filter masks" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    ageResult <- Pl.column @Pl.Series df "age"
+                    wrongLengthMask <- Pl.series @Bool "mask" (V.fromList [Just True, Just False])
+                    case (ageResult, wrongLengthMask) of
+                        (Right age, Right mask) -> do
+                            wrongDtype <- Pl.dataFrameFilter age df
+                            wrongLength <- Pl.dataFrameFilter mask df
+                            expectPolarsFailure wrongDtype
+                            expectPolarsFailure wrongLength
+                        (Left err, _) -> expectationFailure (show err)
+                        (_, Left err) -> expectationFailure (show err)
+
+        it "treats null eager DataFrame filter mask values as false" $ do
+            result <- Pl.readCsv valuesCsv
+            maskResult <- Pl.series @Bool "mask" (V.fromList [Just True, Nothing, Just False])
+            case (result, maskResult) of
+                (Right df, Right mask) -> do
+                    filtered <- Pl.dataFrameFilter mask df
+                    case filtered of
+                        Right filteredDf ->
+                            Pl.column @T.Text filteredDf "name" `shouldReturn` Right (V.fromList [Just "Alice"])
+                        Left err -> expectationFailure (show err)
+                (Left err, _) -> expectationFailure (show err)
+                (_, Left err) -> expectationFailure (show err)
 
         it "validates eager DataFrame transform arguments" $ do
             result <- Pl.readCsv valuesCsv
@@ -1100,10 +1153,65 @@ main = hspec $ do
                             case tailResult of
                                 Left err -> expectationFailure (show err)
                                 Right lastOne -> Pl.seriesInt64 lastOne `shouldReturn` Right (V.fromList [Just 29])
+                            sliceResult <- Pl.seriesSlice 1 2 age
+                            case sliceResult of
+                                Left err -> expectationFailure (show err)
+                                Right middleTwo -> Pl.seriesInt64 middleTwo `shouldReturn` Right (V.fromList [Nothing, Just 29])
                             frameResult <- Pl.seriesToFrame age
                             case frameResult of
                                 Left err -> expectationFailure (show err)
                                 Right oneColumn -> Pl.shape oneColumn `shouldReturn` Right (3, 1)
+
+        it "filters Series handles with boolean masks" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    ageResult <- Pl.column @Pl.Series df "age"
+                    case ageResult of
+                        Left err -> expectationFailure (show err)
+                        Right age -> do
+                            maskResult <- Pl.seriesIsNotNull age
+                            case maskResult of
+                                Left err -> expectationFailure (show err)
+                                Right mask -> do
+                                    Pl.seriesBool mask `shouldReturn` Right (V.fromList [Just True, Just False, Just True])
+                                    filtered <- Pl.seriesFilter mask age
+                                    case filtered of
+                                        Left err -> expectationFailure (show err)
+                                        Right denseAge -> Pl.seriesInt64 denseAge `shouldReturn` Right (V.fromList [Just 34, Just 29])
+
+        it "reports Polars errors for invalid Series filter masks" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    ageResult <- Pl.column @Pl.Series df "age"
+                    wrongLengthMask <- Pl.series @Bool "mask" (V.fromList [Just True, Just False])
+                    case (ageResult, wrongLengthMask) of
+                        (Right age, Right mask) -> do
+                            wrongDtype <- Pl.seriesFilter age age
+                            wrongLength <- Pl.seriesFilter mask age
+                            expectPolarsFailure wrongDtype
+                            expectPolarsFailure wrongLength
+                        (Left err, _) -> expectationFailure (show err)
+                        (_, Left err) -> expectationFailure (show err)
+
+        it "treats null Series filter mask values as false" $ do
+            result <- Pl.readCsv valuesCsv
+            maskResult <- Pl.series @Bool "mask" (V.fromList [Just True, Nothing, Just False])
+            case (result, maskResult) of
+                (Right df, Right mask) -> do
+                    ageResult <- Pl.column @Pl.Series df "age"
+                    case ageResult of
+                        Right age -> do
+                            filtered <- Pl.seriesFilter mask age
+                            case filtered of
+                                Right filteredAge -> Pl.seriesInt64 filteredAge `shouldReturn` Right (V.fromList [Just 34])
+                                Left err -> expectationFailure (show err)
+                        Left err -> expectationFailure (show err)
+                (Left err, _) -> expectationFailure (show err)
+                (_, Left err) -> expectationFailure (show err)
 
         it "reports InvalidArgument for negative Series slices" $ do
             result <- Pl.readCsv valuesCsv
@@ -1116,8 +1224,10 @@ main = hspec $ do
                         Right age -> do
                             headResult <- Pl.seriesHead (-1) age
                             tailResult <- Pl.seriesTail (-1) age
+                            sliceResult <- Pl.seriesSlice 0 (-1) age
                             expectInvalidArgumentMessage "series head count must be non-negative" headResult
                             expectInvalidArgumentMessage "series tail count must be non-negative" tailResult
+                            expectInvalidArgumentMessage "series slice length must be non-negative" sliceResult
 
         it "keeps Series handles usable after DataFrame ownership leaves scope" $ do
             seriesResult <- do

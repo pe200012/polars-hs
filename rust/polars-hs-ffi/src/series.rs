@@ -159,6 +159,12 @@ fn idx_size_from_u64(value: u64, label: &str) -> PhsResult<IdxSize> {
         .map_err(|_| PhsError::invalid_argument(format!("{label} exceeds Polars index size")))
 }
 
+fn usize_from_u64(value: u64, label: &str) -> PhsResult<usize> {
+    value
+        .try_into()
+        .map_err(|_| PhsError::invalid_argument(format!("{label} exceeded usize")))
+}
+
 fn raw_bytes<'a>(data: *const u8, len: usize, name: &str) -> PhsResult<&'a [u8]> {
     if len == 0 {
         Ok(&[])
@@ -540,6 +546,55 @@ pub unsafe extern "C" fn phs_series_tail(
         *out = ptr::null_mut();
         let handle = unsafe { series_ref(series) }?;
         *out = series_into_raw(handle.value.tail(Some(n as usize)));
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_slice(
+    series: *const phs_series,
+    offset: i64,
+    len: u64,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| {
+        Ok(value.slice(offset, usize_from_u64(len, "series slice length")?))
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_is_null(
+    series: *const phs_series,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| Ok(value.is_null().into_series()))
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_is_not_null(
+    series: *const phs_series,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| Ok(value.is_not_null().into_series()))
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_filter(
+    series: *const phs_series,
+    mask: *const phs_series,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let series = unsafe { series_ref(series) }?;
+        let mask = unsafe { series_ref(mask) }?;
+        let mask = mask.value.bool()?;
+        *out = series_into_raw(series.value.filter(mask)?);
         Ok(())
     })
 }

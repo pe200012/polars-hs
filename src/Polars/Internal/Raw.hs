@@ -29,6 +29,7 @@ module Polars.Internal.Raw
     , phs_dataframe_column_bool
     , phs_dataframe_drop
     , phs_dataframe_drop_nulls
+    , phs_dataframe_filter
     , phs_dataframe_from_arrow_record_batch
     , phs_dataframe_to_arrow_record_batch
     , phs_dataframe_new
@@ -129,8 +130,11 @@ module Polars.Internal.Raw
     , phs_series_cast
     , phs_series_drop_nulls
     , phs_series_dtype
+    , phs_series_filter
     , phs_series_free_finalizer
     , phs_series_head
+    , phs_series_is_not_null
+    , phs_series_is_null
     , phs_series_len
     , phs_series_name
     , phs_series_new_bool
@@ -149,6 +153,7 @@ module Polars.Internal.Raw
     , phs_series_reverse
     , phs_series_null_count
     , phs_series_shift
+    , phs_series_slice
     , phs_series_sort
     , phs_series_tail
     , phs_series_to_arrow_array
@@ -325,6 +330,9 @@ foreign import ccall unsafe "phs_dataframe_rename"
 
 foreign import ccall unsafe "phs_dataframe_slice"
     phs_dataframe_slice :: Ptr RawDataFrame -> CLLong -> Word64 -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_dataframe_filter"
+    phs_dataframe_filter :: Ptr RawDataFrame -> Ptr RawSeries -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_dataframe_reverse"
     phs_dataframe_reverse :: Ptr RawDataFrame -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
@@ -628,6 +636,18 @@ foreign import ccall unsafe "phs_series_head"
 
 foreign import ccall unsafe "phs_series_tail"
     phs_series_tail :: Ptr RawSeries -> Word64 -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_slice"
+    phs_series_slice :: Ptr RawSeries -> CLLong -> Word64 -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_is_null"
+    phs_series_is_null :: Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_is_not_null"
+    phs_series_is_not_null :: Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_filter"
+    phs_series_filter :: Ptr RawSeries -> Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_series_to_frame"
     phs_series_to_frame :: Ptr RawSeries -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt

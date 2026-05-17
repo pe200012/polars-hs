@@ -497,6 +497,24 @@ pub unsafe extern "C" fn phs_dataframe_slice(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_filter(
+    dataframe: *const phs_dataframe,
+    mask: *const phs_series,
+    out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        let mask = unsafe { series_ref(mask) }?;
+        let mask = mask.value.bool()?;
+        *out = dataframe_into_raw(handle.value.filter(mask)?);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_dataframe_reverse(
     dataframe: *const phs_dataframe,
     out: *mut *mut phs_dataframe,

@@ -20,6 +20,7 @@ module Polars.DataFrame
     , dataFrame
     , dataFrameDropColumns
     , dataFrameDropNulls
+    , dataFrameFilter
     , dataFrameNullCount
     , dataFrameRename
     , dataFrameReverse
@@ -72,6 +73,7 @@ import Polars.Internal.Raw
     , RawSeries
     , phs_dataframe_drop
     , phs_dataframe_drop_nulls
+    , phs_dataframe_filter
     , phs_dataframe_head
     , phs_dataframe_new
     , phs_dataframe_height
@@ -216,6 +218,12 @@ dataFrameDropColumns :: [Text] -> DataFrame -> IO (Either PolarsError DataFrame)
 dataFrameDropColumns [] _ = pure (Left (invalidArgument "dataFrameDropColumns requires at least one column name"))
 dataFrameDropColumns names df = withDataFrame df $ \ptr -> withCStringList names $ \nameArray len ->
     dataframeOut (phs_dataframe_drop ptr nameArray len)
+
+dataFrameFilter :: Series -> DataFrame -> IO (Either PolarsError DataFrame)
+dataFrameFilter mask df =
+    withDataFrame df $ \dfPtr ->
+        withSeries mask $ \maskPtr ->
+            dataframeOut (phs_dataframe_filter dfPtr maskPtr)
 
 dataFrameRename :: [(Text, Text)] -> DataFrame -> IO (Either PolarsError DataFrame)
 dataFrameRename [] _ = pure (Left (invalidArgument "dataFrameRename requires at least one column pair"))

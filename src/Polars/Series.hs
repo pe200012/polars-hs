@@ -28,11 +28,15 @@ module Polars.Series
     , seriesInt16
     , seriesInt32
     , seriesInt64
+    , seriesFilter
+    , seriesIsNotNull
+    , seriesIsNull
     , seriesLength
     , seriesName
     , seriesRename
     , seriesReverse
     , seriesShift
+    , seriesSlice
     , seriesSort
     , seriesNullCount
     , seriesTail
@@ -96,7 +100,10 @@ import Polars.Internal.Raw
     , phs_series_cast
     , phs_series_drop_nulls
     , phs_series_dtype
+    , phs_series_filter
     , phs_series_head
+    , phs_series_is_not_null
+    , phs_series_is_null
     , phs_series_len
     , phs_series_name
     , phs_series_new_bool
@@ -114,6 +121,7 @@ import Polars.Internal.Raw
     , phs_series_rename
     , phs_series_reverse
     , phs_series_shift
+    , phs_series_slice
     , phs_series_sort
     , phs_series_null_count
     , phs_series_tail
@@ -254,6 +262,11 @@ seriesTail n input
     | n < 0 = pure (Left (invalidArgument "series tail count must be non-negative"))
     | otherwise = withSeries input $ \ptr -> seriesOut (phs_series_tail ptr (fromIntegral n))
 
+seriesSlice :: Int -> Int -> Series -> IO (Either PolarsError Series)
+seriesSlice offset len input
+    | len < 0 = pure (Left (invalidArgument "series slice length must be non-negative"))
+    | otherwise = withSeries input $ \ptr -> seriesOut (phs_series_slice ptr (fromIntegral offset) (fromIntegral len))
+
 seriesToFrame :: Series -> IO (Either PolarsError DataFrame)
 seriesToFrame input = seriesDataFrameOut input phs_series_to_frame
 
@@ -287,6 +300,18 @@ seriesReverse input = seriesUnaryOut input phs_series_reverse
 
 seriesDropNulls :: Series -> IO (Either PolarsError Series)
 seriesDropNulls input = seriesUnaryOut input phs_series_drop_nulls
+
+seriesIsNull :: Series -> IO (Either PolarsError Series)
+seriesIsNull input = seriesUnaryOut input phs_series_is_null
+
+seriesIsNotNull :: Series -> IO (Either PolarsError Series)
+seriesIsNotNull input = seriesUnaryOut input phs_series_is_not_null
+
+seriesFilter :: Series -> Series -> IO (Either PolarsError Series)
+seriesFilter mask input =
+    withSeries input $ \seriesPtr ->
+        withSeries mask $ \maskPtr ->
+            seriesOut (phs_series_filter seriesPtr maskPtr)
 
 seriesShift :: Int -> Series -> IO (Either PolarsError Series)
 seriesShift periods input = withSeries input $ \ptr ->
