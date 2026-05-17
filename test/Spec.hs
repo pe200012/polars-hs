@@ -2373,6 +2373,79 @@ main = hspec $ do
                 (_, _, Left err, _) -> expectationFailure (show err)
                 (_, _, _, Left err) -> expectationFailure (show err)
 
+        it "selects eager Series values with a boolean mask" $ do
+            maskResult <- Pl.series @Bool "mask" (V.fromList [Just True, Just False, Nothing, Just True])
+            trueResult <- Pl.series @Int64 "true" (V.fromList [Just 10, Just 10, Just 10, Just 10])
+            falseResult <- Pl.series @Int64 "false" (V.fromList [Just 1, Just 2, Just 3, Just 4])
+            broadcastMaskResult <- Pl.series @Bool "mask" (V.fromList [Just True, Just False, Just True, Just False])
+            broadcastTrueResult <- Pl.series @Int64 "true" (V.fromList [Just 99])
+            numericTrueResult <- Pl.series @Int64 "true" (V.fromList [Just 1, Just 2])
+            numericFalseResult <- Pl.series @Double "false" (V.fromList [Just 0.5, Just 0.25])
+            textMaskResult <- Pl.series @Bool "mask" (V.fromList [Just False, Just True, Nothing])
+            textTrueResult <- Pl.series @T.Text "true" (V.fromList [Just "left", Just "yes", Just "skip"])
+            textFalseResult <- Pl.series @T.Text "false" (V.fromList [Just "right", Just "no", Just "fallback"])
+            shortMaskResult <- Pl.series @Bool "short_mask" (V.fromList [Just True, Just False])
+            nonBoolMaskResult <- Pl.series @Int64 "not_mask" (V.fromList [Just 1, Just 0, Just 1, Just 0])
+            case
+                ( maskResult
+                , trueResult
+                , falseResult
+                , broadcastMaskResult
+                , broadcastTrueResult
+                , numericTrueResult
+                , numericFalseResult
+                , textMaskResult
+                , textTrueResult
+                , textFalseResult
+                , shortMaskResult
+                , nonBoolMaskResult
+                )
+                of
+                    ( Right mask
+                        , Right trueValues
+                        , Right falseValues
+                        , Right broadcastMask
+                        , Right broadcastTrue
+                        , Right numericTrue
+                        , Right numericFalse
+                        , Right textMask
+                        , Right textTrue
+                        , Right textFalse
+                        , Right shortMask
+                        , Right nonBoolMask
+                        ) -> do
+                            selected <- Pl.seriesZipWith mask trueValues falseValues
+                            broadcasted <- Pl.seriesZipWith broadcastMask broadcastTrue falseValues
+                            coerced <- Pl.seriesZipWith shortMask numericTrue numericFalse
+                            textSelected <- Pl.seriesZipWith textMask textTrue textFalse
+                            shapeMismatch <- Pl.seriesZipWith shortMask trueValues falseValues
+                            wrongMask <- Pl.seriesZipWith nonBoolMask trueValues falseValues
+                            case (selected, broadcasted, coerced, textSelected) of
+                                (Right selectedOut, Right broadcastedOut, Right coercedOut, Right textOut) -> do
+                                    Pl.seriesInt64 selectedOut `shouldReturn` Right (V.fromList [Just 10, Just 2, Just 3, Just 10])
+                                    Pl.seriesInt64 broadcastedOut `shouldReturn` Right (V.fromList [Just 99, Just 2, Just 99, Just 4])
+                                    Pl.seriesDataType coercedOut `shouldReturn` Right Pl.Float64
+                                    Pl.seriesDouble coercedOut `shouldReturn` Right (V.fromList [Just 1.0, Just 0.25])
+                                    Pl.seriesText textOut `shouldReturn` Right (V.fromList [Just "right", Just "yes", Just "fallback"])
+                                    expectPolarsFailure shapeMismatch
+                                    expectPolarsFailure wrongMask
+                                (Left err, _, _, _) -> expectationFailure (show err)
+                                (_, Left err, _, _) -> expectationFailure (show err)
+                                (_, _, Left err, _) -> expectationFailure (show err)
+                                (_, _, _, Left err) -> expectationFailure (show err)
+                    (Left err, _, _, _, _, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                    (_, Left err, _, _, _, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                    (_, _, Left err, _, _, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                    (_, _, _, Left err, _, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                    (_, _, _, _, Left err, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                    (_, _, _, _, _, Left err, _, _, _, _, _, _) -> expectationFailure (show err)
+                    (_, _, _, _, _, _, Left err, _, _, _, _, _) -> expectationFailure (show err)
+                    (_, _, _, _, _, _, _, Left err, _, _, _, _) -> expectationFailure (show err)
+                    (_, _, _, _, _, _, _, _, Left err, _, _, _) -> expectationFailure (show err)
+                    (_, _, _, _, _, _, _, _, _, Left err, _, _) -> expectationFailure (show err)
+                    (_, _, _, _, _, _, _, _, _, _, Left err, _) -> expectationFailure (show err)
+                    (_, _, _, _, _, _, _, _, _, _, _, Left err) -> expectationFailure (show err)
+
         it "computes Series value counts as a DataFrame" $ do
             colorResult <- Pl.series @T.Text "color" (V.fromList [Just "blue", Just "red", Just "blue", Just "green", Just "blue", Just "red"])
             emptyResult <- Pl.series @T.Text "color" V.empty

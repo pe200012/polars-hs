@@ -91,6 +91,7 @@ module Polars.Series
     , seriesWord16
     , seriesWord32
     , seriesWord64
+    , seriesZipWith
     ) where
 
 import qualified Data.ByteString as BS
@@ -211,6 +212,7 @@ import Polars.Internal.Raw
     , phs_series_values_u16
     , phs_series_values_u32
     , phs_series_values_u64
+    , phs_series_zip_with
     )
 import Polars.Schema (DataType, parseDataType)
 
@@ -443,6 +445,16 @@ seriesMode :: SeriesModeOptions -> Series -> IO (Either PolarsError Series)
 seriesMode options input =
     withSeries input $ \ptr ->
         seriesOut (phs_series_mode ptr (toCBool (seriesModeMaintainOrder options)))
+
+-- | Select values from the second Series where the mask is true and from the
+-- third Series where the mask is false. Null mask entries follow Polars 0.53
+-- `zip_with` semantics and select from the false Series.
+seriesZipWith :: Series -> Series -> Series -> IO (Either PolarsError Series)
+seriesZipWith mask trueValues falseValues =
+    withSeries mask $ \maskPtr ->
+        withSeries trueValues $ \truePtr ->
+            withSeries falseValues $ \falsePtr ->
+                seriesOut (phs_series_zip_with maskPtr truePtr falsePtr)
 
 -- | Count unique Series values into a two-column DataFrame.
 seriesValueCounts :: SeriesValueCountsOptions -> Series -> IO (Either PolarsError DataFrame)

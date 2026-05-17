@@ -741,6 +741,26 @@ pub unsafe extern "C" fn phs_series_mode(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_zip_with(
+    mask: *const phs_series,
+    true_values: *const phs_series,
+    false_values: *const phs_series,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let mask_handle = unsafe { series_ref(mask) }?;
+        let true_handle = unsafe { series_ref(true_values) }?;
+        let false_handle = unsafe { series_ref(false_values) }?;
+        let mask_values = mask_handle.value.bool()?;
+        *out = series_into_raw(true_handle.value.zip_with(mask_values, &false_handle.value)?);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_series_head(
     series: *const phs_series,
     n: u64,
@@ -2139,6 +2159,120 @@ mod tests {
             phs_series_free(text);
             phs_series_free(nullable);
             phs_series_free(empty);
+        }
+    }
+
+    #[test]
+    fn series_zip_with_selects_with_boolean_mask() {
+        let mask = series_into_raw(Series::new(
+            "mask".into(),
+            &[Some(true), Some(false), None, Some(true)],
+        ));
+        let true_values = series_into_raw(Series::new(
+            "true".into(),
+            &[Some(10_i64), Some(10), Some(10), Some(10)],
+        ));
+        let false_values = series_into_raw(Series::new(
+            "false".into(),
+            &[Some(1_i64), Some(2), Some(3), Some(4)],
+        ));
+        let broadcast_mask = series_into_raw(Series::new(
+            "mask".into(),
+            &[Some(true), Some(false), Some(true), Some(false)],
+        ));
+        let broadcast_true = series_into_raw(Series::new("true".into(), &[Some(99_i64)]));
+        let numeric_true = series_into_raw(Series::new(
+            "true".into(),
+            &[Some(1_i64), Some(2)],
+        ));
+        let numeric_false = series_into_raw(Series::new(
+            "false".into(),
+            &[Some(0.5_f64), Some(0.25)],
+        ));
+        let text_mask = series_into_raw(Series::new("mask".into(), &[Some(false), Some(true), None]));
+        let text_true = series_into_raw(Series::new(
+            "true".into(),
+            &[Some("left"), Some("yes"), Some("skip")],
+        ));
+        let text_false = series_into_raw(Series::new(
+            "false".into(),
+            &[Some("right"), Some("no"), Some("fallback")],
+        ));
+        let short_mask = series_into_raw(Series::new("short_mask".into(), &[Some(true), Some(false)]));
+        let non_bool_mask = series_into_raw(Series::new(
+            "not_mask".into(),
+            &[Some(1_i64), Some(0), Some(1), Some(0)],
+        ));
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe {
+            phs_series_zip_with(mask, true_values, false_values, &mut out, &mut err)
+        };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_i64_values(out) },
+            vec![Some(10), Some(2), Some(3), Some(10)]
+        );
+
+        let status = unsafe {
+            phs_series_zip_with(broadcast_mask, broadcast_true, false_values, &mut out, &mut err)
+        };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_i64_values(out) },
+            vec![Some(99), Some(2), Some(99), Some(4)]
+        );
+
+        let status = unsafe {
+            phs_series_zip_with(short_mask, numeric_true, numeric_false, &mut out, &mut err)
+        };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_f64_values(out) }, vec![Some(1.0), Some(0.25)]);
+
+        let status = unsafe {
+            phs_series_zip_with(text_mask, text_true, text_false, &mut out, &mut err)
+        };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { series_ref(out) }
+                .unwrap()
+                .value
+                .str()
+                .unwrap()
+                .into_iter()
+                .collect::<Vec<_>>(),
+            vec![Some("right"), Some("yes"), Some("fallback")]
+        );
+        unsafe { phs_series_free(out) };
+
+        let status = unsafe {
+            phs_series_zip_with(short_mask, true_values, false_values, &mut out, &mut err)
+        };
+        assert_eq!(status, PHS_POLARS_ERROR);
+        let message = unsafe { take_error_message(err) };
+        assert!(message.contains("zip_with"));
+
+        let status = unsafe {
+            phs_series_zip_with(non_bool_mask, true_values, false_values, &mut out, &mut err)
+        };
+        assert_eq!(status, PHS_POLARS_ERROR);
+        let message = unsafe { take_error_message(err) };
+        assert!(message.contains("Boolean"));
+
+        unsafe {
+            phs_series_free(mask);
+            phs_series_free(true_values);
+            phs_series_free(false_values);
+            phs_series_free(broadcast_mask);
+            phs_series_free(broadcast_true);
+            phs_series_free(numeric_true);
+            phs_series_free(numeric_false);
+            phs_series_free(text_mask);
+            phs_series_free(text_true);
+            phs_series_free(text_false);
+            phs_series_free(short_mask);
+            phs_series_free(non_bool_mask);
         }
     }
 

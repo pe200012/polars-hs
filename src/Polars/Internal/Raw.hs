@@ -206,6 +206,7 @@ module Polars.Internal.Raw
     , phs_series_values_u32
     , phs_series_values_u64
     , phs_series_from_arrow_array
+    , phs_series_zip_with
     , phs_write_csv
     , phs_write_csv_options
     , phs_write_ipc_file
@@ -722,6 +723,9 @@ foreign import ccall safe "phs_series_n_unique"
 
 foreign import ccall safe "phs_series_mode"
     phs_series_mode :: Ptr RawSeries -> CBool -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_series_zip_with"
+    phs_series_zip_with :: Ptr RawSeries -> Ptr RawSeries -> Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall safe "phs_series_value_counts"
     phs_series_value_counts :: Ptr RawSeries -> CBool -> CBool -> CString -> CBool -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt

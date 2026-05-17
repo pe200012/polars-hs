@@ -829,6 +829,12 @@ int phs_series_mode(const struct phs_series *series,
                     struct phs_series **out,
                     struct phs_error **err);
 
+int phs_series_zip_with(const struct phs_series *mask,
+                        const struct phs_series *true_values,
+                        const struct phs_series *false_values,
+                        struct phs_series **out,
+                        struct phs_error **err);
+
 int phs_series_head(const struct phs_series *series,
                     uint64_t n,
                     struct phs_series **out,
