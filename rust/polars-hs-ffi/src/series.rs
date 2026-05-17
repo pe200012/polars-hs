@@ -1044,6 +1044,17 @@ pub unsafe extern "C" fn phs_series_unique_stable(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_arg_unique(
+    series: *const phs_series,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| {
+        Ok(value.arg_unique()?.into_series())
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_series_reverse(
     series: *const phs_series,
     out: *mut *mut phs_series,
@@ -1694,6 +1705,68 @@ mod tests {
         let status = unsafe { phs_series_n_unique(empty, &mut count, &mut err) };
         assert_eq!(status, PHS_OK);
         assert_eq!(count, 0);
+
+        unsafe {
+            phs_series_free(values);
+            phs_series_free(text);
+            phs_series_free(flag);
+            phs_series_free(all_null);
+            phs_series_free(empty);
+        }
+    }
+
+    #[test]
+    fn series_arg_unique_returns_first_indexes() {
+        let values = series_into_raw(Series::new(
+            "value".into(),
+            &[Some(1_i64), Some(2), Some(1), None, Some(3), None],
+        ));
+        let text = series_into_raw(Series::new("text".into(), &[Some("a"), Some("b"), Some("a"), None]));
+        let flag = series_into_raw(Series::new("flag".into(), &[Some(true), Some(false), None, Some(true)]));
+        let all_null = series_into_raw(Series::new("all_null".into(), &[None::<f64>, None]));
+        let empty = series_into_raw(Series::new("empty".into(), Vec::<Option<f64>>::new()));
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_series_arg_unique(values, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { series_ref(out) }.unwrap().value.u32().unwrap().into_iter().collect::<Vec<_>>(),
+            vec![Some(0), Some(1), Some(3), Some(4)]
+        );
+        unsafe { phs_series_free(out) };
+
+        let status = unsafe { phs_series_arg_unique(text, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { series_ref(out) }.unwrap().value.u32().unwrap().into_iter().collect::<Vec<_>>(),
+            vec![Some(0), Some(1), Some(3)]
+        );
+        unsafe { phs_series_free(out) };
+
+        let status = unsafe { phs_series_arg_unique(flag, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { series_ref(out) }.unwrap().value.u32().unwrap().into_iter().collect::<Vec<_>>(),
+            vec![Some(0), Some(1), Some(2)]
+        );
+        unsafe { phs_series_free(out) };
+
+        let status = unsafe { phs_series_arg_unique(all_null, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { series_ref(out) }.unwrap().value.u32().unwrap().into_iter().collect::<Vec<_>>(),
+            vec![Some(0)]
+        );
+        unsafe { phs_series_free(out) };
+
+        let status = unsafe { phs_series_arg_unique(empty, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { series_ref(out) }.unwrap().value.u32().unwrap().into_iter().collect::<Vec<_>>(),
+            Vec::<Option<u32>>::new()
+        );
+        unsafe { phs_series_free(out) };
 
         unsafe {
             phs_series_free(values);

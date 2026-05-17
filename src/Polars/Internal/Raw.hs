@@ -136,6 +136,7 @@ module Polars.Internal.Raw
     , phs_scan_parquet_options
     , phs_series_abs
     , phs_series_append
+    , phs_series_arg_unique
     , phs_series_binary_op
     , phs_series_cast
     , phs_series_ceil
@@ -686,6 +687,9 @@ foreign import ccall unsafe "phs_series_unique"
 
 foreign import ccall unsafe "phs_series_unique_stable"
     phs_series_unique_stable :: Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_series_arg_unique"
+    phs_series_arg_unique :: Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_series_reverse"
     phs_series_reverse :: Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt

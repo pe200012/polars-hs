@@ -2170,6 +2170,38 @@ main = hspec $ do
                 (_, _, _, Left err, _) -> expectationFailure (show err)
                 (_, _, _, _, Left err) -> expectationFailure (show err)
 
+        it "returns first indexes of unique Series values" $ do
+            numericResult <- Pl.series @Int64 "value" (V.fromList [Just 1, Just 2, Just 1, Nothing, Just 3, Nothing])
+            textResult <- Pl.series @T.Text "text" (V.fromList [Just "a", Just "b", Just "a", Nothing])
+            boolResult <- Pl.series @Bool "flag" (V.fromList [Just True, Just False, Nothing, Just True])
+            allNullResult <- Pl.series @Double "all_null" (V.fromList [Nothing, Nothing])
+            emptyResult <- Pl.series @Double "empty" V.empty
+            case (numericResult, textResult, boolResult, allNullResult, emptyResult) of
+                (Right numeric, Right textSeries, Right boolSeries, Right allNull, Right empty) -> do
+                    numericArg <- Pl.seriesArgUnique numeric
+                    textArg <- Pl.seriesArgUnique textSeries
+                    boolArg <- Pl.seriesArgUnique boolSeries
+                    allNullArg <- Pl.seriesArgUnique allNull
+                    emptyArg <- Pl.seriesArgUnique empty
+                    case (numericArg, textArg, boolArg, allNullArg, emptyArg) of
+                        (Right numericIdx, Right textIdx, Right boolIdx, Right allNullIdx, Right emptyIdx) -> do
+                            Pl.seriesDataType numericIdx `shouldReturn` Right Pl.UInt32
+                            Pl.seriesWord32 numericIdx `shouldReturn` Right (V.fromList [Just 0, Just 1, Just 3, Just 4])
+                            Pl.seriesWord32 textIdx `shouldReturn` Right (V.fromList [Just 0, Just 1, Just 3])
+                            Pl.seriesWord32 boolIdx `shouldReturn` Right (V.fromList [Just 0, Just 1, Just 2])
+                            Pl.seriesWord32 allNullIdx `shouldReturn` Right (V.fromList [Just 0])
+                            Pl.seriesWord32 emptyIdx `shouldReturn` Right V.empty
+                        (Left err, _, _, _, _) -> expectationFailure (show err)
+                        (_, Left err, _, _, _) -> expectationFailure (show err)
+                        (_, _, Left err, _, _) -> expectationFailure (show err)
+                        (_, _, _, Left err, _) -> expectationFailure (show err)
+                        (_, _, _, _, Left err) -> expectationFailure (show err)
+                (Left err, _, _, _, _) -> expectationFailure (show err)
+                (_, Left err, _, _, _) -> expectationFailure (show err)
+                (_, _, Left err, _, _) -> expectationFailure (show err)
+                (_, _, _, Left err, _) -> expectationFailure (show err)
+                (_, _, _, _, Left err) -> expectationFailure (show err)
+
         it "computes Series sum min and max" $ do
             result <- Pl.readCsv valuesCsv
             case result of

@@ -24,6 +24,7 @@ module Polars.Series
     , seriesAbs
     , seriesAdd
     , seriesAppend
+    , seriesArgUnique
     , seriesBool
     , seriesCeil
     , seriesDataType
@@ -133,6 +134,7 @@ import Polars.Internal.Raw
     , RawSeries
     , phs_series_abs
     , phs_series_append
+    , phs_series_arg_unique
     , phs_series_binary_op
     , phs_series_cast
     , phs_series_ceil
@@ -364,6 +366,9 @@ seriesUnique input = seriesUnaryOut input phs_series_unique
 
 seriesUniqueStable :: Series -> IO (Either PolarsError Series)
 seriesUniqueStable input = seriesUnaryOut input phs_series_unique_stable
+
+seriesArgUnique :: Series -> IO (Either PolarsError Series)
+seriesArgUnique input = seriesUnaryOut input phs_series_arg_unique
 
 seriesReverse :: Series -> IO (Either PolarsError Series)
 seriesReverse input = seriesUnaryOut input phs_series_reverse
