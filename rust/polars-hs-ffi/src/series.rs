@@ -3,10 +3,13 @@ use std::ptr;
 
 use polars::prelude::*;
 use polars_ops::series::{
+    abs as polars_series_abs,
     is_duplicated as polars_series_is_duplicated,
     is_first_distinct as polars_series_is_first_distinct,
     is_last_distinct as polars_series_is_last_distinct,
     is_unique as polars_series_is_unique,
+    RoundMode,
+    RoundSeries,
 };
 
 use crate::bytes::{bytes_into_raw, phs_bytes};
@@ -186,6 +189,14 @@ fn fill_null_strategy_from_code(
         _ => Err(PhsError::invalid_argument(format!(
             "unknown fill null strategy code {code}"
         ))),
+    }
+}
+
+fn round_mode_from_code(code: c_int) -> PhsResult<RoundMode> {
+    match code {
+        0 => Ok(RoundMode::HalfToEven),
+        1 => Ok(RoundMode::HalfAwayFromZero),
+        _ => Err(PhsError::invalid_argument(format!("unknown round mode code {code}"))),
     }
 }
 
@@ -653,6 +664,46 @@ pub unsafe extern "C" fn phs_series_slice(
     series_transform(series, out, err, |value| {
         Ok(value.slice(offset, usize_from_u64(len, "series slice length")?))
     })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_abs(
+    series: *const phs_series,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| Ok(polars_series_abs(value)?))
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_round(
+    series: *const phs_series,
+    decimals: u32,
+    mode: c_int,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| {
+        Ok(value.round(decimals, round_mode_from_code(mode)?)?)
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_floor(
+    series: *const phs_series,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| Ok(value.floor()?))
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_ceil(
+    series: *const phs_series,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| Ok(value.ceil()?))
 }
 
 #[unsafe(no_mangle)]
@@ -1157,6 +1208,22 @@ mod tests {
         assert!(!raw.is_null());
         let series = unsafe { series_ref(raw) }.unwrap();
         let values = series.value.bool().unwrap().into_iter().collect();
+        unsafe { phs_series_free(raw) };
+        values
+    }
+
+    unsafe fn take_i64_values(raw: *mut phs_series) -> Vec<Option<i64>> {
+        assert!(!raw.is_null());
+        let series = unsafe { series_ref(raw) }.unwrap();
+        let values = series.value.i64().unwrap().into_iter().collect();
+        unsafe { phs_series_free(raw) };
+        values
+    }
+
+    unsafe fn take_f64_values(raw: *mut phs_series) -> Vec<Option<f64>> {
+        assert!(!raw.is_null());
+        let series = unsafe { series_ref(raw) }.unwrap();
+        let values = series.value.f64().unwrap().into_iter().collect();
         unsafe { phs_series_free(raw) };
         values
     }
@@ -1700,6 +1767,128 @@ mod tests {
             phs_series_free(empty);
             phs_series_free(singleton);
         }
+    }
+
+    #[test]
+    fn series_numeric_unary_transforms_values() {
+        let numbers = series_into_raw(Series::new(
+            "number".into(),
+            &[Some(-3_i64), Some(0), None, Some(4)],
+        ));
+        let values = series_into_raw(Series::new(
+            "value".into(),
+            &[Some(2.5_f64), Some(3.5), Some(-2.5), Some(1.25), None],
+        ));
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_series_abs(numbers, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_i64_values(out) },
+            vec![Some(3), Some(0), None, Some(4)]
+        );
+
+        let status = unsafe { phs_series_abs(values, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_f64_values(out) },
+            vec![Some(2.5), Some(3.5), Some(2.5), Some(1.25), None]
+        );
+
+        let status = unsafe { phs_series_round(values, 0, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_f64_values(out) },
+            vec![Some(2.0), Some(4.0), Some(-2.0), Some(1.0), None]
+        );
+
+        let status = unsafe { phs_series_round(values, 0, 1, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_f64_values(out) },
+            vec![Some(3.0), Some(4.0), Some(-3.0), Some(1.0), None]
+        );
+
+        let precise = series_into_raw(Series::new(
+            "precise".into(),
+            &[Some(1.234_f64), Some(-1.235), None],
+        ));
+        let status = unsafe { phs_series_round(precise, 2, 1, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_f64_values(out) },
+            vec![Some(1.23), Some(-1.24), None]
+        );
+
+        let status = unsafe { phs_series_floor(values, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_f64_values(out) },
+            vec![Some(2.0), Some(3.0), Some(-3.0), Some(1.0), None]
+        );
+
+        let status = unsafe { phs_series_ceil(values, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_f64_values(out) },
+            vec![Some(3.0), Some(4.0), Some(-2.0), Some(2.0), None]
+        );
+
+        let integers = series_into_raw(Series::new("integer".into(), &[Some(2_i64), Some(-3), None]));
+        let status = unsafe { phs_series_round(integers, 0, 1, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_i64_values(out) }, vec![Some(2), Some(-3), None]);
+
+        let status = unsafe { phs_series_floor(integers, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_i64_values(out) }, vec![Some(2), Some(-3), None]);
+
+        let status = unsafe { phs_series_ceil(integers, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_i64_values(out) }, vec![Some(2), Some(-3), None]);
+
+        assert!(err.is_null());
+        unsafe {
+            phs_series_free(numbers);
+            phs_series_free(values);
+            phs_series_free(precise);
+            phs_series_free(integers);
+        }
+    }
+
+    #[test]
+    fn series_numeric_unary_transforms_report_errors() {
+        let text = series_into_raw(Series::new("text".into(), ["a"]));
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_series_abs(text, &mut out, &mut err) };
+        assert_eq!(status, crate::error::PHS_POLARS_ERROR);
+        assert!(out.is_null());
+        assert!(!unsafe { take_error_message(err) }.is_empty());
+
+        let status = unsafe { phs_series_round(text, 0, 0, &mut out, &mut err) };
+        assert_eq!(status, crate::error::PHS_POLARS_ERROR);
+        assert!(out.is_null());
+        assert!(!unsafe { take_error_message(err) }.is_empty());
+
+        let status = unsafe { phs_series_floor(text, &mut out, &mut err) };
+        assert_eq!(status, crate::error::PHS_POLARS_ERROR);
+        assert!(out.is_null());
+        assert!(!unsafe { take_error_message(err) }.is_empty());
+
+        let status = unsafe { phs_series_ceil(text, &mut out, &mut err) };
+        assert_eq!(status, crate::error::PHS_POLARS_ERROR);
+        assert!(out.is_null());
+        assert!(!unsafe { take_error_message(err) }.is_empty());
+
+        let status = unsafe { phs_series_round(text, 0, 99, &mut out, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        assert!(out.is_null());
+        assert_eq!(unsafe { take_error_message(err) }, "unknown round mode code 99");
+
+        unsafe { phs_series_free(text) };
     }
 
     #[test]

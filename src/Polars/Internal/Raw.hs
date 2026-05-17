@@ -134,13 +134,16 @@ module Polars.Internal.Raw
     , phs_scan_csv_options
     , phs_scan_parquet
     , phs_scan_parquet_options
+    , phs_series_abs
     , phs_series_append
     , phs_series_binary_op
     , phs_series_cast
+    , phs_series_ceil
     , phs_series_drop_nulls
     , phs_series_dtype
     , phs_series_filter
     , phs_series_fill_null
+    , phs_series_floor
     , phs_series_free_finalizer
     , phs_series_head
     , phs_series_is_duplicated
@@ -170,6 +173,7 @@ module Polars.Internal.Raw
     , phs_series_rename
     , phs_series_reverse
     , phs_series_null_count
+    , phs_series_round
     , phs_series_shift
     , phs_series_slice
     , phs_series_sort
@@ -200,7 +204,7 @@ module Polars.Internal.Raw
     , phs_write_parquet_options
     ) where
 
-import Data.Word (Word8, Word64)
+import Data.Word (Word8, Word32, Word64)
 import Foreign.C.String (CString)
 import Foreign.C.Types (CBool (..), CDouble (..), CInt (..), CLLong (..), CSize (..), CUChar (..))
 import Foreign.ForeignPtr (FinalizerPtr)
@@ -706,6 +710,18 @@ foreign import ccall unsafe "phs_series_slice"
 
 foreign import ccall safe "phs_series_take"
     phs_series_take :: Ptr RawSeries -> Ptr Word64 -> CSize -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_series_abs"
+    phs_series_abs :: Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_series_round"
+    phs_series_round :: Ptr RawSeries -> Word32 -> CInt -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_series_floor"
+    phs_series_floor :: Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_series_ceil"
+    phs_series_ceil :: Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_series_is_null"
     phs_series_is_null :: Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt

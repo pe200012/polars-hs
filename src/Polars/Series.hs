@@ -16,16 +16,20 @@ module Polars.Series
     , FillNullStrategy (..)
     , SeriesCast (..)
     , SeriesFrom (..)
+    , SeriesRoundMode (..)
     , SeriesSortOptions (..)
     , defaultSeriesSortOptions
+    , seriesAbs
     , seriesAdd
     , seriesAppend
     , seriesBool
+    , seriesCeil
     , seriesDataType
     , seriesDiv
     , seriesDouble
     , seriesDropNulls
     , seriesFloat
+    , seriesFloor
     , seriesHead
     , seriesInt8
     , seriesInt16
@@ -52,6 +56,7 @@ module Polars.Series
     , seriesRename
     , seriesReverse
     , seriesRem
+    , seriesRound
     , seriesShift
     , seriesSlice
     , seriesSort
@@ -120,13 +125,16 @@ import Polars.Internal.Series (seriesBytesOut, seriesDataFrameOut, seriesMaybeDo
 import Polars.Internal.Raw
     ( RawError
     , RawSeries
+    , phs_series_abs
     , phs_series_append
     , phs_series_binary_op
     , phs_series_cast
+    , phs_series_ceil
     , phs_series_drop_nulls
     , phs_series_dtype
     , phs_series_filter
     , phs_series_fill_null
+    , phs_series_floor
     , phs_series_head
     , phs_series_is_duplicated
     , phs_series_is_finite
@@ -154,6 +162,7 @@ import Polars.Internal.Raw
     , phs_series_new_u64
     , phs_series_rename
     , phs_series_reverse
+    , phs_series_round
     , phs_series_shift
     , phs_series_slice
     , phs_series_sort
@@ -197,6 +206,11 @@ defaultSeriesSortOptions =
         , seriesSortMaintainOrder = False
         , seriesSortLimit = Nothing
         }
+
+data SeriesRoundMode
+    = RoundHalfToEven
+    | RoundHalfAwayFromZero
+    deriving stock (Eq, Show)
 
 class SeriesCast a where
     seriesCast :: Series -> IO (Either PolarsError Series)
@@ -336,6 +350,22 @@ seriesReverse input = seriesUnaryOut input phs_series_reverse
 
 seriesDropNulls :: Series -> IO (Either PolarsError Series)
 seriesDropNulls input = seriesUnaryOut input phs_series_drop_nulls
+
+seriesAbs :: Series -> IO (Either PolarsError Series)
+seriesAbs input = seriesUnaryOut input phs_series_abs
+
+seriesRound :: Int -> SeriesRoundMode -> Series -> IO (Either PolarsError Series)
+seriesRound decimals mode input = case nonNegativeWord32 "seriesRound decimals" decimals of
+    Left err -> pure (Left err)
+    Right decimalCount ->
+        withSeries input $ \ptr ->
+            seriesOut (phs_series_round ptr decimalCount (seriesRoundModeCode mode))
+
+seriesFloor :: Series -> IO (Either PolarsError Series)
+seriesFloor input = seriesUnaryOut input phs_series_floor
+
+seriesCeil :: Series -> IO (Either PolarsError Series)
+seriesCeil input = seriesUnaryOut input phs_series_ceil
 
 seriesIsNull :: Series -> IO (Either PolarsError Series)
 seriesIsNull input = seriesUnaryOut input phs_series_is_null
@@ -511,6 +541,17 @@ ddofCUChar label value
     | value < 0 || value > fromIntegral (maxBound :: Word8) =
         Left (invalidArgument (label <> " must be between 0 and 255"))
     | otherwise = Right (CUChar (fromIntegral value))
+
+nonNegativeWord32 :: Text -> Int -> Either PolarsError Word32
+nonNegativeWord32 label value
+    | value < 0 = Left (invalidArgument (label <> " must be non-negative"))
+    | value > fromIntegral (maxBound :: Word32) =
+        Left (invalidArgument (label <> " exceeds Word32 range"))
+    | otherwise = Right (fromIntegral value)
+
+seriesRoundModeCode :: SeriesRoundMode -> CInt
+seriesRoundModeCode RoundHalfToEven = 0
+seriesRoundModeCode RoundHalfAwayFromZero = 1
 
 fillNullStrategyCode :: FillNullStrategy -> Either PolarsError (CInt, Bool, Word64)
 fillNullStrategyCode (FillForward limit) = fillNullLimitedStrategy 0 limit

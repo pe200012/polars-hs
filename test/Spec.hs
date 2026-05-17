@@ -1855,6 +1855,75 @@ main = hspec $ do
                 (_, _, Left err, _) -> expectationFailure (show err)
                 (_, _, _, Left err) -> expectationFailure (show err)
 
+        it "applies Series absolute value transforms" $ do
+            intResult <- Pl.series @Int64 "number" (V.fromList [Just (-3), Just 0, Nothing, Just 4])
+            doubleResult <- Pl.series @Double "float" (V.fromList [Just (-1.5), Nothing, Just 2.25])
+            textResult <- Pl.series @T.Text "text" (V.fromList [Just "a"])
+            case (intResult, doubleResult, textResult) of
+                (Right numbers, Right floats, Right textSeries) -> do
+                    absNumbers <- Pl.seriesAbs numbers
+                    absFloats <- Pl.seriesAbs floats
+                    absText <- Pl.seriesAbs textSeries
+                    case (absNumbers, absFloats) of
+                        (Right numberSeries, Right floatSeries) -> do
+                            Pl.seriesInt64 numberSeries `shouldReturn` Right (V.fromList [Just 3, Just 0, Nothing, Just 4])
+                            Pl.seriesDouble floatSeries `shouldReturn` Right (V.fromList [Just 1.5, Nothing, Just 2.25])
+                        (Left err, _) -> expectationFailure (show err)
+                        (_, Left err) -> expectationFailure (show err)
+                    expectPolarsFailure absText
+                (Left err, _, _) -> expectationFailure (show err)
+                (_, Left err, _) -> expectationFailure (show err)
+                (_, _, Left err) -> expectationFailure (show err)
+
+        it "rounds floors and ceils Series values" $ do
+            valuesResult <- Pl.series @Double "value" (V.fromList [Just 2.5, Just 3.5, Just (-2.5), Just 1.25, Nothing])
+            preciseResult <- Pl.series @Double "precise" (V.fromList [Just 1.234, Just (-1.235), Nothing])
+            intResult <- Pl.series @Int64 "number" (V.fromList [Just 2, Just (-3), Nothing])
+            textResult <- Pl.series @T.Text "text" (V.fromList [Just "a"])
+            case (valuesResult, preciseResult, intResult, textResult) of
+                (Right values, Right precise, Right numbers, Right textSeries) -> do
+                    roundEven <- Pl.seriesRound 0 Pl.RoundHalfToEven values
+                    roundAway <- Pl.seriesRound 0 Pl.RoundHalfAwayFromZero values
+                    roundTwo <- Pl.seriesRound 2 Pl.RoundHalfAwayFromZero precise
+                    floorResult <- Pl.seriesFloor values
+                    ceilResult <- Pl.seriesCeil values
+                    roundInts <- Pl.seriesRound 0 Pl.RoundHalfAwayFromZero numbers
+                    floorInts <- Pl.seriesFloor numbers
+                    ceilInts <- Pl.seriesCeil numbers
+                    case (roundEven, roundAway, roundTwo, floorResult, ceilResult, roundInts, floorInts, ceilInts) of
+                        (Right evenSeries, Right awaySeries, Right roundTwoSeries, Right floorSeries, Right ceilSeries, Right roundedNumbers, Right flooredNumbers, Right ceiledNumbers) -> do
+                            Pl.seriesDouble evenSeries `shouldReturn` Right (V.fromList [Just 2.0, Just 4.0, Just (-2.0), Just 1.0, Nothing])
+                            Pl.seriesDouble awaySeries `shouldReturn` Right (V.fromList [Just 3.0, Just 4.0, Just (-3.0), Just 1.0, Nothing])
+                            Pl.seriesDouble roundTwoSeries `shouldReturn` Right (V.fromList [Just 1.23, Just (-1.24), Nothing])
+                            Pl.seriesDouble floorSeries `shouldReturn` Right (V.fromList [Just 2.0, Just 3.0, Just (-3.0), Just 1.0, Nothing])
+                            Pl.seriesDouble ceilSeries `shouldReturn` Right (V.fromList [Just 3.0, Just 4.0, Just (-2.0), Just 2.0, Nothing])
+                            Pl.seriesInt64 roundedNumbers `shouldReturn` Right (V.fromList [Just 2, Just (-3), Nothing])
+                            Pl.seriesInt64 flooredNumbers `shouldReturn` Right (V.fromList [Just 2, Just (-3), Nothing])
+                            Pl.seriesInt64 ceiledNumbers `shouldReturn` Right (V.fromList [Just 2, Just (-3), Nothing])
+                        (Left err, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                        (_, Left err, _, _, _, _, _, _) -> expectationFailure (show err)
+                        (_, _, Left err, _, _, _, _, _) -> expectationFailure (show err)
+                        (_, _, _, Left err, _, _, _, _) -> expectationFailure (show err)
+                        (_, _, _, _, Left err, _, _, _) -> expectationFailure (show err)
+                        (_, _, _, _, _, Left err, _, _) -> expectationFailure (show err)
+                        (_, _, _, _, _, _, Left err, _) -> expectationFailure (show err)
+                        (_, _, _, _, _, _, _, Left err) -> expectationFailure (show err)
+
+                    negativeDecimals <- Pl.seriesRound (-1) Pl.RoundHalfToEven values
+                    tooLargeDecimals <- Pl.seriesRound (fromIntegral (maxBound :: Word32) + 1) Pl.RoundHalfToEven values
+                    roundText <- Pl.seriesRound 0 Pl.RoundHalfToEven textSeries
+                    floorText <- Pl.seriesFloor textSeries
+                    ceilText <- Pl.seriesCeil textSeries
+                    expectInvalidArgumentMessage "seriesRound decimals must be non-negative" negativeDecimals
+                    expectInvalidArgumentMessage "seriesRound decimals exceeds Word32 range" tooLargeDecimals
+                    expectPolarsFailure roundText
+                    expectPolarsFailure floorText
+                    expectPolarsFailure ceilText
+                (Left err, _, _, _) -> expectationFailure (show err)
+                (_, Left err, _, _) -> expectationFailure (show err)
+                (_, _, Left err, _) -> expectationFailure (show err)
+                (_, _, _, Left err) -> expectationFailure (show err)
+
         it "fills Series nulls with strategies" $ do
             result <- Pl.readCsv valuesCsv
             case result of

@@ -830,6 +830,24 @@ int phs_series_slice(const struct phs_series *series,
                      struct phs_series **out,
                      struct phs_error **err);
 
+int phs_series_abs(const struct phs_series *series,
+                   struct phs_series **out,
+                   struct phs_error **err);
+
+int phs_series_round(const struct phs_series *series,
+                     uint32_t decimals,
+                     int mode,
+                     struct phs_series **out,
+                     struct phs_error **err);
+
+int phs_series_floor(const struct phs_series *series,
+                     struct phs_series **out,
+                     struct phs_error **err);
+
+int phs_series_ceil(const struct phs_series *series,
+                    struct phs_series **out,
+                    struct phs_error **err);
+
 int phs_series_is_null(const struct phs_series *series,
                        struct phs_series **out,
                        struct phs_error **err);
