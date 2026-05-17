@@ -51,6 +51,7 @@ module Polars.Series
     , seriesGatherEvery
     , seriesGreater
     , seriesGreaterEqual
+    , seriesHasNulls
     , seriesInt8
     , seriesInt16
     , seriesInt32
@@ -64,12 +65,14 @@ module Polars.Series
     , seriesIsLastDistinct
     , seriesIsNan
     , seriesIsNotNan
+    , seriesIsEmpty
     , seriesFilter
     , seriesFillNull
     , seriesIsNotNull
     , seriesIsNull
     , seriesIsUnique
     , seriesLength
+    , seriesLimit
     , seriesMax
     , seriesMean
     , seriesMedian
@@ -94,6 +97,7 @@ module Polars.Series
     , seriesShift
     , seriesShuffle
     , seriesSlice
+    , seriesSplitAt
     , seriesSort
     , seriesStd
     , seriesSub
@@ -164,7 +168,7 @@ import Polars.Internal.ColumnDecode
     )
 import Polars.Internal.CString (withTextCString)
 import Polars.Internal.Managed (Series, withSeries)
-import Polars.Internal.Series (seriesBytesOut, seriesDataFrameOut, seriesMaybeDoubleOut, seriesOut, seriesWord64Out)
+import Polars.Internal.Series (seriesBoolOut, seriesBytesOut, seriesDataFrameOut, seriesMaybeDoubleOut, seriesOut, seriesPairOut, seriesWord64Out)
 import Polars.Internal.Raw
     ( RawError
     , RawSeries
@@ -186,10 +190,12 @@ import Polars.Internal.Raw
     , phs_series_fill_null
     , phs_series_floor
     , phs_series_gather_every
+    , phs_series_has_nulls
     , phs_series_head
     , phs_series_interpolate
     , phs_series_is_between
     , phs_series_is_duplicated
+    , phs_series_is_empty
     , phs_series_is_finite
     , phs_series_is_first_distinct
     , phs_series_is_infinite
@@ -200,6 +206,7 @@ import Polars.Internal.Raw
     , phs_series_is_null
     , phs_series_is_unique
     , phs_series_len
+    , phs_series_limit
     , phs_series_mode
     , phs_series_n_chunks
     , phs_series_name
@@ -229,6 +236,7 @@ import Polars.Internal.Raw
     , phs_series_shift
     , phs_series_shuffle
     , phs_series_slice
+    , phs_series_split_at
     , phs_series_sort
     , phs_series_stat
     , phs_series_null_count
@@ -437,6 +445,12 @@ seriesNullCount input = seriesWord64Out input phs_series_null_count
 seriesEstimatedSize :: Series -> IO (Either PolarsError Int)
 seriesEstimatedSize input = seriesWord64Out input phs_series_estimated_size
 
+seriesHasNulls :: Series -> IO (Either PolarsError Bool)
+seriesHasNulls input = seriesBoolOut input phs_series_has_nulls
+
+seriesIsEmpty :: Series -> IO (Either PolarsError Bool)
+seriesIsEmpty input = seriesBoolOut input phs_series_is_empty
+
 seriesNChunks :: Series -> IO (Either PolarsError Int)
 seriesNChunks input = seriesWord64Out input phs_series_n_chunks
 
@@ -457,6 +471,15 @@ seriesSlice :: Int -> Int -> Series -> IO (Either PolarsError Series)
 seriesSlice offset len input
     | len < 0 = pure (Left (invalidArgument "series slice length must be non-negative"))
     | otherwise = withSeries input $ \ptr -> seriesOut (phs_series_slice ptr (fromIntegral offset) (fromIntegral len))
+
+seriesLimit :: Int -> Series -> IO (Either PolarsError Series)
+seriesLimit n input
+    | n < 0 = pure (Left (invalidArgument "series limit count must be non-negative"))
+    | otherwise = withSeries input $ \ptr -> seriesOut (phs_series_limit ptr (fromIntegral n))
+
+seriesSplitAt :: Int -> Series -> IO (Either PolarsError (Series, Series))
+seriesSplitAt offset input = seriesPairOut input $ \ptr leftPtr rightPtr ->
+    phs_series_split_at ptr (fromIntegral offset) leftPtr rightPtr
 
 seriesNewFromIndex :: Int -> Int -> Series -> IO (Either PolarsError Series)
 seriesNewFromIndex index len input =

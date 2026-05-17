@@ -153,9 +153,11 @@ module Polars.Internal.Raw
     , phs_series_floor
     , phs_series_free_finalizer
     , phs_series_gather_every
+    , phs_series_has_nulls
     , phs_series_head
     , phs_series_interpolate
     , phs_series_is_duplicated
+    , phs_series_is_empty
     , phs_series_is_finite
     , phs_series_is_first_distinct
     , phs_series_is_infinite
@@ -167,6 +169,7 @@ module Polars.Internal.Raw
     , phs_series_is_null
     , phs_series_is_unique
     , phs_series_len
+    , phs_series_limit
     , phs_series_mode
     , phs_series_n_chunks
     , phs_series_name
@@ -197,6 +200,7 @@ module Polars.Internal.Raw
     , phs_series_shift
     , phs_series_shuffle
     , phs_series_slice
+    , phs_series_split_at
     , phs_series_sort
     , phs_series_stat
     , phs_series_tail
@@ -765,6 +769,12 @@ foreign import ccall unsafe "phs_series_null_count"
 foreign import ccall unsafe "phs_series_estimated_size"
     phs_series_estimated_size :: Ptr RawSeries -> Ptr Word64 -> Ptr (Ptr RawError) -> IO CInt
 
+foreign import ccall unsafe "phs_series_has_nulls"
+    phs_series_has_nulls :: Ptr RawSeries -> Ptr CBool -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_is_empty"
+    phs_series_is_empty :: Ptr RawSeries -> Ptr CBool -> Ptr (Ptr RawError) -> IO CInt
+
 foreign import ccall unsafe "phs_series_n_chunks"
     phs_series_n_chunks :: Ptr RawSeries -> Ptr Word64 -> Ptr (Ptr RawError) -> IO CInt
 
@@ -794,6 +804,12 @@ foreign import ccall unsafe "phs_series_tail"
 
 foreign import ccall unsafe "phs_series_slice"
     phs_series_slice :: Ptr RawSeries -> CLLong -> Word64 -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_limit"
+    phs_series_limit :: Ptr RawSeries -> Word64 -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_split_at"
+    phs_series_split_at :: Ptr RawSeries -> CLLong -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall safe "phs_series_take"
     phs_series_take :: Ptr RawSeries -> Ptr Word64 -> CSize -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt

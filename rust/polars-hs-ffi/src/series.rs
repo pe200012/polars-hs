@@ -764,6 +764,34 @@ pub unsafe extern "C" fn phs_series_estimated_size(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_has_nulls(
+    series: *const phs_series,
+    out: *mut bool,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        let handle = unsafe { series_ref(series) }?;
+        *out = handle.value.has_nulls();
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_is_empty(
+    series: *const phs_series,
+    out: *mut bool,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        let handle = unsafe { series_ref(series) }?;
+        *out = handle.value.is_empty();
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_series_n_chunks(
     series: *const phs_series,
     out: *mut u64,
@@ -962,6 +990,39 @@ pub unsafe extern "C" fn phs_series_slice(
 ) -> c_int {
     series_transform(series, out, err, |value| {
         Ok(value.slice(offset, usize_from_u64(len, "series slice length")?))
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_limit(
+    series: *const phs_series,
+    len: u64,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| {
+        Ok(value.limit(usize_from_u64(len, "series limit count")?))
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_split_at(
+    series: *const phs_series,
+    offset: i64,
+    left_out: *mut *mut phs_series,
+    right_out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let left_out = unsafe { required_mut(left_out, "left out") }?;
+        let right_out = unsafe { required_mut(right_out, "right out") }?;
+        *left_out = ptr::null_mut();
+        *right_out = ptr::null_mut();
+        let handle = unsafe { series_ref(series) }?;
+        let (left, right) = handle.value.split_at(offset);
+        *left_out = series_into_raw(left);
+        *right_out = series_into_raw(right);
+        Ok(())
     })
 }
 
@@ -3232,6 +3293,105 @@ mod tests {
             phs_series_free(cleared);
             phs_series_free(text_expanded);
             phs_series_free(empty_expanded);
+        }
+    }
+
+    #[test]
+    fn series_view_metadata_limit_and_split_at_work() {
+        let values = series_into_raw(Series::new("value".into(), &[Some(1_i64), None, Some(3), Some(4)]));
+        let no_null = series_into_raw(Series::new("plain".into(), &[1_i64, 2]));
+        let empty = series_into_raw(Series::new("empty".into(), Vec::<i64>::new()));
+        let text = series_into_raw(Series::new("text".into(), &[Some("a"), None, Some("c")]));
+        let mut out = ptr::null_mut();
+        let mut left_out = ptr::null_mut();
+        let mut right_out = ptr::null_mut();
+        let mut bool_out = false;
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_series_has_nulls(values, &mut bool_out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert!(bool_out);
+
+        let status = unsafe { phs_series_has_nulls(no_null, &mut bool_out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert!(!bool_out);
+
+        let status = unsafe { phs_series_has_nulls(empty, &mut bool_out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert!(!bool_out);
+
+        let status = unsafe { phs_series_is_empty(values, &mut bool_out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert!(!bool_out);
+
+        let status = unsafe { phs_series_is_empty(empty, &mut bool_out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert!(bool_out);
+
+        let status = unsafe { phs_series_limit(values, 2, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_i64_values(out) }, vec![Some(1), None]);
+
+        let status = unsafe { phs_series_limit(values, 99, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_i64_values(out) }, vec![Some(1), None, Some(3), Some(4)]);
+
+        let status = unsafe { phs_series_limit(values, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_i64_values(out) }, Vec::<Option<i64>>::new());
+
+        let status = unsafe { phs_series_split_at(values, 2, &mut left_out, &mut right_out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_i64_values(left_out) }, vec![Some(1), None]);
+        assert_eq!(unsafe { take_i64_values(right_out) }, vec![Some(3), Some(4)]);
+
+        let status = unsafe { phs_series_split_at(values, -1, &mut left_out, &mut right_out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_i64_values(left_out) }, vec![Some(1), None, Some(3)]);
+        assert_eq!(unsafe { take_i64_values(right_out) }, vec![Some(4)]);
+
+        let status = unsafe { phs_series_split_at(values, 99, &mut left_out, &mut right_out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_i64_values(left_out) }, vec![Some(1), None, Some(3), Some(4)]);
+        assert_eq!(unsafe { take_i64_values(right_out) }, Vec::<Option<i64>>::new());
+
+        let status = unsafe { phs_series_split_at(values, -99, &mut left_out, &mut right_out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_i64_values(left_out) }, Vec::<Option<i64>>::new());
+        assert_eq!(unsafe { take_i64_values(right_out) }, vec![Some(1), None, Some(3), Some(4)]);
+
+        let status = unsafe { phs_series_split_at(text, 2, &mut left_out, &mut right_out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let left_text = left_out;
+        let right_text = right_out;
+        assert_eq!(
+            unsafe { series_ref(left_text) }
+                .unwrap()
+                .value
+                .str()
+                .unwrap()
+                .into_iter()
+                .collect::<Vec<_>>(),
+            vec![Some("a"), None]
+        );
+        assert_eq!(
+            unsafe { series_ref(right_text) }
+                .unwrap()
+                .value
+                .str()
+                .unwrap()
+                .into_iter()
+                .collect::<Vec<_>>(),
+            vec![Some("c")]
+        );
+
+        unsafe {
+            phs_series_free(values);
+            phs_series_free(no_null);
+            phs_series_free(empty);
+            phs_series_free(text);
+            phs_series_free(left_text);
+            phs_series_free(right_text);
         }
     }
 

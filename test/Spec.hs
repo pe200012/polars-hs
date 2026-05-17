@@ -3331,6 +3331,67 @@ main = hspec $ do
                 (_, Left err, _) -> expectationFailure (show err)
                 (_, _, Left err) -> expectationFailure (show err)
 
+        it "checks Series view metadata limits and split views" $ do
+            valuesResult <- Pl.series @Int64 "value" (V.fromList [Just 1, Nothing, Just 3, Just 4])
+            noNullResult <- Pl.series @Int64 "plain" (V.fromList [Just 1, Just 2])
+            emptyResult <- Pl.series @Int64 "empty" V.empty
+            textResult <- Pl.series @T.Text "text" (V.fromList [Just "a", Nothing, Just "c"])
+            case (valuesResult, noNullResult, emptyResult, textResult) of
+                (Right values, Right noNull, Right empty, Right textSeries) -> do
+                    Pl.seriesHasNulls values `shouldReturn` Right True
+                    Pl.seriesHasNulls noNull `shouldReturn` Right False
+                    Pl.seriesHasNulls empty `shouldReturn` Right False
+                    Pl.seriesIsEmpty values `shouldReturn` Right False
+                    Pl.seriesIsEmpty empty `shouldReturn` Right True
+
+                    limitedResult <- Pl.seriesLimit 2 values
+                    oversizedLimitResult <- Pl.seriesLimit 99 values
+                    emptyLimitResult <- Pl.seriesLimit 0 values
+                    negativeLimit <- Pl.seriesLimit (-1) values
+                    splitResult <- Pl.seriesSplitAt 2 values
+                    negativeSplitResult <- Pl.seriesSplitAt (-1) values
+                    oversizedSplitResult <- Pl.seriesSplitAt 99 values
+                    undersizedSplitResult <- Pl.seriesSplitAt (-99) values
+                    textSplitResult <- Pl.seriesSplitAt 2 textSeries
+                    case (limitedResult, oversizedLimitResult, emptyLimitResult) of
+                        (Right limited, Right oversizedLimit, Right emptyLimit) -> do
+                            Pl.seriesInt64 limited `shouldReturn` Right (V.fromList [Just 1, Nothing])
+                            Pl.seriesInt64 oversizedLimit `shouldReturn` Right (V.fromList [Just 1, Nothing, Just 3, Just 4])
+                            Pl.seriesInt64 emptyLimit `shouldReturn` Right V.empty
+                        (Left err, _, _) -> expectationFailure (show err)
+                        (_, Left err, _) -> expectationFailure (show err)
+                        (_, _, Left err) -> expectationFailure (show err)
+                    case splitResult of
+                        Left err -> expectationFailure (show err)
+                        Right (left, right) -> do
+                            Pl.seriesInt64 left `shouldReturn` Right (V.fromList [Just 1, Nothing])
+                            Pl.seriesInt64 right `shouldReturn` Right (V.fromList [Just 3, Just 4])
+                    case negativeSplitResult of
+                        Left err -> expectationFailure (show err)
+                        Right (left, right) -> do
+                            Pl.seriesInt64 left `shouldReturn` Right (V.fromList [Just 1, Nothing, Just 3])
+                            Pl.seriesInt64 right `shouldReturn` Right (V.singleton (Just 4))
+                    case oversizedSplitResult of
+                        Left err -> expectationFailure (show err)
+                        Right (left, right) -> do
+                            Pl.seriesInt64 left `shouldReturn` Right (V.fromList [Just 1, Nothing, Just 3, Just 4])
+                            Pl.seriesInt64 right `shouldReturn` Right V.empty
+                    case undersizedSplitResult of
+                        Left err -> expectationFailure (show err)
+                        Right (left, right) -> do
+                            Pl.seriesInt64 left `shouldReturn` Right V.empty
+                            Pl.seriesInt64 right `shouldReturn` Right (V.fromList [Just 1, Nothing, Just 3, Just 4])
+                    case textSplitResult of
+                        Left err -> expectationFailure (show err)
+                        Right (left, right) -> do
+                            Pl.seriesText left `shouldReturn` Right (V.fromList [Just "a", Nothing])
+                            Pl.seriesText right `shouldReturn` Right (V.singleton (Just "c"))
+                    expectInvalidArgumentMessage "series limit count must be non-negative" negativeLimit
+                (Left err, _, _, _) -> expectationFailure (show err)
+                (_, Left err, _, _) -> expectationFailure (show err)
+                (_, _, Left err, _) -> expectationFailure (show err)
+                (_, _, _, Left err) -> expectationFailure (show err)
+
     describe "Polars.Join" $ do
         it "inner joins two lazy CSV scans and applies the default suffix" $ do
             employeesResult <- Pl.scanCsv employeesCsv

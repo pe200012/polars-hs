@@ -10,9 +10,11 @@ successful Rust-owned handles in managed ForeignPtr values.
 -}
 module Polars.Internal.Series
     ( seriesBytesOut
+    , seriesBoolOut
     , seriesDataFrameOut
     , seriesMaybeDoubleOut
     , seriesOut
+    , seriesPairOut
     , seriesWord64Out
     ) where
 
@@ -68,6 +70,18 @@ seriesWord64Out series action = withSeries series $ \ptr ->
                 then word64ToInt <$> peek outPtr
                 else Left <$> (consumeError status =<< peek errPtr)
 
+seriesBoolOut :: Series -> (Ptr RawSeries -> Ptr CBool -> Ptr (Ptr RawError) -> IO CInt) -> IO (Either PolarsError Bool)
+seriesBoolOut series action = withSeries series $ \ptr ->
+    alloca $ \outPtr ->
+        alloca $ \errPtr -> do
+            poke errPtr nullPtr
+            status <- action ptr outPtr errPtr
+            if status == 0
+                then do
+                    CBool out <- peek outPtr
+                    pure (Right (out /= 0))
+                else Left <$> (consumeError status =<< peek errPtr)
+
 seriesDataFrameOut :: Series -> (Ptr RawSeries -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt) -> IO (Either PolarsError DataFrame)
 seriesDataFrameOut series action = withSeries series $ \ptr ->
     alloca $ \outPtr ->
@@ -82,6 +96,33 @@ seriesDataFrameOut series action = withSeries series $ \ptr ->
                         then pure (Left (nullPointerError "dataframe output"))
                         else Right <$> mkDataFrame out
                 else Left <$> (consumeError status =<< peek errPtr)
+
+seriesPairOut ::
+    Series ->
+    (Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt) ->
+    IO (Either PolarsError (Series, Series))
+seriesPairOut series action = withSeries series $ \ptr ->
+    alloca $ \leftPtr ->
+        alloca $ \rightPtr ->
+            alloca $ \errPtr -> do
+                poke leftPtr nullPtr
+                poke rightPtr nullPtr
+                poke errPtr nullPtr
+                status <- action ptr leftPtr rightPtr errPtr
+                if status == 0
+                    then do
+                        left <- peek leftPtr
+                        right <- peek rightPtr
+                        if left == nullPtr
+                            then pure (Left (nullPointerError "left series output"))
+                            else
+                                if right == nullPtr
+                                    then pure (Left (nullPointerError "right series output"))
+                                    else do
+                                        leftSeries <- mkSeries left
+                                        rightSeries <- mkSeries right
+                                        pure (Right (leftSeries, rightSeries))
+                    else Left <$> (consumeError status =<< peek errPtr)
 
 seriesMaybeDoubleOut :: Series -> (Ptr RawSeries -> Ptr CBool -> Ptr CDouble -> Ptr (Ptr RawError) -> IO CInt) -> IO (Either PolarsError (Maybe Double))
 seriesMaybeDoubleOut series action = withSeries series $ \ptr ->

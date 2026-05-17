@@ -818,6 +818,10 @@ int phs_series_estimated_size(const struct phs_series *series,
                               uint64_t *out,
                               struct phs_error **err);
 
+int phs_series_has_nulls(const struct phs_series *series, bool *out, struct phs_error **err);
+
+int phs_series_is_empty(const struct phs_series *series, bool *out, struct phs_error **err);
+
 int phs_series_n_chunks(const struct phs_series *series, uint64_t *out, struct phs_error **err);
 
 int phs_series_chunk_lengths(const struct phs_series *series,
@@ -878,6 +882,17 @@ int phs_series_slice(const struct phs_series *series,
                      uint64_t len,
                      struct phs_series **out,
                      struct phs_error **err);
+
+int phs_series_limit(const struct phs_series *series,
+                     uint64_t len,
+                     struct phs_series **out,
+                     struct phs_error **err);
+
+int phs_series_split_at(const struct phs_series *series,
+                        int64_t offset,
+                        struct phs_series **left_out,
+                        struct phs_series **right_out,
+                        struct phs_error **err);
 
 int phs_series_new_from_index(const struct phs_series *series,
                               uint64_t index,
