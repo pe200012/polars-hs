@@ -694,6 +694,55 @@ pub unsafe extern "C" fn phs_dataframe_join(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_vstack(
+    left: *const phs_dataframe,
+    right: *const phs_dataframe,
+    out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let left_df = unsafe { dataframe_ref(left) }?;
+        let right_df = unsafe { dataframe_ref(right) }?;
+        *out = dataframe_into_raw(left_df.value.vstack(&right_df.value)?);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_hstack(
+    dataframe: *const phs_dataframe,
+    series: *const *const phs_series,
+    len: usize,
+    out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        let ptrs = if len == 0 {
+            &[]
+        } else if series.is_null() {
+            return Err(PhsError::invalid_argument("series array pointer was null"));
+        } else {
+            unsafe { std::slice::from_raw_parts(series, len) }
+        };
+        if ptrs.is_empty() {
+            return Err(PhsError::invalid_argument("hstack requires at least one series"));
+        }
+        let mut columns = Vec::with_capacity(ptrs.len());
+        for ptr in ptrs {
+            let handle = unsafe { series_ref(*ptr) }?;
+            columns.push(handle.value.clone().into());
+        }
+        *out = dataframe_into_raw(handle.value.hstack(&columns)?);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_dataframe_fill_null(
     dataframe: *const phs_dataframe,
     strategy: c_int,
@@ -1391,6 +1440,55 @@ mod tests {
             crate::handles::phs_dataframe_free(right);
             crate::handles::phs_dataframe_free(left);
         }
+    }
+
+    #[test]
+    fn dataframe_stack_operations_return_expected_shapes() {
+        let df = read_values_dataframe();
+        let other = read_values_dataframe();
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_dataframe_vstack(df, other, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert!(err.is_null());
+        assert_eq!(unsafe { dataframe_ref(out) }.unwrap().value.shape(), (6, 4));
+        unsafe { crate::handles::phs_dataframe_free(out) };
+
+        let city = series_into_raw(Series::new("city".into(), ["Tokyo", "Paris", "Oslo"]));
+        let rank = series_into_raw(Series::new("rank".into(), [1_i64, 2, 3]));
+        let series = [city as *const phs_series, rank as *const phs_series];
+        let status = unsafe { phs_dataframe_hstack(df, series.as_ptr(), series.len(), &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert!(err.is_null());
+        assert_eq!(unsafe { dataframe_ref(out) }.unwrap().value.shape(), (3, 6));
+        unsafe {
+            crate::handles::phs_dataframe_free(out);
+            crate::handles::phs_series_free(rank);
+            crate::handles::phs_series_free(city);
+            crate::handles::phs_dataframe_free(other);
+            crate::handles::phs_dataframe_free(df);
+        }
+    }
+
+    #[test]
+    fn dataframe_hstack_rejects_invalid_series_array() {
+        let df = read_values_dataframe();
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_dataframe_hstack(df, ptr::null(), 1, &mut out, &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        assert!(out.is_null());
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "series array pointer was null");
+
+        let status = unsafe { phs_dataframe_hstack(df, ptr::null(), 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        assert!(out.is_null());
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "hstack requires at least one series");
+        unsafe { crate::handles::phs_dataframe_free(df) };
     }
 
     #[test]

@@ -908,6 +908,69 @@ main = hspec $ do
                 (Left err, _) -> expectationFailure (show err)
                 (_, Left err) -> expectationFailure (show err)
 
+        it "vertically stacks eager DataFrames" $ do
+            leftResult <- Pl.readCsv valuesCsv
+            rightResult <- Pl.readCsv valuesCsv
+            case (leftResult, rightResult) of
+                (Right leftDf, Right rightDf) -> do
+                    stacked <- Pl.dataFrameVStack leftDf rightDf
+                    case stacked of
+                        Left err -> expectationFailure (show err)
+                        Right df -> do
+                            Pl.shape df `shouldReturn` Right (6, 4)
+                            Pl.column @T.Text df "name"
+                                `shouldReturn` Right
+                                    ( V.fromList
+                                        [ Just "Alice"
+                                        , Just "Bob"
+                                        , Just "Carol"
+                                        , Just "Alice"
+                                        , Just "Bob"
+                                        , Just "Carol"
+                                        ]
+                                    )
+                (Left err, _) -> expectationFailure (show err)
+                (_, Left err) -> expectationFailure (show err)
+
+        it "horizontally stacks Series onto eager DataFrames" $ do
+            dfResult <- Pl.readCsv valuesCsv
+            cityResult <- Pl.series @T.Text "city" (V.fromList [Just "Tokyo", Just "Paris", Just "Oslo"])
+            rankResult <- Pl.series @Int64 "rank" (V.fromList [Just 1, Just 2, Just 3])
+            case (dfResult, cityResult, rankResult) of
+                (Right df, Right city, Right rank) -> do
+                    stacked <- Pl.dataFrameHStack [city, rank] df
+                    case stacked of
+                        Left err -> expectationFailure (show err)
+                        Right wide -> do
+                            Pl.shape wide `shouldReturn` Right (3, 6)
+                            Pl.column @T.Text wide "city"
+                                `shouldReturn` Right (V.fromList [Just "Tokyo", Just "Paris", Just "Oslo"])
+                            Pl.column @Int64 wide "rank"
+                                `shouldReturn` Right (V.fromList [Just 1, Just 2, Just 3])
+                (Left err, _, _) -> expectationFailure (show err)
+                (_, Left err, _) -> expectationFailure (show err)
+                (_, _, Left err) -> expectationFailure (show err)
+
+        it "reports errors for invalid eager DataFrame stacking" $ do
+            valuesResult <- Pl.readCsv valuesCsv
+            employeesResult <- Pl.readCsv employeesCsv
+            duplicateNameResult <- Pl.series @T.Text "name" (V.fromList [Just "A", Just "B", Just "C"])
+            shortSeriesResult <- Pl.series @Int64 "short" (V.fromList [Just 1, Just 2])
+            case (valuesResult, employeesResult, duplicateNameResult, shortSeriesResult) of
+                (Right valuesDf, Right employeesDf, Right duplicateName, Right shortSeries) -> do
+                    schemaMismatch <- Pl.dataFrameVStack valuesDf employeesDf
+                    duplicateColumn <- Pl.dataFrameHStack [duplicateName] valuesDf
+                    lengthMismatch <- Pl.dataFrameHStack [shortSeries] valuesDf
+                    emptyColumns <- Pl.dataFrameHStack [] valuesDf
+                    expectPolarsFailure schemaMismatch
+                    expectPolarsFailure duplicateColumn
+                    expectPolarsFailure lengthMismatch
+                    expectInvalidArgumentMessage "dataFrameHStack requires at least one Series" emptyColumns
+                (Left err, _, _, _) -> expectationFailure (show err)
+                (_, Left err, _, _) -> expectationFailure (show err)
+                (_, _, Left err, _) -> expectationFailure (show err)
+                (_, _, _, Left err) -> expectationFailure (show err)
+
         it "validates eager DataFrame transform arguments" $ do
             result <- Pl.readCsv valuesCsv
             case result of

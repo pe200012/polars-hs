@@ -201,6 +201,17 @@ int phs_dataframe_join(const struct phs_dataframe *left,
                        struct phs_dataframe **out,
                        struct phs_error **err);
 
+int phs_dataframe_vstack(const struct phs_dataframe *left,
+                         const struct phs_dataframe *right,
+                         struct phs_dataframe **out,
+                         struct phs_error **err);
+
+int phs_dataframe_hstack(const struct phs_dataframe *dataframe,
+                         const struct phs_series *const *series,
+                         uintptr_t len,
+                         struct phs_dataframe **out,
+                         struct phs_error **err);
+
 int phs_dataframe_fill_null(const struct phs_dataframe *dataframe,
                             int strategy,
                             bool has_limit,

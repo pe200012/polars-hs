@@ -28,6 +28,7 @@ module Polars.DataFrame
     , dataFrameDropNulls
     , dataFrameFilter
     , dataFrameFillNull
+    , dataFrameHStack
     , dataFrameJoin
     , dataFrameNullCount
     , dataFrameRename
@@ -37,6 +38,7 @@ module Polars.DataFrame
     , dataFrameSort
     , dataFrameTake
     , dataFrameUnique
+    , dataFrameVStack
     , head
     , height
     , defaultCsvReadOptions
@@ -91,6 +93,7 @@ import Polars.Internal.Raw
     , phs_dataframe_drop_nulls
     , phs_dataframe_filter
     , phs_dataframe_fill_null
+    , phs_dataframe_hstack
     , phs_dataframe_head
     , phs_dataframe_new
     , phs_dataframe_join
@@ -107,6 +110,7 @@ import Polars.Internal.Raw
     , phs_dataframe_take
     , phs_dataframe_to_text
     , phs_dataframe_unique
+    , phs_dataframe_vstack
     , phs_dataframe_width
     , phs_read_csv_options
     , phs_read_parquet_options
@@ -350,6 +354,19 @@ dataFrameJoin options left right = case validateDataFrameJoinOptions options of
                                     (dataFrameJoinTypeCode (dataFrameJoinType options))
                                     suffixPtr
                                 )
+
+dataFrameVStack :: DataFrame -> DataFrame -> IO (Either PolarsError DataFrame)
+dataFrameVStack left right =
+    withDataFrame left $ \leftPtr ->
+        withDataFrame right $ \rightPtr ->
+            dataframeOut (phs_dataframe_vstack leftPtr rightPtr)
+
+dataFrameHStack :: [Series] -> DataFrame -> IO (Either PolarsError DataFrame)
+dataFrameHStack [] _ = pure (Left (invalidArgument "dataFrameHStack requires at least one Series"))
+dataFrameHStack columns df =
+    withDataFrame df $ \dfPtr ->
+        withSeriesArray columns $ \seriesPtr len ->
+            dataframeOut (phs_dataframe_hstack dfPtr seriesPtr len)
 
 dataFrameRename :: [(Text, Text)] -> DataFrame -> IO (Either PolarsError DataFrame)
 dataFrameRename [] _ = pure (Left (invalidArgument "dataFrameRename requires at least one column pair"))
