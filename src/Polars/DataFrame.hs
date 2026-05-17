@@ -32,6 +32,7 @@ module Polars.DataFrame
     , dataFrameSelect
     , dataFrameSlice
     , dataFrameSort
+    , dataFrameTake
     , dataFrameUnique
     , head
     , height
@@ -63,6 +64,8 @@ import qualified Data.ByteString as BS
 import Data.Bits ((.|.), shiftL)
 import Data.Text (Text)
 import qualified Data.Text.Encoding as TE
+import Data.Vector (Vector)
+import qualified Data.Vector as V
 import Foreign.C.String (CString)
 import Data.Word (Word8, Word64)
 import Foreign.C.Types (CBool (..), CInt, CSize, CUChar (..))
@@ -96,6 +99,7 @@ import Polars.Internal.Raw
     , phs_dataframe_slice
     , phs_dataframe_sort
     , phs_dataframe_tail
+    , phs_dataframe_take
     , phs_dataframe_to_text
     , phs_dataframe_unique
     , phs_dataframe_width
@@ -287,6 +291,12 @@ dataFrameFilter mask df =
     withDataFrame df $ \dfPtr ->
         withSeries mask $ \maskPtr ->
             dataframeOut (phs_dataframe_filter dfPtr maskPtr)
+
+dataFrameTake :: Vector Word64 -> DataFrame -> IO (Either PolarsError DataFrame)
+dataFrameTake indices df =
+    withDataFrame df $ \dfPtr ->
+        withArray (V.toList indices) $ \indicesPtr ->
+            dataframeOut (phs_dataframe_take dfPtr indicesPtr (fromIntegral (V.length indices)))
 
 dataFrameRename :: [(Text, Text)] -> DataFrame -> IO (Either PolarsError DataFrame)
 dataFrameRename [] _ = pure (Left (invalidArgument "dataFrameRename requires at least one column pair"))

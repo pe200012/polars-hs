@@ -58,6 +58,16 @@ unsafe fn bool_vec(values: *const u8, len: usize, label: &str) -> PhsResult<Vec<
         .collect()
 }
 
+unsafe fn raw_u64_slice<'a>(data: *const u64, len: usize, name: &str) -> PhsResult<&'a [u64]> {
+    if len == 0 {
+        Ok(&[])
+    } else if data.is_null() {
+        Err(PhsError::invalid_argument(format!("{name} pointer was null")))
+    } else {
+        Ok(unsafe { std::slice::from_raw_parts(data, len) })
+    }
+}
+
 fn usize_from_u64(value: u64, label: &str) -> PhsResult<usize> {
     usize::try_from(value)
         .map_err(|_| PhsError::invalid_argument(format!("{label} exceeded usize")))
@@ -67,6 +77,14 @@ fn idx_size_from_u64(value: u64, label: &str) -> PhsResult<IdxSize> {
     value
         .try_into()
         .map_err(|_| PhsError::invalid_argument(format!("{label} exceeds Polars index size")))
+}
+
+fn idx_ca_from_u64_slice(values: &[u64], label: &str) -> PhsResult<IdxCa> {
+    let indices = values
+        .iter()
+        .map(|value| idx_size_from_u64(*value, label))
+        .collect::<PhsResult<Vec<IdxSize>>>()?;
+    Ok(IdxCa::from_vec(PlSmallStr::EMPTY, indices))
 }
 
 fn validate_sort_bool_options(label: &str, column_count: usize, values: &[bool]) -> PhsResult<()> {
@@ -589,6 +607,25 @@ pub unsafe extern "C" fn phs_dataframe_filter(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_take(
+    dataframe: *const phs_dataframe,
+    indices: *const u64,
+    len: usize,
+    out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        let indices = unsafe { raw_u64_slice(indices, len, "indices") }?;
+        let indices = idx_ca_from_u64_slice(indices, "dataframe take index")?;
+        *out = dataframe_into_raw(handle.value.take(&indices)?);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_dataframe_fill_null(
     dataframe: *const phs_dataframe,
     strategy: c_int,
@@ -1023,7 +1060,8 @@ pub unsafe extern "C" fn phs_dataframe_column_text(
 mod tests {
     use super::*;
     use crate::bytes::{phs_bytes_data, phs_bytes_free, phs_bytes_len};
-    use crate::error::{PHS_OK, phs_error_free};
+    use crate::error::{PHS_INVALID_ARGUMENT, PHS_OK, phs_error_free, phs_error_message};
+    use std::ffi::CStr;
 
     fn fixture_path() -> std::ffi::CString {
         data_path("people.csv")
@@ -1062,6 +1100,16 @@ mod tests {
         let bytes = unsafe { std::slice::from_raw_parts(data, len) }.to_vec();
         unsafe { phs_bytes_free(raw) };
         bytes
+    }
+
+    unsafe fn take_error_message(raw: *mut phs_error) -> String {
+        assert!(!raw.is_null());
+        let message = unsafe { CStr::from_ptr(phs_error_message(raw)) }
+            .to_str()
+            .unwrap()
+            .to_owned();
+        unsafe { phs_error_free(raw) };
+        message
     }
 
     fn call_column_bytes(
@@ -1184,6 +1232,62 @@ mod tests {
         expected.extend_from_slice(b"Int64");
         assert_eq!(bytes, expected);
         unsafe { crate::handles::phs_dataframe_free(raw) };
+    }
+
+    #[test]
+    fn dataframe_take_handles_empty_and_reordered_indices() {
+        let df = read_values_dataframe();
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        let indices = [2_u64, 0, 1, 1];
+
+        let status = unsafe { phs_dataframe_take(df, indices.as_ptr(), indices.len(), &mut out, &mut err) };
+
+        assert_eq!(status, PHS_OK);
+        assert!(err.is_null());
+        assert_eq!(unsafe { dataframe_ref(out) }.unwrap().value.shape(), (4, 4));
+        unsafe { crate::handles::phs_dataframe_free(out) };
+
+        let status = unsafe { phs_dataframe_take(df, ptr::null(), 0, &mut out, &mut err) };
+
+        assert_eq!(status, PHS_OK);
+        assert!(err.is_null());
+        assert_eq!(unsafe { dataframe_ref(out) }.unwrap().value.shape(), (0, 4));
+        unsafe {
+            crate::handles::phs_dataframe_free(out);
+            crate::handles::phs_dataframe_free(df);
+        }
+    }
+
+    #[test]
+    fn dataframe_take_rejects_null_indices_pointer_with_positive_length() {
+        let df = read_values_dataframe();
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_dataframe_take(df, ptr::null(), 1, &mut out, &mut err) };
+
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        assert!(out.is_null());
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "indices pointer was null");
+        unsafe { crate::handles::phs_dataframe_free(df) };
+    }
+
+    #[test]
+    fn dataframe_take_rejects_index_overflow() {
+        let df = read_values_dataframe();
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        let indices = [u64::from(u32::MAX) + 1];
+
+        let status = unsafe { phs_dataframe_take(df, indices.as_ptr(), indices.len(), &mut out, &mut err) };
+
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        assert!(out.is_null());
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "dataframe take index exceeds Polars index size");
+        unsafe { crate::handles::phs_dataframe_free(df) };
     }
 
     #[test]

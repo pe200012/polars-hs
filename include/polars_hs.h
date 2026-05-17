@@ -184,6 +184,12 @@ int phs_dataframe_filter(const struct phs_dataframe *dataframe,
                          struct phs_dataframe **out,
                          struct phs_error **err);
 
+int phs_dataframe_take(const struct phs_dataframe *dataframe,
+                       const uint64_t *indices,
+                       uintptr_t len,
+                       struct phs_dataframe **out,
+                       struct phs_error **err);
+
 int phs_dataframe_fill_null(const struct phs_dataframe *dataframe,
                             int strategy,
                             bool has_limit,

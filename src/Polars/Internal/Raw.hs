@@ -58,6 +58,7 @@ module Polars.Internal.Raw
     , phs_dataframe_slice
     , phs_dataframe_sort
     , phs_dataframe_tail
+    , phs_dataframe_take
     , phs_dataframe_to_ipc_bytes
     , phs_dataframe_to_text
     , phs_dataframe_unique
@@ -340,6 +341,9 @@ foreign import ccall unsafe "phs_dataframe_slice"
 
 foreign import ccall unsafe "phs_dataframe_filter"
     phs_dataframe_filter :: Ptr RawDataFrame -> Ptr RawSeries -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_dataframe_take"
+    phs_dataframe_take :: Ptr RawDataFrame -> Ptr Word64 -> CSize -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall safe "phs_dataframe_fill_null"
     phs_dataframe_fill_null :: Ptr RawDataFrame -> CInt -> CBool -> Word64 -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt

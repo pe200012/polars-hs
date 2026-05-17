@@ -493,6 +493,45 @@ main = hspec $ do
                         (_, _, _, Left err, _) -> expectationFailure (show err)
                         (_, _, _, _, Left err) -> expectationFailure (show err)
 
+        it "takes eager DataFrame rows by explicit indices" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    taken <- Pl.dataFrameTake (V.fromList [2, 0, 2]) df
+                    empty <- Pl.dataFrameTake V.empty df
+                    case (taken, empty) of
+                        (Right takenDf, Right emptyDf) -> do
+                            Pl.column @T.Text takenDf "name" `shouldReturn` Right (V.fromList [Just "Carol", Just "Alice", Just "Carol"])
+                            Pl.column @Int64 takenDf "age" `shouldReturn` Right (V.fromList [Just 29, Just 34, Just 29])
+                            Pl.shape emptyDf `shouldReturn` Right (0, 4)
+                        (Left err, _) -> expectationFailure (show err)
+                        (_, Left err) -> expectationFailure (show err)
+
+        it "preserves nulls when taking eager DataFrame rows by index" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    taken <- Pl.dataFrameTake (V.fromList [1, 2, 1, 0]) df
+                    case taken of
+                        Left err -> expectationFailure (show err)
+                        Right takenDf -> do
+                            Pl.column @Int64 takenDf "age" `shouldReturn` Right (V.fromList [Nothing, Just 29, Nothing, Just 34])
+                            Pl.column @Double takenDf "score" `shouldReturn` Right (V.fromList [Just 8.25, Nothing, Just 8.25, Just 9.5])
+                            Pl.column @Bool takenDf "active" `shouldReturn` Right (V.fromList [Just False, Nothing, Just False, Just True])
+
+        it "reports errors for invalid eager DataFrame take indices" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    outOfBounds <- Pl.dataFrameTake (V.fromList [0, 3]) df
+                    let overflowingIndex = fromIntegral (maxBound :: Word32) + 1
+                    overflow <- Pl.dataFrameTake (V.fromList [overflowingIndex]) df
+                    expectPolarsFailure outOfBounds
+                    expectInvalidArgumentMessage "dataframe take index exceeds Polars index size" overflow
+
         it "sorts eager DataFrames with explicit options" $ do
             result <- Pl.readCsv employeesCsv
             case result of
