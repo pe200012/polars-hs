@@ -9,11 +9,15 @@ Lazy operations clone Rust logical plans and return new managed LazyFrame values
 Expression inputs are compiled from pure Haskell AST nodes at each FFI boundary.
 -}
 module Polars.LazyFrame
-    ( LazyFrame
+    ( CsvReadOptions (..)
+    , LazyFrame
+    , ParquetScanOptions (..)
     , RenameOptions (..)
     , UniqueKeepStrategy (..)
     , UniqueOptions (..)
     , collect
+    , defaultCsvReadOptions
+    , defaultParquetScanOptions
     , defaultRenameOptions
     , defaultUniqueOptions
     , dropColumns
@@ -29,7 +33,9 @@ module Polars.LazyFrame
     , profile
     , rename
     , scanCsv
+    , scanCsvWith
     , scanParquet
+    , scanParquetWith
     , select
     , slice
     , sort
@@ -43,7 +49,7 @@ import Data.Text (Text)
 import qualified Data.Text.Encoding as TE
 import Data.Word (Word64)
 import Foreign.C.String (CString)
-import Foreign.C.Types (CBool (..), CInt, CSize)
+import Foreign.C.Types (CBool (..), CInt, CSize, CUChar (..))
 import Foreign.Marshal.Alloc (alloca)
 import Foreign.Marshal.Array (withArray)
 import Foreign.Ptr (Ptr, nullPtr)
@@ -52,7 +58,7 @@ import Foreign.Storable (peek, poke)
 import Polars.Error (PolarsError (..), PolarsErrorCode (InvalidArgument))
 import Polars.Expr (Expr)
 import Polars.Internal.Bytes (copyAndFreeBytes)
-import Polars.Internal.CString (withFilePathCString, withTextCString)
+import Polars.Internal.CString (withFilePathCString, withMaybeTextCString, withTextCString)
 import Polars.Internal.Expr (compileExpr, withCompiledExprs)
 import Polars.Internal.Managed (DataFrame, LazyFrame, mkDataFrame, mkLazyFrame, withLazyFrame, withManagedExpr)
 import Polars.Internal.Raw
@@ -79,8 +85,14 @@ import Polars.Internal.Raw
     , phs_lazyframe_tail
     , phs_lazyframe_unique
     , phs_lazyframe_with_columns
-    , phs_scan_csv
-    , phs_scan_parquet
+    , phs_scan_csv_options
+    , phs_scan_parquet_options
+    )
+import Polars.IO
+    ( CsvReadOptions (..)
+    , ParquetScanOptions (..)
+    , defaultCsvReadOptions
+    , defaultParquetScanOptions
     )
 import Polars.Internal.Result (consumeError, nullPointerError)
 
@@ -115,10 +127,40 @@ defaultUniqueOptions =
         }
 
 scanCsv :: FilePath -> IO (Either PolarsError LazyFrame)
-scanCsv path = withFilePathCString path $ \cPath -> lazyFrameOut (phs_scan_csv cPath)
+scanCsv = scanCsvWith defaultCsvReadOptions
+
+scanCsvWith :: CsvReadOptions -> FilePath -> IO (Either PolarsError LazyFrame)
+scanCsvWith options path =
+    withFilePathCString path $ \cPath ->
+        withMaybeTextCString (csvReadNullValue options) $ \cNullValue hasNullValue ->
+            lazyFrameOut
+                ( phs_scan_csv_options
+                    cPath
+                    (toCBool (csvReadHasHeader options))
+                    (CUChar (csvReadSeparator options))
+                    (toCBool hasNullValue)
+                    cNullValue
+                )
 
 scanParquet :: FilePath -> IO (Either PolarsError LazyFrame)
-scanParquet path = withFilePathCString path $ \cPath -> lazyFrameOut (phs_scan_parquet cPath)
+scanParquet = scanParquetWith defaultParquetScanOptions
+
+scanParquetWith :: ParquetScanOptions -> FilePath -> IO (Either PolarsError LazyFrame)
+scanParquetWith options path =
+    case optionalNonNegativeWord64 "parquetScanNRows" (parquetScanNRows options) of
+        Left err -> pure (Left err)
+        Right (hasNRows, nRows) ->
+            withFilePathCString path $ \cPath ->
+                lazyFrameOut
+                    ( phs_scan_parquet_options
+                        cPath
+                        (toCBool hasNRows)
+                        nRows
+                        (toCBool (parquetScanUseStatistics options))
+                        (toCBool (parquetScanLowMemory options))
+                        (toCBool (parquetScanRechunk options))
+                        (toCBool (parquetScanCache options))
+                    )
 
 collect :: LazyFrame -> IO (Either PolarsError DataFrame)
 collect lf = withLazyFrame lf $ \ptr -> dataframeOut (phs_lazyframe_collect ptr)
@@ -314,6 +356,12 @@ nonNegativeWord64 :: Text -> Int -> Either PolarsError Word64
 nonNegativeWord64 label value
     | value < 0 = Left (invalidArgument (label <> " must be non-negative"))
     | otherwise = Right (fromIntegral value)
+
+optionalNonNegativeWord64 :: Text -> Maybe Int -> Either PolarsError (Bool, Word64)
+optionalNonNegativeWord64 _ Nothing = Right (False, 0)
+optionalNonNegativeWord64 label (Just value) = do
+    word <- nonNegativeWord64 label value
+    Right (True, word)
 
 keepStrategyCode :: UniqueKeepStrategy -> CInt
 keepStrategyCode KeepFirst = 0

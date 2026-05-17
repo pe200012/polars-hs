@@ -92,13 +92,41 @@ void phs_bytes_free(struct phs_bytes *ptr);
 
 int phs_read_csv(const char *path, struct phs_dataframe **out, struct phs_error **err);
 
+int phs_read_csv_options(const char *path,
+                         bool has_header,
+                         unsigned char separator,
+                         bool has_null_value,
+                         const char *null_value,
+                         struct phs_dataframe **out,
+                         struct phs_error **err);
+
 int phs_read_parquet(const char *path, struct phs_dataframe **out, struct phs_error **err);
 
+int phs_read_parquet_options(const char *path,
+                             bool has_n_rows,
+                             uint64_t n_rows,
+                             struct phs_dataframe **out,
+                             struct phs_error **err);
+
 int phs_write_csv(const char *path, const struct phs_dataframe *dataframe, struct phs_error **err);
+
+int phs_write_csv_options(const char *path,
+                          const struct phs_dataframe *dataframe,
+                          bool include_header,
+                          unsigned char separator,
+                          const char *null_value,
+                          struct phs_error **err);
 
 int phs_write_parquet(const char *path,
                       const struct phs_dataframe *dataframe,
                       struct phs_error **err);
+
+int phs_write_parquet_options(const char *path,
+                              const struct phs_dataframe *dataframe,
+                              int compression,
+                              bool has_row_group_size,
+                              uint64_t row_group_size,
+                              struct phs_error **err);
 
 int phs_dataframe_new(const struct phs_series *const *series,
                       uintptr_t len,
@@ -458,7 +486,25 @@ int phs_write_ipc_file(const char *path,
 
 int phs_scan_csv(const char *path, struct phs_lazyframe **out, struct phs_error **err);
 
+int phs_scan_csv_options(const char *path,
+                         bool has_header,
+                         unsigned char separator,
+                         bool has_null_value,
+                         const char *null_value,
+                         struct phs_lazyframe **out,
+                         struct phs_error **err);
+
 int phs_scan_parquet(const char *path, struct phs_lazyframe **out, struct phs_error **err);
+
+int phs_scan_parquet_options(const char *path,
+                             bool has_n_rows,
+                             uint64_t n_rows,
+                             bool use_statistics,
+                             bool low_memory,
+                             bool rechunk,
+                             bool cache,
+                             struct phs_lazyframe **out,
+                             struct phs_error **err);
 
 int phs_lazyframe_collect(const struct phs_lazyframe *lazyframe,
                           struct phs_dataframe **out,

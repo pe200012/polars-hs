@@ -1,4 +1,4 @@
-use std::os::raw::{c_char, c_int};
+use std::os::raw::{c_char, c_int, c_uchar};
 use std::ptr;
 
 use polars::prelude::*;
@@ -100,6 +100,12 @@ fn idx_size_from_u64(value: u64, label: &str) -> PhsResult<IdxSize> {
         .map_err(|_| PhsError::invalid_argument(format!("{label} exceeds Polars index size")))
 }
 
+fn usize_from_u64(value: u64, label: &str) -> PhsResult<usize> {
+    value
+        .try_into()
+        .map_err(|_| PhsError::invalid_argument(format!("{label} exceeded usize")))
+}
+
 fn empty_profile_frame() -> DataFrame {
     let schema = Schema::from_iter([
         Field::new(PlSmallStr::from_static("node"), DataType::String),
@@ -119,11 +125,31 @@ pub unsafe extern "C" fn phs_scan_csv(
     out: *mut *mut phs_lazyframe,
     err: *mut *mut phs_error,
 ) -> c_int {
+    unsafe { phs_scan_csv_options(path, true, b',', false, ptr::null(), out, err) }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_scan_csv_options(
+    path: *const c_char,
+    has_header: bool,
+    separator: c_uchar,
+    has_null_value: bool,
+    null_value: *const c_char,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
     ffi_boundary(err, || {
         let out = unsafe { required_mut(out, "out") }?;
         *out = ptr::null_mut();
         let path = unsafe { path_string(path) }?;
-        let lf = LazyCsvReader::new(PlRefPath::new(path)).finish()?;
+        let mut reader = LazyCsvReader::new(PlRefPath::new(path))
+            .with_has_header(has_header)
+            .with_separator(separator);
+        if has_null_value {
+            let value = unsafe { c_str_to_str(null_value, "csv null value") }?;
+            reader = reader.with_null_values(Some(NullValues::AllColumnsSingle(value.into())));
+        }
+        let lf = reader.finish()?;
         *out = lazyframe_into_raw(lf);
         Ok(())
     })
@@ -135,11 +161,38 @@ pub unsafe extern "C" fn phs_scan_parquet(
     out: *mut *mut phs_lazyframe,
     err: *mut *mut phs_error,
 ) -> c_int {
+    unsafe {
+        phs_scan_parquet_options(path, false, 0, true, false, false, true, out, err)
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_scan_parquet_options(
+    path: *const c_char,
+    has_n_rows: bool,
+    n_rows: u64,
+    use_statistics: bool,
+    low_memory: bool,
+    rechunk: bool,
+    cache: bool,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
     ffi_boundary(err, || {
         let out = unsafe { required_mut(out, "out") }?;
         *out = ptr::null_mut();
         let path = unsafe { path_string(path) }?;
-        let lf = LazyFrame::scan_parquet(PlRefPath::new(path), Default::default())?;
+        let mut args = ScanArgsParquet {
+            use_statistics,
+            low_memory,
+            rechunk,
+            cache,
+            ..Default::default()
+        };
+        if has_n_rows {
+            args.n_rows = Some(usize_from_u64(n_rows, "parquet n rows")?);
+        }
+        let lf = LazyFrame::scan_parquet(PlRefPath::new(path), args)?;
         *out = lazyframe_into_raw(lf);
         Ok(())
     })

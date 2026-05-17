@@ -117,10 +117,14 @@ module Polars.Internal.Raw
     , phs_lazyframe_unique
     , phs_lazyframe_with_columns
     , phs_read_csv
+    , phs_read_csv_options
     , phs_read_ipc_file
     , phs_read_parquet
+    , phs_read_parquet_options
     , phs_scan_csv
+    , phs_scan_csv_options
     , phs_scan_parquet
+    , phs_scan_parquet_options
     , phs_series_append
     , phs_series_cast
     , phs_series_drop_nulls
@@ -165,13 +169,15 @@ module Polars.Internal.Raw
     , phs_series_values_u64
     , phs_series_from_arrow_array
     , phs_write_csv
+    , phs_write_csv_options
     , phs_write_ipc_file
     , phs_write_parquet
+    , phs_write_parquet_options
     ) where
 
 import Data.Word (Word8, Word64)
 import Foreign.C.String (CString)
-import Foreign.C.Types (CBool (..), CDouble (..), CInt (..), CLLong (..), CSize (..))
+import Foreign.C.Types (CBool (..), CDouble (..), CInt (..), CLLong (..), CSize (..), CUChar (..))
 import Foreign.ForeignPtr (FinalizerPtr)
 import Foreign.Ptr (Ptr)
 
@@ -235,14 +241,48 @@ foreign import ccall unsafe "&phs_series_free"
 foreign import ccall safe "phs_read_csv"
     phs_read_csv :: CString -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
 
+foreign import ccall safe "phs_read_csv_options"
+    phs_read_csv_options ::
+        CString ->
+        CBool ->
+        CUChar ->
+        CBool ->
+        CString ->
+        Ptr (Ptr RawDataFrame) ->
+        Ptr (Ptr RawError) ->
+        IO CInt
+
 foreign import ccall safe "phs_read_parquet"
     phs_read_parquet :: CString -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_read_parquet_options"
+    phs_read_parquet_options :: CString -> CBool -> Word64 -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall safe "phs_write_csv"
     phs_write_csv :: CString -> Ptr RawDataFrame -> Ptr (Ptr RawError) -> IO CInt
 
+foreign import ccall safe "phs_write_csv_options"
+    phs_write_csv_options ::
+        CString ->
+        Ptr RawDataFrame ->
+        CBool ->
+        CUChar ->
+        CString ->
+        Ptr (Ptr RawError) ->
+        IO CInt
+
 foreign import ccall safe "phs_write_parquet"
     phs_write_parquet :: CString -> Ptr RawDataFrame -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_write_parquet_options"
+    phs_write_parquet_options ::
+        CString ->
+        Ptr RawDataFrame ->
+        CInt ->
+        CBool ->
+        Word64 ->
+        Ptr (Ptr RawError) ->
+        IO CInt
 
 foreign import ccall unsafe "phs_dataframe_new"
     phs_dataframe_new :: Ptr (Ptr RawSeries) -> CSize -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
@@ -370,8 +410,32 @@ foreign import ccall unsafe "phs_expr_agg"
 foreign import ccall safe "phs_scan_csv"
     phs_scan_csv :: CString -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
 
+foreign import ccall safe "phs_scan_csv_options"
+    phs_scan_csv_options ::
+        CString ->
+        CBool ->
+        CUChar ->
+        CBool ->
+        CString ->
+        Ptr (Ptr RawLazyFrame) ->
+        Ptr (Ptr RawError) ->
+        IO CInt
+
 foreign import ccall safe "phs_scan_parquet"
     phs_scan_parquet :: CString -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_scan_parquet_options"
+    phs_scan_parquet_options ::
+        CString ->
+        CBool ->
+        Word64 ->
+        CBool ->
+        CBool ->
+        CBool ->
+        CBool ->
+        Ptr (Ptr RawLazyFrame) ->
+        Ptr (Ptr RawError) ->
+        IO CInt
 
 foreign import ccall safe "phs_lazyframe_collect"
     phs_lazyframe_collect :: Ptr RawLazyFrame -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt

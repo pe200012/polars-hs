@@ -13,6 +13,7 @@ module Polars
     , module Polars.Error
     , module Polars.Expr
     , module Polars.GroupBy
+    , module Polars.IO
     , module Polars.IPC
     , module Polars.Join
     , module Polars.LazyFrame
@@ -27,6 +28,7 @@ import Polars.DataFrame
 import Polars.Error
 import Polars.Expr
 import Polars.GroupBy
+import Polars.IO
 import Polars.IPC
 import Polars.Join
 import Polars.LazyFrame

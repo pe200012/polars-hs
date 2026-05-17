@@ -9,7 +9,12 @@ The module supports eager readers and writers, metadata queries, text rendering,
 Functions return Either so Polars and FFI failures stay explicit.
 -}
 module Polars.DataFrame
-    ( DataFrame
+    ( CsvReadOptions (..)
+    , CsvWriteOptions (..)
+    , DataFrame
+    , ParquetCompression (..)
+    , ParquetReadOptions (..)
+    , ParquetWriteOptions (..)
     , dataFrame
     , dataFrameDropColumns
     , dataFrameDropNulls
@@ -20,15 +25,23 @@ module Polars.DataFrame
     , dataFrameSlice
     , head
     , height
+    , defaultCsvReadOptions
+    , defaultCsvWriteOptions
+    , defaultParquetReadOptions
+    , defaultParquetWriteOptions
     , readCsv
+    , readCsvWith
     , readParquet
+    , readParquetWith
     , schema
     , shape
     , tail
     , toText
     , width
     , writeCsv
+    , writeCsvWith
     , writeParquet
+    , writeParquetWith
     ) where
 
 import Prelude hiding (head, tail)
@@ -38,8 +51,8 @@ import Data.Bits ((.|.), shiftL)
 import Data.Text (Text)
 import qualified Data.Text.Encoding as TE
 import Foreign.C.String (CString)
-import Foreign.C.Types (CBool (..), CInt, CSize)
 import Data.Word (Word64)
+import Foreign.C.Types (CBool (..), CInt, CSize, CUChar (..))
 import Foreign.Marshal.Alloc (alloca)
 import Foreign.Marshal.Array (withArray)
 import Foreign.Ptr (Ptr, nullPtr)
@@ -47,7 +60,7 @@ import Foreign.Storable (peek, poke)
 
 import Polars.Error (PolarsError (..), PolarsErrorCode (InvalidArgument))
 import Polars.Internal.Bytes (copyAndFreeBytes)
-import Polars.Internal.CString (withFilePathCString, withTextCString)
+import Polars.Internal.CString (withFilePathCString, withMaybeTextCString, withTextCString)
 import Polars.Internal.Managed (DataFrame, Series, mkDataFrame, withDataFrame, withSeries)
 import Polars.Internal.Raw
     ( RawBytes
@@ -69,10 +82,21 @@ import Polars.Internal.Raw
     , phs_dataframe_tail
     , phs_dataframe_to_text
     , phs_dataframe_width
-    , phs_read_csv
-    , phs_read_parquet
-    , phs_write_csv
-    , phs_write_parquet
+    , phs_read_csv_options
+    , phs_read_parquet_options
+    , phs_write_csv_options
+    , phs_write_parquet_options
+    )
+import Polars.IO
+    ( CsvReadOptions (..)
+    , CsvWriteOptions (..)
+    , ParquetCompression (..)
+    , ParquetReadOptions (..)
+    , ParquetWriteOptions (..)
+    , defaultCsvReadOptions
+    , defaultCsvWriteOptions
+    , defaultParquetReadOptions
+    , defaultParquetWriteOptions
     )
 import Polars.Internal.Result (consumeError, nullPointerError)
 import Polars.Schema (Field (..), dataTypeFromSchemaTag)
@@ -81,22 +105,67 @@ schemaMagic :: BS.ByteString
 schemaMagic = "PHS1SCH\0"
 
 readCsv :: FilePath -> IO (Either PolarsError DataFrame)
-readCsv path = withFilePathCString path $ \cPath -> dataframeOut (phs_read_csv cPath)
+readCsv = readCsvWith defaultCsvReadOptions
+
+readCsvWith :: CsvReadOptions -> FilePath -> IO (Either PolarsError DataFrame)
+readCsvWith options path =
+    withFilePathCString path $ \cPath ->
+        withMaybeTextCString (csvReadNullValue options) $ \cNullValue hasNullValue ->
+            dataframeOut
+                ( phs_read_csv_options
+                    cPath
+                    (toCBool (csvReadHasHeader options))
+                    (CUChar (csvReadSeparator options))
+                    (toCBool hasNullValue)
+                    cNullValue
+                )
 
 readParquet :: FilePath -> IO (Either PolarsError DataFrame)
-readParquet path = withFilePathCString path $ \cPath -> dataframeOut (phs_read_parquet cPath)
+readParquet = readParquetWith defaultParquetReadOptions
+
+readParquetWith :: ParquetReadOptions -> FilePath -> IO (Either PolarsError DataFrame)
+readParquetWith options path =
+    case optionalNonNegativeWord64 "parquetReadNRows" (parquetReadNRows options) of
+        Left err -> pure (Left err)
+        Right (hasNRows, nRows) ->
+            withFilePathCString path $ \cPath ->
+                dataframeOut (phs_read_parquet_options cPath (toCBool hasNRows) nRows)
 
 writeCsv :: FilePath -> DataFrame -> IO (Either PolarsError ())
-writeCsv path df =
+writeCsv = writeCsvWith defaultCsvWriteOptions
+
+writeCsvWith :: CsvWriteOptions -> FilePath -> DataFrame -> IO (Either PolarsError ())
+writeCsvWith options path df =
     withFilePathCString path $ \cPath ->
-        withDataFrame df $ \ptr ->
-            unitOut (phs_write_csv cPath ptr)
+        withTextCString (csvWriteNullValue options) $ \cNullValue ->
+            withDataFrame df $ \ptr ->
+                unitOut
+                    ( phs_write_csv_options
+                        cPath
+                        ptr
+                        (toCBool (csvWriteIncludeHeader options))
+                        (CUChar (csvWriteSeparator options))
+                        cNullValue
+                    )
 
 writeParquet :: FilePath -> DataFrame -> IO (Either PolarsError ())
-writeParquet path df =
-    withFilePathCString path $ \cPath ->
-        withDataFrame df $ \ptr ->
-            unitOut (phs_write_parquet cPath ptr)
+writeParquet = writeParquetWith defaultParquetWriteOptions
+
+writeParquetWith :: ParquetWriteOptions -> FilePath -> DataFrame -> IO (Either PolarsError ())
+writeParquetWith options path df =
+    case optionalNonNegativeWord64 "parquetWriteRowGroupSize" (parquetWriteRowGroupSize options) of
+        Left err -> pure (Left err)
+        Right (hasRowGroupSize, rowGroupSize) ->
+            withFilePathCString path $ \cPath ->
+                withDataFrame df $ \ptr ->
+                    unitOut
+                        ( phs_write_parquet_options
+                            cPath
+                            ptr
+                            (parquetCompressionCode (parquetWriteCompression options))
+                            (toCBool hasRowGroupSize)
+                            rowGroupSize
+                        )
 
 dataFrame :: [Series] -> IO (Either PolarsError DataFrame)
 dataFrame values = withSeriesArray values $ \ptr len -> dataframeOut (phs_dataframe_new ptr len)
@@ -319,6 +388,18 @@ nonNegativeWord64 :: Text -> Int -> Either PolarsError Word64
 nonNegativeWord64 label value
     | value < 0 = Left (invalidArgument (label <> " must be non-negative"))
     | otherwise = Right (fromIntegral value)
+
+optionalNonNegativeWord64 :: Text -> Maybe Int -> Either PolarsError (Bool, Word64)
+optionalNonNegativeWord64 _ Nothing = Right (False, 0)
+optionalNonNegativeWord64 label (Just value) = do
+    word <- nonNegativeWord64 label value
+    Right (True, word)
+
+parquetCompressionCode :: ParquetCompression -> CInt
+parquetCompressionCode ParquetDefaultCompression = 0
+parquetCompressionCode ParquetUncompressed = 1
+parquetCompressionCode ParquetSnappy = 2
+parquetCompressionCode ParquetZstd = 3
 
 invalidArgument :: Text -> PolarsError
 invalidArgument = PolarsError InvalidArgument

@@ -76,6 +76,7 @@ library
       Polars.Error
       Polars.Expr
       Polars.GroupBy
+      Polars.IO
       Polars.IPC
       Polars.Join
       Polars.LazyFrame

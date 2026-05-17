@@ -58,6 +58,12 @@ withTempFilePath suffix =
         )
         removeFileIfExists
 
+withTempFileContent :: String -> BS.ByteString -> (FilePath -> IO a) -> IO a
+withTempFileContent suffix content action =
+    withTempFilePath suffix $ \path -> do
+        BS.writeFile path content
+        action path
+
 removeFileIfExists :: FilePath -> IO ()
 removeFileIfExists path = do
     exists <- doesFileExist path
@@ -183,6 +189,54 @@ main = hspec $ do
                             Left err -> expectationFailure (show err)
                             Right df -> expectValuesFrame df
 
+        it "reads CSV files with parser options" $
+            withTempFileContent "polars-hs-custom-read.csv" "Alice;34\nBob;NA\n" $ \path -> do
+                let options =
+                        Pl.defaultCsvReadOptions
+                            { Pl.csvReadHasHeader = False
+                            , Pl.csvReadSeparator = 59
+                            , Pl.csvReadNullValue = Just "NA"
+                            }
+                result <- Pl.readCsvWith options path
+                case result of
+                    Left err -> expectationFailure (show err)
+                    Right df -> do
+                        Pl.shape df `shouldReturn` Right (2, 2)
+                        schemaResult <- Pl.schema df
+                        fmap (map Pl.fieldName) schemaResult `shouldBe` Right ["column_1", "column_2"]
+                        Pl.column @T.Text df "column_1" `shouldReturn` Right (V.fromList [Just "Alice", Just "Bob"])
+                        Pl.column @Int64 df "column_2" `shouldReturn` Right (V.fromList [Just 34, Nothing])
+
+        it "writes CSV files with writer options" $
+            withTempFilePath "polars-hs-custom-write.csv" $ \path -> do
+                result <- Pl.readCsv valuesCsv
+                case result of
+                    Left err -> expectationFailure (show err)
+                    Right sourceDf -> do
+                        let writeOptions =
+                                Pl.defaultCsvWriteOptions
+                                    { Pl.csvWriteIncludeHeader = False
+                                    , Pl.csvWriteSeparator = 59
+                                    , Pl.csvWriteNullValue = "NA"
+                                    }
+                            readOptions =
+                                Pl.defaultCsvReadOptions
+                                    { Pl.csvReadHasHeader = False
+                                    , Pl.csvReadSeparator = 59
+                                    , Pl.csvReadNullValue = Just "NA"
+                                    }
+                        writeResult <- Pl.writeCsvWith writeOptions path sourceDf
+                        writeResult `shouldBe` Right ()
+                        bytes <- BS.readFile path
+                        bytes `shouldSatisfy` BS.isPrefixOf "Alice;34;9.5;true\nBob;NA;8.25;false\n"
+                        roundTrip <- Pl.readCsvWith readOptions path
+                        case roundTrip of
+                            Left err -> expectationFailure (show err)
+                            Right df -> do
+                                Pl.shape df `shouldReturn` Right (3, 4)
+                                Pl.column @Int64 df "column_2" `shouldReturn` Right (V.fromList [Just 34, Nothing, Just 29])
+                                Pl.column @Double df "column_3" `shouldReturn` Right (V.fromList [Just 9.5, Just 8.25, Nothing])
+
         it "writes Parquet files and reads them back" $
             withTempFilePath "polars-hs-values.parquet" $ \path -> do
                 result <- Pl.readCsv valuesCsv
@@ -195,6 +249,37 @@ main = hspec $ do
                         case roundTrip of
                             Left err -> expectationFailure (show err)
                             Right df -> expectValuesFrame df
+
+        it "reads and writes Parquet files with options" $
+            withTempFilePath "polars-hs-values-options.parquet" $ \path -> do
+                result <- Pl.readCsv valuesCsv
+                case result of
+                    Left err -> expectationFailure (show err)
+                    Right sourceDf -> do
+                        let writeOptions =
+                                Pl.defaultParquetWriteOptions
+                                    { Pl.parquetWriteCompression = Pl.ParquetSnappy
+                                    , Pl.parquetWriteRowGroupSize = Just 1
+                                    }
+                        writeResult <- Pl.writeParquetWith writeOptions path sourceDf
+                        writeResult `shouldBe` Right ()
+                        fullRoundTrip <- Pl.readParquet path
+                        case fullRoundTrip of
+                            Left err -> expectationFailure (show err)
+                            Right df -> expectValuesFrame df
+                        limited <-
+                            Pl.readParquetWith
+                                Pl.defaultParquetReadOptions {Pl.parquetReadNRows = Just 2}
+                                path
+                        case limited of
+                            Left err -> expectationFailure (show err)
+                            Right df -> do
+                                Pl.shape df `shouldReturn` Right (2, 4)
+                                Pl.column @T.Text df "name" `shouldReturn` Right (V.fromList [Just "Alice", Just "Bob"])
+
+        it "reports InvalidArgument for negative Parquet row limits" $ do
+            result <- Pl.readParquetWith Pl.defaultParquetReadOptions {Pl.parquetReadNRows = Just (-1)} valuesCsv
+            expectInvalidArgumentMessage "parquetReadNRows must be non-negative" result
 
         it "returns writer errors for paths below missing directories" $
             withTempFilePath "polars-hs-writer-anchor" $ \anchor -> do
@@ -379,6 +464,51 @@ main = hspec $ do
                                     case collected of
                                         Left err -> expectationFailure (show err)
                                         Right df -> Pl.shape df `shouldReturn` Right (1, 1)
+
+        it "scans CSV files with parser options" $
+            withTempFileContent "polars-hs-custom-scan.csv" "Alice;34\nBob;NA\n" $ \path -> do
+                let options =
+                        Pl.defaultCsvReadOptions
+                            { Pl.csvReadHasHeader = False
+                            , Pl.csvReadSeparator = 59
+                            , Pl.csvReadNullValue = Just "NA"
+                            }
+                scanResult <- Pl.scanCsvWith options path
+                case scanResult of
+                    Left err -> expectationFailure (show err)
+                    Right lf -> do
+                        collected <- Pl.collect lf
+                        case collected of
+                            Left err -> expectationFailure (show err)
+                            Right df -> do
+                                Pl.shape df `shouldReturn` Right (2, 2)
+                                Pl.column @Int64 df "column_2" `shouldReturn` Right (V.fromList [Just 34, Nothing])
+
+        it "scans Parquet files with scan options" $
+            withTempFilePath "polars-hs-scan-options.parquet" $ \path -> do
+                result <- Pl.readCsv valuesCsv
+                case result of
+                    Left err -> expectationFailure (show err)
+                    Right sourceDf -> do
+                        writeResult <- Pl.writeParquet path sourceDf
+                        writeResult `shouldBe` Right ()
+                        scanResult <-
+                            Pl.scanParquetWith
+                                Pl.defaultParquetScanOptions
+                                    { Pl.parquetScanNRows = Just 2
+                                    , Pl.parquetScanUseStatistics = True
+                                    , Pl.parquetScanLowMemory = True
+                                    , Pl.parquetScanRechunk = True
+                                    , Pl.parquetScanCache = False
+                                    }
+                                path
+                        case scanResult of
+                            Left err -> expectationFailure (show err)
+                            Right lf -> do
+                                collected <- Pl.collect lf
+                                case collected of
+                                    Left err -> expectationFailure (show err)
+                                    Right df -> Pl.shape df `shouldReturn` Right (2, 4)
 
         it "explains optimized and unoptimized lazy plans" $ do
             scanResult <- Pl.scanCsv fixtureCsv
