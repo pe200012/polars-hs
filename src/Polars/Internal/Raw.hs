@@ -142,10 +142,12 @@ module Polars.Internal.Raw
     , phs_series_cast
     , phs_series_ceil
     , phs_series_chunk_lengths
+    , phs_series_clear
     , phs_series_compare_op
     , phs_series_diff
     , phs_series_drop_nulls
     , phs_series_dtype
+    , phs_series_estimated_size
     , phs_series_filter
     , phs_series_fill_null
     , phs_series_floor
@@ -169,6 +171,7 @@ module Polars.Internal.Raw
     , phs_series_n_chunks
     , phs_series_name
     , phs_series_n_unique
+    , phs_series_new_from_index
     , phs_series_new_bool
     , phs_series_new_f32
     , phs_series_new_f64
@@ -735,6 +738,12 @@ foreign import ccall unsafe "phs_series_unique_stable"
 foreign import ccall unsafe "phs_series_rechunk"
     phs_series_rechunk :: Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
 
+foreign import ccall safe "phs_series_clear"
+    phs_series_clear :: Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_series_new_from_index"
+    phs_series_new_from_index :: Ptr RawSeries -> Word64 -> Word64 -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
 foreign import ccall safe "phs_series_arg_unique"
     phs_series_arg_unique :: Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
 
@@ -752,6 +761,9 @@ foreign import ccall unsafe "phs_series_len"
 
 foreign import ccall unsafe "phs_series_null_count"
     phs_series_null_count :: Ptr RawSeries -> Ptr Word64 -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_series_estimated_size"
+    phs_series_estimated_size :: Ptr RawSeries -> Ptr Word64 -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_series_n_chunks"
     phs_series_n_chunks :: Ptr RawSeries -> Ptr Word64 -> Ptr (Ptr RawError) -> IO CInt

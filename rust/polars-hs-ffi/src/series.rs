@@ -749,6 +749,21 @@ pub unsafe extern "C" fn phs_series_null_count(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_estimated_size(
+    series: *const phs_series,
+    out: *mut u64,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        let handle = unsafe { series_ref(series) }?;
+        *out = u64::try_from(handle.value.estimated_size())
+            .map_err(|_| PhsError::invalid_argument("series estimated size exceeded u64"))?;
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_series_n_chunks(
     series: *const phs_series,
     out: *mut u64,
@@ -947,6 +962,24 @@ pub unsafe extern "C" fn phs_series_slice(
 ) -> c_int {
     series_transform(series, out, err, |value| {
         Ok(value.slice(offset, usize_from_u64(len, "series slice length")?))
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_new_from_index(
+    series: *const phs_series,
+    index: u64,
+    len: u64,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| {
+        let index = usize_from_u64(index, "series new-from-index index")?;
+        let len = usize_from_u64(len, "series new-from-index length")?;
+        if !value.is_empty() && index >= value.len() {
+            return Err(PhsError::invalid_argument("series new-from-index index out of bounds"));
+        }
+        Ok(value.new_from_index(index, len))
     })
 }
 
@@ -1302,6 +1335,15 @@ pub unsafe extern "C" fn phs_series_rechunk(
     err: *mut *mut phs_error,
 ) -> c_int {
     series_transform(series, out, err, |value| Ok(value.rechunk()))
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_clear(
+    series: *const phs_series,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| Ok(value.clear()))
 }
 
 #[unsafe(no_mangle)]
@@ -3113,6 +3155,83 @@ mod tests {
             phs_series_free(text_left);
             phs_series_free(text_right);
             phs_series_free(text_appended);
+        }
+    }
+
+    #[test]
+    fn series_estimated_size_clear_and_new_from_index_work() {
+        let values = series_into_raw(Series::new("value".into(), &[Some(10_i64), None, Some(30)]));
+        let text = series_into_raw(Series::new("text".into(), &[Some("a"), Some("bb"), None]));
+        let empty = series_into_raw(Series::new("empty".into(), Vec::<i64>::new()));
+        let mut out = ptr::null_mut();
+        let mut size = 0_u64;
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_series_estimated_size(values, &mut size, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert!(size > 0);
+
+        let status = unsafe { phs_series_estimated_size(text, &mut size, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert!(size > 0);
+
+        let status = unsafe { phs_series_estimated_size(empty, &mut size, &mut err) };
+        assert_eq!(status, PHS_OK);
+
+        let status = unsafe { phs_series_clear(values, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let cleared = out;
+        let cleared_ref = unsafe { series_ref(cleared) }.unwrap();
+        assert_eq!(cleared_ref.value.name().as_str(), "value");
+        assert_eq!(cleared_ref.value.dtype(), &DataType::Int64);
+        assert_eq!(cleared_ref.value.len(), 0);
+
+        let status = unsafe { phs_series_new_from_index(values, 2, 4, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let expanded = out;
+        assert_eq!(
+            unsafe { take_i64_values(expanded) },
+            vec![Some(30), Some(30), Some(30), Some(30)]
+        );
+
+        let status = unsafe { phs_series_new_from_index(values, 1, 3, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let null_expanded = out;
+        assert_eq!(unsafe { take_i64_values(null_expanded) }, vec![None, None, None]);
+
+        let status = unsafe { phs_series_new_from_index(text, 0, 2, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let text_expanded = out;
+        assert_eq!(
+            unsafe { series_ref(text_expanded) }
+                .unwrap()
+                .value
+                .str()
+                .unwrap()
+                .into_iter()
+                .collect::<Vec<_>>(),
+            vec![Some("a"), Some("a")]
+        );
+
+        let status = unsafe { phs_series_new_from_index(values, 3, 1, &mut out, &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        assert_eq!(unsafe { take_error_message(err) }, "series new-from-index index out of bounds");
+
+        let status = unsafe { phs_series_new_from_index(empty, 0, 3, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let empty_expanded = out;
+        let empty_ref = unsafe { series_ref(empty_expanded) }.unwrap();
+        assert_eq!(empty_ref.value.name().as_str(), "empty");
+        assert_eq!(empty_ref.value.dtype(), &DataType::Int64);
+        assert_eq!(empty_ref.value.len(), 0);
+
+        unsafe {
+            phs_series_free(values);
+            phs_series_free(text);
+            phs_series_free(empty);
+            phs_series_free(cleared);
+            phs_series_free(text_expanded);
+            phs_series_free(empty_expanded);
         }
     }
 

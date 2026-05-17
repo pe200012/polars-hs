@@ -3273,6 +3273,64 @@ main = hspec $ do
                 (_, _, Left err, _) -> expectationFailure (show err)
                 (_, _, _, Left err) -> expectationFailure (show err)
 
+        it "estimates size clears and expands Series values" $ do
+            valuesResult <- Pl.series @Int64 "value" (V.fromList [Just 10, Nothing, Just 30])
+            textResult <- Pl.series @T.Text "text" (V.fromList [Just "a", Just "bb", Nothing])
+            emptyResult <- Pl.series @Int64 "empty" V.empty
+            case (valuesResult, textResult, emptyResult) of
+                (Right values, Right textSeries, Right empty) -> do
+                    valuesSize <- Pl.seriesEstimatedSize values
+                    textSize <- Pl.seriesEstimatedSize textSeries
+                    emptySize <- Pl.seriesEstimatedSize empty
+                    case (valuesSize, textSize, emptySize) of
+                        (Right valueBytes, Right textBytes, Right emptyBytes) -> do
+                            valueBytes `shouldSatisfy` (> 0)
+                            textBytes `shouldSatisfy` (> 0)
+                            emptyBytes `shouldSatisfy` (>= 0)
+                        (Left err, _, _) -> expectationFailure (show err)
+                        (_, Left err, _) -> expectationFailure (show err)
+                        (_, _, Left err) -> expectationFailure (show err)
+
+                    clearedResult <- Pl.seriesClear values
+                    textClearedResult <- Pl.seriesClear textSeries
+                    expandedResult <- Pl.seriesNewFromIndex 2 4 values
+                    nullExpandedResult <- Pl.seriesNewFromIndex 1 3 values
+                    textExpandedResult <- Pl.seriesNewFromIndex 0 2 textSeries
+                    negativeIndex <- Pl.seriesNewFromIndex (-1) 2 values
+                    negativeLength <- Pl.seriesNewFromIndex 1 (-2) values
+                    outOfBounds <- Pl.seriesNewFromIndex 3 1 values
+                    emptySourceResult <- Pl.seriesNewFromIndex 0 3 empty
+                    case (clearedResult, textClearedResult, expandedResult, nullExpandedResult, textExpandedResult) of
+                        (Right cleared, Right textCleared, Right expanded, Right nullExpanded, Right textExpanded) -> do
+                            Pl.seriesName cleared `shouldReturn` Right "value"
+                            Pl.seriesDataType cleared `shouldReturn` Right Pl.Int64
+                            Pl.seriesLength cleared `shouldReturn` Right 0
+                            Pl.seriesInt64 cleared `shouldReturn` Right V.empty
+                            Pl.seriesName textCleared `shouldReturn` Right "text"
+                            Pl.seriesDataType textCleared `shouldReturn` Right Pl.Utf8
+                            Pl.seriesText textCleared `shouldReturn` Right V.empty
+                            Pl.seriesInt64 values `shouldReturn` Right (V.fromList [Just 10, Nothing, Just 30])
+                            Pl.seriesInt64 expanded `shouldReturn` Right (V.fromList [Just 30, Just 30, Just 30, Just 30])
+                            Pl.seriesInt64 nullExpanded `shouldReturn` Right (V.fromList [Nothing, Nothing, Nothing])
+                            Pl.seriesText textExpanded `shouldReturn` Right (V.fromList [Just "a", Just "a"])
+                            case emptySourceResult of
+                                Left err -> expectationFailure (show err)
+                                Right emptySource -> do
+                                    Pl.seriesName emptySource `shouldReturn` Right "empty"
+                                    Pl.seriesDataType emptySource `shouldReturn` Right Pl.Int64
+                                    Pl.seriesInt64 emptySource `shouldReturn` Right V.empty
+                            expectInvalidArgumentMessage "series new-from-index index must be non-negative" negativeIndex
+                            expectInvalidArgumentMessage "series new-from-index length must be non-negative" negativeLength
+                            expectInvalidArgumentMessage "series new-from-index index out of bounds" outOfBounds
+                        (Left err, _, _, _, _) -> expectationFailure (show err)
+                        (_, Left err, _, _, _) -> expectationFailure (show err)
+                        (_, _, Left err, _, _) -> expectationFailure (show err)
+                        (_, _, _, Left err, _) -> expectationFailure (show err)
+                        (_, _, _, _, Left err) -> expectationFailure (show err)
+                (Left err, _, _) -> expectationFailure (show err)
+                (_, Left err, _) -> expectationFailure (show err)
+                (_, _, Left err) -> expectationFailure (show err)
+
     describe "Polars.Join" $ do
         it "inner joins two lazy CSV scans and applies the default suffix" $ do
             employeesResult <- Pl.scanCsv employeesCsv

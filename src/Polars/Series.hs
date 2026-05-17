@@ -36,6 +36,7 @@ module Polars.Series
     , seriesBool
     , seriesCeil
     , seriesChunkLengths
+    , seriesClear
     , seriesDataType
     , seriesDiff
     , seriesDiv
@@ -43,6 +44,7 @@ module Polars.Series
     , seriesDropNulls
     , seriesEqual
     , seriesEqualMissing
+    , seriesEstimatedSize
     , seriesFloat
     , seriesFloor
     , seriesHead
@@ -77,6 +79,7 @@ module Polars.Series
     , seriesName
     , seriesNChunks
     , seriesNUnique
+    , seriesNewFromIndex
     , seriesNotEqual
     , seriesNotEqualMissing
     , seriesRank
@@ -173,10 +176,12 @@ import Polars.Internal.Raw
     , phs_series_cast
     , phs_series_ceil
     , phs_series_chunk_lengths
+    , phs_series_clear
     , phs_series_compare_op
     , phs_series_diff
     , phs_series_drop_nulls
     , phs_series_dtype
+    , phs_series_estimated_size
     , phs_series_filter
     , phs_series_fill_null
     , phs_series_floor
@@ -199,6 +204,7 @@ import Polars.Internal.Raw
     , phs_series_n_chunks
     , phs_series_name
     , phs_series_n_unique
+    , phs_series_new_from_index
     , phs_series_new_bool
     , phs_series_new_f32
     , phs_series_new_f64
@@ -428,6 +434,9 @@ seriesLength input = seriesWord64Out input phs_series_len
 seriesNullCount :: Series -> IO (Either PolarsError Int)
 seriesNullCount input = seriesWord64Out input phs_series_null_count
 
+seriesEstimatedSize :: Series -> IO (Either PolarsError Int)
+seriesEstimatedSize input = seriesWord64Out input phs_series_estimated_size
+
 seriesNChunks :: Series -> IO (Either PolarsError Int)
 seriesNChunks input = seriesWord64Out input phs_series_n_chunks
 
@@ -448,6 +457,15 @@ seriesSlice :: Int -> Int -> Series -> IO (Either PolarsError Series)
 seriesSlice offset len input
     | len < 0 = pure (Left (invalidArgument "series slice length must be non-negative"))
     | otherwise = withSeries input $ \ptr -> seriesOut (phs_series_slice ptr (fromIntegral offset) (fromIntegral len))
+
+seriesNewFromIndex :: Int -> Int -> Series -> IO (Either PolarsError Series)
+seriesNewFromIndex index len input =
+    case (nonNegativeWord64 "series new-from-index index" index, nonNegativeWord64 "series new-from-index length" len) of
+        (Left err, _) -> pure (Left err)
+        (_, Left err) -> pure (Left err)
+        (Right indexValue, Right lenValue) ->
+            withSeries input $ \ptr ->
+                seriesOut (phs_series_new_from_index ptr indexValue lenValue)
 
 -- | Gather every nth value from a Series, starting at the offset.
 seriesGatherEvery :: Int -> Int -> Series -> IO (Either PolarsError Series)
@@ -507,6 +525,9 @@ seriesUniqueStable input = seriesUnaryOut input phs_series_unique_stable
 
 seriesRechunk :: Series -> IO (Either PolarsError Series)
 seriesRechunk input = seriesUnaryOut input phs_series_rechunk
+
+seriesClear :: Series -> IO (Either PolarsError Series)
+seriesClear input = seriesUnaryOut input phs_series_clear
 
 seriesArgUnique :: Series -> IO (Either PolarsError Series)
 seriesArgUnique input = seriesUnaryOut input phs_series_arg_unique
