@@ -3241,6 +3241,38 @@ main = hspec $ do
                         (Left err, _) -> expectationFailure (show err)
                         (_, Left err) -> expectationFailure (show err)
 
+        it "inspects chunks and rechunks Series handles" $ do
+            leftResult <- Pl.series @Int64 "value" (V.fromList [Just 1, Just 2, Just 3])
+            rightResult <- Pl.series @Int64 "value" (V.fromList [Just 4, Just 5])
+            textLeftResult <- Pl.series @T.Text "text" (V.fromList [Just "a", Nothing])
+            textRightResult <- Pl.series @T.Text "text" (V.singleton (Just "c"))
+            case (leftResult, rightResult, textLeftResult, textRightResult) of
+                (Right left, Right right, Right textLeft, Right textRight) -> do
+                    appendedResult <- Pl.seriesAppend left right
+                    textAppendedResult <- Pl.seriesAppend textLeft textRight
+                    case (appendedResult, textAppendedResult) of
+                        (Right appended, Right textAppended) -> do
+                            Pl.seriesNChunks appended `shouldReturn` Right 2
+                            Pl.seriesChunkLengths appended `shouldReturn` Right (V.fromList [3, 2])
+                            rechunkedResult <- Pl.seriesRechunk appended
+                            textRechunkedResult <- Pl.seriesRechunk textAppended
+                            case (rechunkedResult, textRechunkedResult) of
+                                (Right rechunked, Right textRechunked) -> do
+                                    Pl.seriesInt64 rechunked `shouldReturn` Right (V.fromList [Just 1, Just 2, Just 3, Just 4, Just 5])
+                                    Pl.seriesNChunks rechunked `shouldReturn` Right 1
+                                    Pl.seriesChunkLengths rechunked `shouldReturn` Right (V.singleton 5)
+                                    Pl.seriesNChunks appended `shouldReturn` Right 2
+                                    Pl.seriesText textRechunked `shouldReturn` Right (V.fromList [Just "a", Nothing, Just "c"])
+                                    Pl.seriesNChunks textRechunked `shouldReturn` Right 1
+                                (Left err, _) -> expectationFailure (show err)
+                                (_, Left err) -> expectationFailure (show err)
+                        (Left err, _) -> expectationFailure (show err)
+                        (_, Left err) -> expectationFailure (show err)
+                (Left err, _, _, _) -> expectationFailure (show err)
+                (_, Left err, _, _) -> expectationFailure (show err)
+                (_, _, Left err, _) -> expectationFailure (show err)
+                (_, _, _, Left err) -> expectationFailure (show err)
+
     describe "Polars.Join" $ do
         it "inner joins two lazy CSV scans and applies the default suffix" $ do
             employeesResult <- Pl.scanCsv employeesCsv

@@ -35,6 +35,7 @@ module Polars.Series
     , seriesArgUnique
     , seriesBool
     , seriesCeil
+    , seriesChunkLengths
     , seriesDataType
     , seriesDiff
     , seriesDiv
@@ -74,10 +75,12 @@ module Polars.Series
     , seriesMode
     , seriesMul
     , seriesName
+    , seriesNChunks
     , seriesNUnique
     , seriesNotEqual
     , seriesNotEqualMissing
     , seriesRank
+    , seriesRechunk
     , seriesRename
     , seriesReverse
     , seriesRem
@@ -113,6 +116,7 @@ module Polars.Series
     ) where
 
 import qualified Data.ByteString as BS
+import Data.Bits ((.|.), shiftL)
 import Data.Int (Int16, Int32, Int64, Int8)
 import Data.Text (Text)
 import qualified Data.Text.Encoding as TE
@@ -168,6 +172,7 @@ import Polars.Internal.Raw
     , phs_series_binary_op
     , phs_series_cast
     , phs_series_ceil
+    , phs_series_chunk_lengths
     , phs_series_compare_op
     , phs_series_diff
     , phs_series_drop_nulls
@@ -191,6 +196,7 @@ import Polars.Internal.Raw
     , phs_series_is_unique
     , phs_series_len
     , phs_series_mode
+    , phs_series_n_chunks
     , phs_series_name
     , phs_series_n_unique
     , phs_series_new_bool
@@ -207,6 +213,7 @@ import Polars.Internal.Raw
     , phs_series_new_u64
     , phs_series_pct_change
     , phs_series_rank
+    , phs_series_rechunk
     , phs_series_rename
     , phs_series_reverse
     , phs_series_round
@@ -421,6 +428,12 @@ seriesLength input = seriesWord64Out input phs_series_len
 seriesNullCount :: Series -> IO (Either PolarsError Int)
 seriesNullCount input = seriesWord64Out input phs_series_null_count
 
+seriesNChunks :: Series -> IO (Either PolarsError Int)
+seriesNChunks input = seriesWord64Out input phs_series_n_chunks
+
+seriesChunkLengths :: Series -> IO (Either PolarsError (Vector Int))
+seriesChunkLengths input = seriesBytesOut input phs_series_chunk_lengths decodeChunkLengths
+
 seriesHead :: Int -> Series -> IO (Either PolarsError Series)
 seriesHead n input
     | n < 0 = pure (Left (invalidArgument "series head count must be non-negative"))
@@ -491,6 +504,9 @@ seriesUniqueCounts input = seriesUnaryOut input phs_series_unique_counts
 
 seriesUniqueStable :: Series -> IO (Either PolarsError Series)
 seriesUniqueStable input = seriesUnaryOut input phs_series_unique_stable
+
+seriesRechunk :: Series -> IO (Either PolarsError Series)
+seriesRechunk input = seriesUnaryOut input phs_series_rechunk
 
 seriesArgUnique :: Series -> IO (Either PolarsError Series)
 seriesArgUnique input = seriesUnaryOut input phs_series_arg_unique
@@ -945,3 +961,23 @@ decodeUtf8Bytes :: BS.ByteString -> Either PolarsError Text
 decodeUtf8Bytes bytes = case TE.decodeUtf8' bytes of
     Left _ -> Left (PolarsError InvalidArgument "series payload contained invalid UTF-8")
     Right text -> Right text
+
+decodeChunkLengths :: BS.ByteString -> Either PolarsError (Vector Int)
+decodeChunkLengths bytes
+    | BS.length bytes `mod` 8 /= 0 =
+        Left (invalidArgument "series chunk lengths payload had invalid length")
+    | otherwise =
+        V.fromList <$> traverse chunkLengthWord64ToInt [wordAt offset | offset <- [0, 8 .. BS.length bytes - 1]]
+  where
+    wordAt offset =
+        foldr
+            ( \index acc ->
+                acc .|. (fromIntegral (BS.index bytes (offset + index)) `shiftL` (8 * index))
+            )
+            0
+            [0 .. 7]
+
+chunkLengthWord64ToInt :: Word64 -> Either PolarsError Int
+chunkLengthWord64ToInt value
+    | value <= fromIntegral (maxBound :: Int) = Right (fromIntegral value)
+    | otherwise = Left (invalidArgument "series chunk length exceeds Haskell Int range")

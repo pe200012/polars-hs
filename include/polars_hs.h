@@ -814,6 +814,12 @@ int phs_series_len(const struct phs_series *series, uint64_t *out, struct phs_er
 
 int phs_series_null_count(const struct phs_series *series, uint64_t *out, struct phs_error **err);
 
+int phs_series_n_chunks(const struct phs_series *series, uint64_t *out, struct phs_error **err);
+
+int phs_series_chunk_lengths(const struct phs_series *series,
+                             struct phs_bytes **out,
+                             struct phs_error **err);
+
 int phs_series_n_unique(const struct phs_series *series, uint64_t *out, struct phs_error **err);
 
 int phs_series_value_counts(const struct phs_series *series,
@@ -998,6 +1004,10 @@ int phs_series_unique_counts(const struct phs_series *series,
 int phs_series_unique_stable(const struct phs_series *series,
                              struct phs_series **out,
                              struct phs_error **err);
+
+int phs_series_rechunk(const struct phs_series *series,
+                       struct phs_series **out,
+                       struct phs_error **err);
 
 int phs_series_arg_sort(const struct phs_series *series,
                         bool descending,

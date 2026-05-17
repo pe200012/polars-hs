@@ -90,6 +90,16 @@ encode_le_series!(encode_u32_series, u32, 4);
 encode_le_series!(encode_u64_series, u64, 8);
 encode_le_series!(encode_f32_series, f32, 4);
 
+fn encode_chunk_lengths(series: &Series) -> PhsResult<Vec<u8>> {
+    let mut bytes = Vec::with_capacity(series.n_chunks() * 8);
+    for length in series.chunk_lengths() {
+        let length = u64::try_from(length)
+            .map_err(|_| PhsError::invalid_argument("series chunk length exceeded u64"))?;
+        bytes.extend_from_slice(&length.to_le_bytes());
+    }
+    Ok(bytes)
+}
+
 pub(crate) fn encode_f64_series(series: &Series) -> PhsResult<Vec<u8>> {
     let values = series.f64()?;
     let mut bytes = Vec::with_capacity(values.len() * 9);
@@ -739,6 +749,36 @@ pub unsafe extern "C" fn phs_series_null_count(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_n_chunks(
+    series: *const phs_series,
+    out: *mut u64,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        let handle = unsafe { series_ref(series) }?;
+        *out = u64::try_from(handle.value.n_chunks())
+            .map_err(|_| PhsError::invalid_argument("series chunk count exceeded u64"))?;
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_chunk_lengths(
+    series: *const phs_series,
+    out: *mut *mut phs_bytes,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { series_ref(series) }?;
+        *out = bytes_into_raw(encode_chunk_lengths(&handle.value)?);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_series_n_unique(
     series: *const phs_series,
     out: *mut u64,
@@ -1256,6 +1296,15 @@ pub unsafe extern "C" fn phs_series_unique_stable(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_rechunk(
+    series: *const phs_series,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| Ok(value.rechunk()))
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_series_arg_sort(
     series: *const phs_series,
     descending: bool,
@@ -1653,6 +1702,18 @@ mod tests {
         let values = series.value.i64().unwrap().into_iter().collect();
         unsafe { phs_series_free(raw) };
         values
+    }
+
+    unsafe fn take_chunk_lengths(raw: *mut phs_bytes) -> Vec<u64> {
+        let bytes = unsafe { take_raw_bytes(raw) };
+        bytes
+            .chunks_exact(8)
+            .map(|chunk| {
+                let mut value = [0_u8; 8];
+                value.copy_from_slice(chunk);
+                u64::from_le_bytes(value)
+            })
+            .collect()
     }
 
     unsafe fn take_i32_values(raw: *mut phs_series) -> Vec<Option<i32>> {
@@ -2984,6 +3045,74 @@ mod tests {
             phs_series_free(values);
             phs_series_free(single);
             phs_series_free(text);
+        }
+    }
+
+    #[test]
+    fn series_chunk_introspection_and_rechunk_work() {
+        let left = series_into_raw(Series::new("value".into(), &[1_i64, 2, 3]));
+        let right = series_into_raw(Series::new("value".into(), &[4_i64, 5]));
+        let text_left = series_into_raw(Series::new("text".into(), &[Some("a"), None]));
+        let text_right = series_into_raw(Series::new("text".into(), &[Some("c")]));
+        let mut out = ptr::null_mut();
+        let mut bytes_out = ptr::null_mut();
+        let mut count_out = 0_u64;
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_series_append(left, right, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let appended = out;
+
+        let status = unsafe { phs_series_n_chunks(appended, &mut count_out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(count_out, 2);
+
+        let status = unsafe { phs_series_chunk_lengths(appended, &mut bytes_out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_chunk_lengths(bytes_out) }, vec![3, 2]);
+
+        let status = unsafe { phs_series_rechunk(appended, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let rechunked = out;
+        assert_eq!(unsafe { take_i64_values(rechunked) }, vec![Some(1), Some(2), Some(3), Some(4), Some(5)]);
+
+        let status = unsafe { phs_series_n_chunks(appended, &mut count_out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(count_out, 2);
+
+        let status = unsafe { phs_series_rechunk(appended, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let rechunked_again = out;
+        let status = unsafe { phs_series_chunk_lengths(rechunked_again, &mut bytes_out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_chunk_lengths(bytes_out) }, vec![5]);
+        unsafe { phs_series_free(rechunked_again) };
+
+        let status = unsafe { phs_series_append(text_left, text_right, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let text_appended = out;
+        let status = unsafe { phs_series_rechunk(text_appended, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let text_rechunked = out;
+        assert_eq!(
+            unsafe { series_ref(text_rechunked) }
+                .unwrap()
+                .value
+                .str()
+                .unwrap()
+                .into_iter()
+                .collect::<Vec<_>>(),
+            vec![Some("a"), None, Some("c")]
+        );
+        unsafe { phs_series_free(text_rechunked) };
+
+        unsafe {
+            phs_series_free(left);
+            phs_series_free(right);
+            phs_series_free(appended);
+            phs_series_free(text_left);
+            phs_series_free(text_right);
+            phs_series_free(text_appended);
         }
     }
 
