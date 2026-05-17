@@ -26,6 +26,7 @@ module Polars.Series
     , seriesAbs
     , seriesAdd
     , seriesAppend
+    , seriesArgSort
     , seriesArgUnique
     , seriesBool
     , seriesCeil
@@ -137,6 +138,7 @@ import Polars.Internal.Raw
     , RawSeries
     , phs_series_abs
     , phs_series_append
+    , phs_series_arg_sort
     , phs_series_arg_unique
     , phs_series_binary_op
     , phs_series_cast
@@ -384,6 +386,21 @@ seriesSort options input = case sortLimitWord64 (seriesSortLimit options) of
                 limitValue
             )
 
+seriesArgSort :: SeriesSortOptions -> Series -> IO (Either PolarsError Series)
+seriesArgSort options input = case sortLimitWord64WithLabel "series arg sort limit" (seriesSortLimit options) of
+    Left err -> pure (Left err)
+    Right (hasLimit, limitValue) -> withSeries input $ \ptr ->
+        seriesOut
+            ( phs_series_arg_sort
+                ptr
+                (toCBool (seriesSortDescending options))
+                (toCBool (seriesSortNullsLast options))
+                (toCBool (seriesSortMultithreaded options))
+                (toCBool (seriesSortMaintainOrder options))
+                (toCBool hasLimit)
+                limitValue
+            )
+
 seriesUnique :: Series -> IO (Either PolarsError Series)
 seriesUnique input = seriesUnaryOut input phs_series_unique
 
@@ -610,9 +627,12 @@ seriesStat op ddof input =
         phs_series_stat ptr op ddof hasValuePtr valuePtr errPtr
 
 sortLimitWord64 :: Maybe Int -> Either PolarsError (Bool, Word64)
-sortLimitWord64 Nothing = Right (False, 0)
-sortLimitWord64 (Just value)
-    | value < 0 = Left (invalidArgument "series sort limit must be non-negative")
+sortLimitWord64 = sortLimitWord64WithLabel "series sort limit"
+
+sortLimitWord64WithLabel :: Text -> Maybe Int -> Either PolarsError (Bool, Word64)
+sortLimitWord64WithLabel _ Nothing = Right (False, 0)
+sortLimitWord64WithLabel label (Just value)
+    | value < 0 = Left (invalidArgument (label <> " must be non-negative"))
     | otherwise = Right (True, fromIntegral value)
 
 ddofCUChar :: Text -> Int -> Either PolarsError CUChar

@@ -1065,6 +1065,31 @@ pub unsafe extern "C" fn phs_series_unique_stable(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_arg_sort(
+    series: *const phs_series,
+    descending: bool,
+    nulls_last: bool,
+    multithreaded: bool,
+    maintain_order: bool,
+    has_limit: bool,
+    limit: u64,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| {
+        let mut options = SortOptions::default()
+            .with_order_descending(descending)
+            .with_nulls_last(nulls_last)
+            .with_multithreaded(multithreaded)
+            .with_maintain_order(maintain_order);
+        if has_limit {
+            options.limit = Some(idx_size_from_u64(limit, "series arg sort limit")?);
+        }
+        Ok(value.arg_sort(options).into_series())
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_series_arg_unique(
     series: *const phs_series,
     out: *mut *mut phs_series,
@@ -1339,6 +1364,14 @@ mod tests {
         assert!(!raw.is_null());
         let series = unsafe { series_ref(raw) }.unwrap();
         let values = series.value.bool().unwrap().into_iter().collect();
+        unsafe { phs_series_free(raw) };
+        values
+    }
+
+    unsafe fn take_u32_values(raw: *mut phs_series) -> Vec<Option<u32>> {
+        assert!(!raw.is_null());
+        let series = unsafe { series_ref(raw) }.unwrap();
+        let values = series.value.u32().unwrap().into_iter().collect();
         unsafe { phs_series_free(raw) };
         values
     }
@@ -1794,6 +1827,81 @@ mod tests {
             phs_series_free(text);
             phs_series_free(flag);
             phs_series_free(all_null);
+            phs_series_free(empty);
+        }
+    }
+
+    #[test]
+    fn series_arg_sort_returns_sort_indexes() {
+        let values = series_into_raw(Series::new("value".into(), &[Some(3_i64), None, Some(1), Some(2)]));
+        let ties = series_into_raw(Series::new("tie".into(), &[Some(2_i64), Some(1), Some(2), Some(1)]));
+        let text = series_into_raw(Series::new("text".into(), &[Some("b"), Some("a"), None, Some("a")]));
+        let empty = series_into_raw(Series::new("empty".into(), Vec::<Option<i64>>::new()));
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_series_arg_sort(values, false, false, true, false, false, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_u32_values(out) },
+            vec![Some(1), Some(2), Some(3), Some(0)]
+        );
+
+        let status = unsafe { phs_series_arg_sort(values, false, true, true, false, false, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_u32_values(out) },
+            vec![Some(2), Some(3), Some(0), Some(1)]
+        );
+
+        let status = unsafe { phs_series_arg_sort(values, true, true, true, false, false, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_u32_values(out) },
+            vec![Some(0), Some(3), Some(2), Some(1)]
+        );
+
+        let status = unsafe { phs_series_arg_sort(ties, false, false, true, true, false, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_u32_values(out) },
+            vec![Some(1), Some(3), Some(0), Some(2)]
+        );
+
+        let status = unsafe { phs_series_arg_sort(text, false, true, true, false, false, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_u32_values(out) },
+            vec![Some(1), Some(3), Some(0), Some(2)]
+        );
+
+        let status = unsafe { phs_series_arg_sort(empty, false, false, true, false, false, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_u32_values(out) }, Vec::<Option<u32>>::new());
+
+        let status = unsafe {
+            phs_series_arg_sort(
+                values,
+                false,
+                false,
+                true,
+                false,
+                true,
+                u64::from(u32::MAX) + 1,
+                &mut out,
+                &mut err,
+            )
+        };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        assert_eq!(
+            unsafe { take_error_message(err) },
+            "series arg sort limit exceeds Polars index size"
+        );
+
+        unsafe {
+            phs_series_free(values);
+            phs_series_free(ties);
+            phs_series_free(text);
             phs_series_free(empty);
         }
     }

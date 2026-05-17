@@ -2202,6 +2202,59 @@ main = hspec $ do
                 (_, _, _, Left err, _) -> expectationFailure (show err)
                 (_, _, _, _, Left err) -> expectationFailure (show err)
 
+        it "computes Series arg-sort indexes with sort options" $ do
+            numericResult <- Pl.series @Int64 "value" (V.fromList [Just 3, Nothing, Just 1, Just 2])
+            tieResult <- Pl.series @Int64 "tie" (V.fromList [Just 2, Just 1, Just 2, Just 1])
+            textResult <- Pl.series @T.Text "text" (V.fromList [Just "b", Just "a", Nothing, Just "a"])
+            emptyResult <- Pl.series @Int64 "empty" V.empty
+            case (numericResult, tieResult, textResult, emptyResult) of
+                (Right numeric, Right tieSeries, Right textSeries, Right empty) -> do
+                    defaultIndexes <- Pl.seriesArgSort Pl.defaultSeriesSortOptions numeric
+                    nullsLastIndexes <-
+                        Pl.seriesArgSort
+                            Pl.defaultSeriesSortOptions { Pl.seriesSortNullsLast = True }
+                            numeric
+                    descendingIndexes <-
+                        Pl.seriesArgSort
+                            Pl.defaultSeriesSortOptions
+                                { Pl.seriesSortDescending = True
+                                , Pl.seriesSortNullsLast = True
+                                }
+                            numeric
+                    stableTieIndexes <-
+                        Pl.seriesArgSort
+                            Pl.defaultSeriesSortOptions { Pl.seriesSortMaintainOrder = True }
+                            tieSeries
+                    textIndexes <-
+                        Pl.seriesArgSort
+                            Pl.defaultSeriesSortOptions { Pl.seriesSortNullsLast = True }
+                            textSeries
+                    emptyIndexes <- Pl.seriesArgSort Pl.defaultSeriesSortOptions empty
+                    negativeLimit <-
+                        Pl.seriesArgSort
+                            Pl.defaultSeriesSortOptions { Pl.seriesSortLimit = Just (-1) }
+                            numeric
+                    case (defaultIndexes, nullsLastIndexes, descendingIndexes, stableTieIndexes, textIndexes, emptyIndexes) of
+                        (Right defaultIdx, Right nullsLastIdx, Right descendingIdx, Right stableTieIdx, Right textIdx, Right emptyIdx) -> do
+                            Pl.seriesDataType defaultIdx `shouldReturn` Right Pl.UInt32
+                            Pl.seriesWord32 defaultIdx `shouldReturn` Right (V.fromList [Just 1, Just 2, Just 3, Just 0])
+                            Pl.seriesWord32 nullsLastIdx `shouldReturn` Right (V.fromList [Just 2, Just 3, Just 0, Just 1])
+                            Pl.seriesWord32 descendingIdx `shouldReturn` Right (V.fromList [Just 0, Just 3, Just 2, Just 1])
+                            Pl.seriesWord32 stableTieIdx `shouldReturn` Right (V.fromList [Just 1, Just 3, Just 0, Just 2])
+                            Pl.seriesWord32 textIdx `shouldReturn` Right (V.fromList [Just 1, Just 3, Just 0, Just 2])
+                            Pl.seriesWord32 emptyIdx `shouldReturn` Right V.empty
+                            expectInvalidArgumentMessage "series arg sort limit must be non-negative" negativeLimit
+                        (Left err, _, _, _, _, _) -> expectationFailure (show err)
+                        (_, Left err, _, _, _, _) -> expectationFailure (show err)
+                        (_, _, Left err, _, _, _) -> expectationFailure (show err)
+                        (_, _, _, Left err, _, _) -> expectationFailure (show err)
+                        (_, _, _, _, Left err, _) -> expectationFailure (show err)
+                        (_, _, _, _, _, Left err) -> expectationFailure (show err)
+                (Left err, _, _, _) -> expectationFailure (show err)
+                (_, Left err, _, _) -> expectationFailure (show err)
+                (_, _, Left err, _) -> expectationFailure (show err)
+                (_, _, _, Left err) -> expectationFailure (show err)
+
         it "computes Series value counts as a DataFrame" $ do
             colorResult <- Pl.series @T.Text "color" (V.fromList [Just "blue", Just "red", Just "blue", Just "green", Just "blue", Just "red"])
             emptyResult <- Pl.series @T.Text "color" V.empty

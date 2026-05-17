@@ -136,6 +136,7 @@ module Polars.Internal.Raw
     , phs_scan_parquet_options
     , phs_series_abs
     , phs_series_append
+    , phs_series_arg_sort
     , phs_series_arg_unique
     , phs_series_binary_op
     , phs_series_cast
@@ -682,6 +683,9 @@ foreign import ccall safe "phs_series_binary_op"
 
 foreign import ccall unsafe "phs_series_sort"
     phs_series_sort :: Ptr RawSeries -> CBool -> CBool -> CBool -> CBool -> CBool -> Word64 -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_series_arg_sort"
+    phs_series_arg_sort :: Ptr RawSeries -> CBool -> CBool -> CBool -> CBool -> CBool -> Word64 -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_series_unique"
     phs_series_unique :: Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt

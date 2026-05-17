@@ -959,6 +959,16 @@ int phs_series_unique_stable(const struct phs_series *series,
                              struct phs_series **out,
                              struct phs_error **err);
 
+int phs_series_arg_sort(const struct phs_series *series,
+                        bool descending,
+                        bool nulls_last,
+                        bool multithreaded,
+                        bool maintain_order,
+                        bool has_limit,
+                        uint64_t limit,
+                        struct phs_series **out,
+                        struct phs_error **err);
+
 int phs_series_arg_unique(const struct phs_series *series,
                           struct phs_series **out,
                           struct phs_error **err);
