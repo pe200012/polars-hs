@@ -55,9 +55,11 @@ module Polars.Internal.Raw
     , phs_dataframe_select
     , phs_dataframe_shape
     , phs_dataframe_slice
+    , phs_dataframe_sort
     , phs_dataframe_tail
     , phs_dataframe_to_ipc_bytes
     , phs_dataframe_to_text
+    , phs_dataframe_unique
     , phs_dataframe_width
     , phs_error_code
     , phs_error_free
@@ -333,6 +335,26 @@ foreign import ccall unsafe "phs_dataframe_slice"
 
 foreign import ccall unsafe "phs_dataframe_filter"
     phs_dataframe_filter :: Ptr RawDataFrame -> Ptr RawSeries -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_dataframe_sort"
+    phs_dataframe_sort ::
+        Ptr RawDataFrame ->
+        Ptr CString ->
+        CSize ->
+        Ptr Word8 ->
+        CSize ->
+        Ptr Word8 ->
+        CSize ->
+        CBool ->
+        CBool ->
+        CBool ->
+        Word64 ->
+        Ptr (Ptr RawDataFrame) ->
+        Ptr (Ptr RawError) ->
+        IO CInt
+
+foreign import ccall unsafe "phs_dataframe_unique"
+    phs_dataframe_unique :: Ptr RawDataFrame -> Ptr CString -> CSize -> CBool -> CInt -> CBool -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_dataframe_reverse"
     phs_dataframe_reverse :: Ptr RawDataFrame -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt

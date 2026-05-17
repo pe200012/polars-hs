@@ -489,6 +489,128 @@ main = hspec $ do
                         (_, _, _, Left err, _) -> expectationFailure (show err)
                         (_, _, _, _, Left err) -> expectationFailure (show err)
 
+        it "sorts eager DataFrames with explicit options" $ do
+            result <- Pl.readCsv employeesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    sorted <-
+                        Pl.dataFrameSort
+                            Pl.defaultDataFrameSortOptions
+                                { Pl.dataFrameSortDescending = [False, True]
+                                , Pl.dataFrameSortNullsLast = [False]
+                                }
+                            ["department", "salary"]
+                            df
+                    case sorted of
+                        Left err -> expectationFailure (show err)
+                        Right sortedDf -> do
+                            Pl.column @T.Text sortedDf "name" `shouldReturn` Right (V.fromList [Just "Bob", Just "Alice", Just "Carol", Just "Eve"])
+                            Pl.column @Int64 sortedDf "salary" `shouldReturn` Right (V.fromList [Just 150, Just 100, Just 90, Just 80])
+
+        it "sorts eager DataFrames with null placement controls" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    sorted <-
+                        Pl.dataFrameSort
+                            Pl.defaultDataFrameSortOptions {Pl.dataFrameSortNullsLast = [True]}
+                            ["age"]
+                            df
+                    case sorted of
+                        Left err -> expectationFailure (show err)
+                        Right sortedDf ->
+                            Pl.column @T.Text sortedDf "name" `shouldReturn` Right (V.fromList [Just "Carol", Just "Alice", Just "Bob"])
+
+        it "reports InvalidArgument for invalid eager DataFrame sort options" $ do
+            result <- Pl.readCsv employeesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    emptyColumns <- Pl.dataFrameSort Pl.defaultDataFrameSortOptions [] df
+                    emptyDescending <-
+                        Pl.dataFrameSort
+                            Pl.defaultDataFrameSortOptions {Pl.dataFrameSortDescending = []}
+                            ["department"]
+                            df
+                    mismatchedDescending <-
+                        Pl.dataFrameSort
+                            Pl.defaultDataFrameSortOptions {Pl.dataFrameSortDescending = [False, True, False]}
+                            ["department", "salary"]
+                            df
+                    mismatchedNullsLast <-
+                        Pl.dataFrameSort
+                            Pl.defaultDataFrameSortOptions {Pl.dataFrameSortNullsLast = [False, True, False]}
+                            ["department", "salary"]
+                            df
+                    negativeLimit <-
+                        Pl.dataFrameSort
+                            Pl.defaultDataFrameSortOptions {Pl.dataFrameSortLimit = Just (-1)}
+                            ["department"]
+                            df
+                    let overflowingLimit = fromIntegral (maxBound :: Word32) + 1
+                    overflowingLimitResult <-
+                        Pl.dataFrameSort
+                            Pl.defaultDataFrameSortOptions {Pl.dataFrameSortLimit = Just overflowingLimit}
+                            ["department"]
+                            df
+                    expectInvalidArgumentMessage "dataFrameSort requires at least one column name" emptyColumns
+                    expectInvalidArgumentMessage "dataFrameSortDescending must contain one value or one value per sort column" emptyDescending
+                    expectInvalidArgumentMessage "dataFrameSortDescending must contain one value or one value per sort column" mismatchedDescending
+                    expectInvalidArgumentMessage "dataFrameSortNullsLast must contain one value or one value per sort column" mismatchedNullsLast
+                    expectInvalidArgumentMessage "dataFrameSort limit must be non-negative" negativeLimit
+                    expectInvalidArgumentMessage "dataframe sort limit exceeds Polars index size" overflowingLimitResult
+
+        it "keeps unique eager DataFrame rows by subset" $ do
+            result <- Pl.readCsv employeesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    uniqueFirst <-
+                        Pl.dataFrameUnique
+                            Pl.defaultDataFrameUniqueOptions
+                                { Pl.dataFrameUniqueSubset = Just ["department"]
+                                , Pl.dataFrameUniqueKeepStrategy = Pl.DataFrameKeepFirst
+                                , Pl.dataFrameUniqueMaintainOrder = True
+                                }
+                            df
+                    uniqueLast <-
+                        Pl.dataFrameUnique
+                            Pl.defaultDataFrameUniqueOptions
+                                { Pl.dataFrameUniqueSubset = Just ["department"]
+                                , Pl.dataFrameUniqueKeepStrategy = Pl.DataFrameKeepLast
+                                , Pl.dataFrameUniqueMaintainOrder = True
+                                }
+                            df
+                    uniqueNone <-
+                        Pl.dataFrameUnique
+                            Pl.defaultDataFrameUniqueOptions
+                                { Pl.dataFrameUniqueSubset = Just ["department"]
+                                , Pl.dataFrameUniqueKeepStrategy = Pl.DataFrameKeepNone
+                                , Pl.dataFrameUniqueMaintainOrder = True
+                                }
+                            df
+                    case (uniqueFirst, uniqueLast, uniqueNone) of
+                        (Right firstDf, Right lastDf, Right noneDf) -> do
+                            Pl.column @T.Text firstDf "name" `shouldReturn` Right (V.fromList [Just "Alice", Just "Carol", Just "Eve"])
+                            Pl.column @T.Text lastDf "name" `shouldReturn` Right (V.fromList [Just "Bob", Just "Carol", Just "Eve"])
+                            Pl.column @T.Text noneDf "name" `shouldReturn` Right (V.fromList [Just "Carol", Just "Eve"])
+                        (Left err, _, _) -> expectationFailure (show err)
+                        (_, Left err, _) -> expectationFailure (show err)
+                        (_, _, Left err) -> expectationFailure (show err)
+
+        it "reports InvalidArgument for invalid eager DataFrame unique options" $ do
+            result <- Pl.readCsv employeesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    uniqueResult <-
+                        Pl.dataFrameUnique
+                            Pl.defaultDataFrameUniqueOptions {Pl.dataFrameUniqueSubset = Just []}
+                            df
+                    expectInvalidArgumentMessage "dataFrameUnique subset requires at least one column name" uniqueResult
+
         it "filters eager DataFrames with boolean Series masks" $ do
             result <- Pl.readCsv valuesCsv
             case result of

@@ -184,6 +184,29 @@ int phs_dataframe_filter(const struct phs_dataframe *dataframe,
                          struct phs_dataframe **out,
                          struct phs_error **err);
 
+int phs_dataframe_sort(const struct phs_dataframe *dataframe,
+                       const char *const *names,
+                       uintptr_t names_len,
+                       const uint8_t *descending,
+                       uintptr_t descending_len,
+                       const uint8_t *nulls_last,
+                       uintptr_t nulls_last_len,
+                       bool multithreaded,
+                       bool maintain_order,
+                       bool has_limit,
+                       uint64_t limit,
+                       struct phs_dataframe **out,
+                       struct phs_error **err);
+
+int phs_dataframe_unique(const struct phs_dataframe *dataframe,
+                         const char *const *subset,
+                         uintptr_t subset_len,
+                         bool has_subset,
+                         int keep_strategy,
+                         bool maintain_order,
+                         struct phs_dataframe **out,
+                         struct phs_error **err);
+
 int phs_dataframe_reverse(const struct phs_dataframe *dataframe,
                           struct phs_dataframe **out,
                           struct phs_error **err);

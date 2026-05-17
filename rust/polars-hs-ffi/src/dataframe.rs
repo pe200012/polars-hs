@@ -37,9 +37,59 @@ unsafe fn name_vec(names: *const *const c_char, len: usize, label: &str) -> PhsR
         .collect()
 }
 
+unsafe fn bool_vec(values: *const u8, len: usize, label: &str) -> PhsResult<Vec<bool>> {
+    if values.is_null() && len > 0 {
+        return Err(PhsError::invalid_argument(format!("{label} pointer was null")));
+    }
+    let slice = if len == 0 {
+        &[]
+    } else {
+        unsafe { std::slice::from_raw_parts(values, len) }
+    };
+    slice
+        .iter()
+        .map(|value| match *value {
+            0 => Ok(false),
+            1 => Ok(true),
+            other => Err(PhsError::invalid_argument(format!(
+                "{label} value must be 0 or 1, received {other}"
+            ))),
+        })
+        .collect()
+}
+
 fn usize_from_u64(value: u64, label: &str) -> PhsResult<usize> {
     usize::try_from(value)
         .map_err(|_| PhsError::invalid_argument(format!("{label} exceeded usize")))
+}
+
+fn idx_size_from_u64(value: u64, label: &str) -> PhsResult<IdxSize> {
+    value
+        .try_into()
+        .map_err(|_| PhsError::invalid_argument(format!("{label} exceeds Polars index size")))
+}
+
+fn validate_sort_bool_options(label: &str, column_count: usize, values: &[bool]) -> PhsResult<()> {
+    let option_count = values.len();
+    if option_count == 1 || option_count == column_count {
+        Ok(())
+    } else {
+        Err(PhsError::invalid_argument(format!(
+            "{label} must contain one value or one value per sort column"
+        )))
+    }
+}
+
+fn unique_keep_strategy_from_code(code: c_int) -> PhsResult<UniqueKeepStrategy> {
+    match code {
+        0 => Ok(UniqueKeepStrategy::First),
+        1 => Ok(UniqueKeepStrategy::Last),
+        2 => Ok(UniqueKeepStrategy::None),
+        3 => Ok(UniqueKeepStrategy::Any),
+        _ => Err(PhsError::invalid_argument(format!(
+            "unknown dataframe unique keep strategy code {code}"
+        ))),
+    }
 }
 
 unsafe fn csv_read_options(
@@ -510,6 +560,90 @@ pub unsafe extern "C" fn phs_dataframe_filter(
         let mask = unsafe { series_ref(mask) }?;
         let mask = mask.value.bool()?;
         *out = dataframe_into_raw(handle.value.filter(mask)?);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_sort(
+    dataframe: *const phs_dataframe,
+    names: *const *const c_char,
+    names_len: usize,
+    descending: *const u8,
+    descending_len: usize,
+    nulls_last: *const u8,
+    nulls_last_len: usize,
+    multithreaded: bool,
+    maintain_order: bool,
+    has_limit: bool,
+    limit: u64,
+    out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        let names = unsafe { name_vec(names, names_len, "names") }?;
+        if names.is_empty() {
+            return Err(PhsError::invalid_argument(
+                "dataframe sort requires at least one column name",
+            ));
+        }
+        let descending = unsafe { bool_vec(descending, descending_len, "descending") }?;
+        validate_sort_bool_options("descending", names.len(), &descending)?;
+        let nulls_last = unsafe { bool_vec(nulls_last, nulls_last_len, "nulls_last") }?;
+        validate_sort_bool_options("nulls_last", names.len(), &nulls_last)?;
+        let mut options = SortMultipleOptions::default()
+            .with_order_descending_multi(descending)
+            .with_nulls_last_multi(nulls_last)
+            .with_multithreaded(multithreaded)
+            .with_maintain_order(maintain_order);
+        if has_limit {
+            options.limit = Some(idx_size_from_u64(limit, "dataframe sort limit")?);
+        }
+        *out = dataframe_into_raw(handle.value.sort(names.iter().map(String::as_str), options)?);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_unique(
+    dataframe: *const phs_dataframe,
+    subset: *const *const c_char,
+    subset_len: usize,
+    has_subset: bool,
+    keep_strategy: c_int,
+    maintain_order: bool,
+    out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        let subset = if has_subset {
+            let names = unsafe { name_vec(subset, subset_len, "subset") }?;
+            if names.is_empty() {
+                return Err(PhsError::invalid_argument(
+                    "dataframe unique subset requires at least one column name",
+                ));
+            }
+            Some(names)
+        } else {
+            None
+        };
+        let keep_strategy = unique_keep_strategy_from_code(keep_strategy)?;
+        let output = if maintain_order {
+            handle
+                .value
+                .unique_stable(subset.as_deref(), keep_strategy, None)?
+        } else {
+            handle
+                .value
+                .unique::<String, String>(subset.as_deref(), keep_strategy, None)?
+        };
+        *out = dataframe_into_raw(output);
         Ok(())
     })
 }

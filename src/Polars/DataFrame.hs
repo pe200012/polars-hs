@@ -12,6 +12,9 @@ module Polars.DataFrame
     ( CsvReadOptions (..)
     , CsvWriteOptions (..)
     , DataFrame
+    , DataFrameSortOptions (..)
+    , DataFrameUniqueKeepStrategy (..)
+    , DataFrameUniqueOptions (..)
     , ParquetCompression (..)
     , ParquetParallelStrategy (..)
     , ParquetReadOptions (..)
@@ -26,10 +29,14 @@ module Polars.DataFrame
     , dataFrameReverse
     , dataFrameSelect
     , dataFrameSlice
+    , dataFrameSort
+    , dataFrameUnique
     , head
     , height
     , defaultCsvReadOptions
     , defaultCsvWriteOptions
+    , defaultDataFrameSortOptions
+    , defaultDataFrameUniqueOptions
     , defaultParquetReadOptions
     , defaultParquetStatisticsOptions
     , defaultParquetWriteOptions
@@ -55,7 +62,7 @@ import Data.Bits ((.|.), shiftL)
 import Data.Text (Text)
 import qualified Data.Text.Encoding as TE
 import Foreign.C.String (CString)
-import Data.Word (Word64)
+import Data.Word (Word8, Word64)
 import Foreign.C.Types (CBool (..), CInt, CSize, CUChar (..))
 import Foreign.Marshal.Alloc (alloca)
 import Foreign.Marshal.Array (withArray)
@@ -84,8 +91,10 @@ import Polars.Internal.Raw
     , phs_dataframe_select
     , phs_dataframe_shape
     , phs_dataframe_slice
+    , phs_dataframe_sort
     , phs_dataframe_tail
     , phs_dataframe_to_text
+    , phs_dataframe_unique
     , phs_dataframe_width
     , phs_read_csv_options
     , phs_read_parquet_options
@@ -111,6 +120,47 @@ import Polars.Schema (Field (..), dataTypeFromSchemaTag)
 
 schemaMagic :: BS.ByteString
 schemaMagic = "PHS1SCH\0"
+
+data DataFrameSortOptions = DataFrameSortOptions
+    { dataFrameSortDescending :: ![Bool]
+    , dataFrameSortNullsLast :: ![Bool]
+    , dataFrameSortMultithreaded :: !Bool
+    , dataFrameSortMaintainOrder :: !Bool
+    , dataFrameSortLimit :: !(Maybe Int)
+    }
+    deriving (Eq, Show)
+
+defaultDataFrameSortOptions :: DataFrameSortOptions
+defaultDataFrameSortOptions =
+    DataFrameSortOptions
+        { dataFrameSortDescending = [False]
+        , dataFrameSortNullsLast = [False]
+        , dataFrameSortMultithreaded = True
+        , dataFrameSortMaintainOrder = False
+        , dataFrameSortLimit = Nothing
+        }
+
+data DataFrameUniqueKeepStrategy
+    = DataFrameKeepFirst
+    | DataFrameKeepLast
+    | DataFrameKeepNone
+    | DataFrameKeepAny
+    deriving (Eq, Show)
+
+data DataFrameUniqueOptions = DataFrameUniqueOptions
+    { dataFrameUniqueSubset :: !(Maybe [Text])
+    , dataFrameUniqueKeepStrategy :: !DataFrameUniqueKeepStrategy
+    , dataFrameUniqueMaintainOrder :: !Bool
+    }
+    deriving (Eq, Show)
+
+defaultDataFrameUniqueOptions :: DataFrameUniqueOptions
+defaultDataFrameUniqueOptions =
+    DataFrameUniqueOptions
+        { dataFrameUniqueSubset = Nothing
+        , dataFrameUniqueKeepStrategy = DataFrameKeepAny
+        , dataFrameUniqueMaintainOrder = False
+        }
 
 readCsv :: FilePath -> IO (Either PolarsError DataFrame)
 readCsv = readCsvWith defaultCsvReadOptions
@@ -236,6 +286,45 @@ dataFrameSlice offset len df = case nonNegativeWord64 "dataFrameSlice length" le
     Right lenWord -> withDataFrame df $ \ptr ->
         dataframeOut (phs_dataframe_slice ptr (fromIntegral offset) lenWord)
 
+dataFrameSort :: DataFrameSortOptions -> [Text] -> DataFrame -> IO (Either PolarsError DataFrame)
+dataFrameSort options names df = case dataFrameSortValidatedOptions options names of
+    Left err -> pure (Left err)
+    Right (descending, nullsLast, hasLimit, limitValue) ->
+        withDataFrame df $ \dfPtr ->
+            withCStringList names $ \nameArray nameLen ->
+                withWord8List descending $ \descendingPtr descendingLen ->
+                    withWord8List nullsLast $ \nullsLastPtr nullsLastLen ->
+                        dataframeOut
+                            ( phs_dataframe_sort
+                                dfPtr
+                                nameArray
+                                nameLen
+                                descendingPtr
+                                descendingLen
+                                nullsLastPtr
+                                nullsLastLen
+                                (toCBool (dataFrameSortMultithreaded options))
+                                (toCBool (dataFrameSortMaintainOrder options))
+                                (toCBool hasLimit)
+                                limitValue
+                            )
+
+dataFrameUnique :: DataFrameUniqueOptions -> DataFrame -> IO (Either PolarsError DataFrame)
+dataFrameUnique options df = case dataFrameUniqueSubset options of
+    Just [] -> pure (Left (invalidArgument "dataFrameUnique subset requires at least one column name"))
+    subset ->
+        withDataFrame df $ \dfPtr ->
+            withMaybeCStringList subset $ \subsetArray subsetLen hasSubset ->
+                dataframeOut
+                    ( phs_dataframe_unique
+                        dfPtr
+                        subsetArray
+                        subsetLen
+                        (toCBool hasSubset)
+                        (dataFrameUniqueKeepStrategyCode (dataFrameUniqueKeepStrategy options))
+                        (toCBool (dataFrameUniqueMaintainOrder options))
+                    )
+
 dataFrameReverse :: DataFrame -> IO (Either PolarsError DataFrame)
 dataFrameReverse df = withDataFrame df $ \ptr -> dataframeOut (phs_dataframe_reverse ptr)
 
@@ -332,6 +421,9 @@ withCStringList values action = go values []
 withMaybeCStringList :: Maybe [Text] -> (Ptr CString -> CSize -> Bool -> IO a) -> IO a
 withMaybeCStringList Nothing action = action nullPtr 0 False
 withMaybeCStringList (Just values) action = withCStringList values $ \ptr len -> action ptr len True
+
+withWord8List :: [Word8] -> (Ptr Word8 -> CSize -> IO a) -> IO a
+withWord8List values action = withArray values $ \ptr -> action ptr (fromIntegral (length values))
 
 withRenamePairs :: [(Text, Text)] -> (Ptr CString -> Ptr CString -> CSize -> IO a) -> IO a
 withRenamePairs values action = go values [] []
@@ -466,6 +558,34 @@ parquetWriteWordOptions options = do
     (hasRowGroupSize, rowGroupSize) <- optionalNonNegativeWord64 "parquetWriteRowGroupSize" (parquetWriteRowGroupSize options)
     (hasDataPageSize, dataPageSize) <- optionalNonNegativeWord64 "parquetWriteDataPageSize" (parquetWriteDataPageSize options)
     Right (hasRowGroupSize, rowGroupSize, hasDataPageSize, dataPageSize)
+
+dataFrameSortValidatedOptions :: DataFrameSortOptions -> [Text] -> Either PolarsError ([Word8], [Word8], Bool, Word64)
+dataFrameSortValidatedOptions options names = do
+    let nameCount = length names
+    if nameCount == 0
+        then Left (invalidArgument "dataFrameSort requires at least one column name")
+        else Right ()
+    descending <- boolOptionWords "dataFrameSortDescending" nameCount (dataFrameSortDescending options)
+    nullsLast <- boolOptionWords "dataFrameSortNullsLast" nameCount (dataFrameSortNullsLast options)
+    (hasLimit, limitValue) <- optionalNonNegativeWord64 "dataFrameSort limit" (dataFrameSortLimit options)
+    Right (descending, nullsLast, hasLimit, limitValue)
+
+boolOptionWords :: Text -> Int -> [Bool] -> Either PolarsError [Word8]
+boolOptionWords label nameCount values
+    | optionCount == 1 || optionCount == nameCount = Right (map boolWord8 values)
+    | otherwise = Left (invalidArgument (label <> " must contain one value or one value per sort column"))
+  where
+    optionCount = length values
+
+boolWord8 :: Bool -> Word8
+boolWord8 False = 0
+boolWord8 True = 1
+
+dataFrameUniqueKeepStrategyCode :: DataFrameUniqueKeepStrategy -> CInt
+dataFrameUniqueKeepStrategyCode DataFrameKeepFirst = 0
+dataFrameUniqueKeepStrategyCode DataFrameKeepLast = 1
+dataFrameUniqueKeepStrategyCode DataFrameKeepNone = 2
+dataFrameUniqueKeepStrategyCode DataFrameKeepAny = 3
 
 invalidArgument :: Text -> PolarsError
 invalidArgument = PolarsError InvalidArgument
