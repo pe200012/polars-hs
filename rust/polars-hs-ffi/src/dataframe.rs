@@ -92,6 +92,30 @@ fn unique_keep_strategy_from_code(code: c_int) -> PhsResult<UniqueKeepStrategy> 
     }
 }
 
+fn fill_null_strategy_from_code(
+    code: c_int,
+    has_limit: bool,
+    limit: u64,
+) -> PhsResult<FillNullStrategy> {
+    let limit = if has_limit {
+        Some(idx_size_from_u64(limit, "fill null limit")?)
+    } else {
+        None
+    };
+    match code {
+        0 => Ok(FillNullStrategy::Forward(limit)),
+        1 => Ok(FillNullStrategy::Backward(limit)),
+        2 => Ok(FillNullStrategy::Mean),
+        3 => Ok(FillNullStrategy::Min),
+        4 => Ok(FillNullStrategy::Max),
+        5 => Ok(FillNullStrategy::Zero),
+        6 => Ok(FillNullStrategy::One),
+        _ => Err(PhsError::invalid_argument(format!(
+            "unknown fill null strategy code {code}"
+        ))),
+    }
+}
+
 unsafe fn csv_read_options(
     has_header: bool,
     separator: c_uchar,
@@ -560,6 +584,25 @@ pub unsafe extern "C" fn phs_dataframe_filter(
         let mask = unsafe { series_ref(mask) }?;
         let mask = mask.value.bool()?;
         *out = dataframe_into_raw(handle.value.filter(mask)?);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_fill_null(
+    dataframe: *const phs_dataframe,
+    strategy: c_int,
+    has_limit: bool,
+    limit: u64,
+    out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        let strategy = fill_null_strategy_from_code(strategy, has_limit, limit)?;
+        *out = dataframe_into_raw(handle.value.fill_null(strategy)?);
         Ok(())
     })
 }

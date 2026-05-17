@@ -184,6 +184,13 @@ int phs_dataframe_filter(const struct phs_dataframe *dataframe,
                          struct phs_dataframe **out,
                          struct phs_error **err);
 
+int phs_dataframe_fill_null(const struct phs_dataframe *dataframe,
+                            int strategy,
+                            bool has_limit,
+                            uint64_t limit,
+                            struct phs_dataframe **out,
+                            struct phs_error **err);
+
 int phs_dataframe_sort(const struct phs_dataframe *dataframe,
                        const char *const *names,
                        uintptr_t names_len,
@@ -801,6 +808,13 @@ int phs_series_filter(const struct phs_series *series,
                       const struct phs_series *mask,
                       struct phs_series **out,
                       struct phs_error **err);
+
+int phs_series_fill_null(const struct phs_series *series,
+                         int strategy,
+                         bool has_limit,
+                         uint64_t limit,
+                         struct phs_series **out,
+                         struct phs_error **err);
 
 int phs_series_to_frame(const struct phs_series *series,
                         struct phs_dataframe **out,

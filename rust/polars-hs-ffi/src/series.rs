@@ -159,6 +159,30 @@ fn idx_size_from_u64(value: u64, label: &str) -> PhsResult<IdxSize> {
         .map_err(|_| PhsError::invalid_argument(format!("{label} exceeds Polars index size")))
 }
 
+fn fill_null_strategy_from_code(
+    code: c_int,
+    has_limit: bool,
+    limit: u64,
+) -> PhsResult<FillNullStrategy> {
+    let limit = if has_limit {
+        Some(idx_size_from_u64(limit, "fill null limit")?)
+    } else {
+        None
+    };
+    match code {
+        0 => Ok(FillNullStrategy::Forward(limit)),
+        1 => Ok(FillNullStrategy::Backward(limit)),
+        2 => Ok(FillNullStrategy::Mean),
+        3 => Ok(FillNullStrategy::Min),
+        4 => Ok(FillNullStrategy::Max),
+        5 => Ok(FillNullStrategy::Zero),
+        6 => Ok(FillNullStrategy::One),
+        _ => Err(PhsError::invalid_argument(format!(
+            "unknown fill null strategy code {code}"
+        ))),
+    }
+}
+
 fn usize_from_u64(value: u64, label: &str) -> PhsResult<usize> {
     value
         .try_into()
@@ -596,6 +620,21 @@ pub unsafe extern "C" fn phs_series_filter(
         let mask = mask.value.bool()?;
         *out = series_into_raw(series.value.filter(mask)?);
         Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_fill_null(
+    series: *const phs_series,
+    strategy: c_int,
+    has_limit: bool,
+    limit: u64,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, move |value| {
+        let strategy = fill_null_strategy_from_code(strategy, has_limit, limit)?;
+        Ok(value.fill_null(strategy)?)
     })
 }
 

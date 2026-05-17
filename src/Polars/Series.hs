@@ -13,6 +13,7 @@ conversion to a one-column DataFrame, transforms, and typed value extraction wit
 -}
 module Polars.Series
     ( Series
+    , FillNullStrategy (..)
     , SeriesCast (..)
     , SeriesFrom (..)
     , SeriesSortOptions (..)
@@ -29,6 +30,7 @@ module Polars.Series
     , seriesInt32
     , seriesInt64
     , seriesFilter
+    , seriesFillNull
     , seriesIsNotNull
     , seriesIsNull
     , seriesLength
@@ -60,7 +62,7 @@ import Foreign.C.String (CString)
 import Foreign.C.Types (CBool (..), CInt, CSize)
 import Foreign.Ptr (Ptr, castPtr)
 
-import Polars.DataFrame (DataFrame)
+import Polars.DataFrame (DataFrame, FillNullStrategy (..))
 import Polars.Error (PolarsError (..), PolarsErrorCode (InvalidArgument))
 import Polars.Internal.ColumnEncode
     ( encodeBoolColumn
@@ -101,6 +103,7 @@ import Polars.Internal.Raw
     , phs_series_drop_nulls
     , phs_series_dtype
     , phs_series_filter
+    , phs_series_fill_null
     , phs_series_head
     , phs_series_is_not_null
     , phs_series_is_null
@@ -313,6 +316,19 @@ seriesFilter mask input =
         withSeries mask $ \maskPtr ->
             seriesOut (phs_series_filter seriesPtr maskPtr)
 
+seriesFillNull :: FillNullStrategy -> Series -> IO (Either PolarsError Series)
+seriesFillNull strategy input = case fillNullStrategyCode strategy of
+    Left err -> pure (Left err)
+    Right (strategyCode, hasLimit, limitValue) ->
+        withSeries input $ \ptr ->
+            seriesOut
+                ( phs_series_fill_null
+                    ptr
+                    strategyCode
+                    (toCBool hasLimit)
+                    limitValue
+                )
+
 seriesShift :: Int -> Series -> IO (Either PolarsError Series)
 seriesShift periods input = withSeries input $ \ptr ->
     seriesOut (phs_series_shift ptr (fromIntegral periods))
@@ -378,6 +394,21 @@ sortLimitWord64 Nothing = Right (False, 0)
 sortLimitWord64 (Just value)
     | value < 0 = Left (invalidArgument "series sort limit must be non-negative")
     | otherwise = Right (True, fromIntegral value)
+
+fillNullStrategyCode :: FillNullStrategy -> Either PolarsError (CInt, Bool, Word64)
+fillNullStrategyCode (FillForward limit) = fillNullLimitedStrategy 0 limit
+fillNullStrategyCode (FillBackward limit) = fillNullLimitedStrategy 1 limit
+fillNullStrategyCode FillMean = Right (2, False, 0)
+fillNullStrategyCode FillMin = Right (3, False, 0)
+fillNullStrategyCode FillMax = Right (4, False, 0)
+fillNullStrategyCode FillZero = Right (5, False, 0)
+fillNullStrategyCode FillOne = Right (6, False, 0)
+
+fillNullLimitedStrategy :: CInt -> Maybe Int -> Either PolarsError (CInt, Bool, Word64)
+fillNullLimitedStrategy strategy Nothing = Right (strategy, False, 0)
+fillNullLimitedStrategy strategy (Just value)
+    | value < 0 = Left (invalidArgument "fill null limit must be non-negative")
+    | otherwise = Right (strategy, True, fromIntegral value)
 
 invalidArgument :: Text -> PolarsError
 invalidArgument = PolarsError InvalidArgument

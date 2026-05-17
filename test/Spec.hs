@@ -611,6 +611,33 @@ main = hspec $ do
                             df
                     expectInvalidArgumentMessage "dataFrameUnique subset requires at least one column name" uniqueResult
 
+        it "fills eager DataFrame nulls with forward strategy" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    filled <- Pl.dataFrameFillNull (Pl.FillForward Nothing) df
+                    case filled of
+                        Left err -> expectationFailure (show err)
+                        Right filledDf -> do
+                            Pl.column @Int64 filledDf "age" `shouldReturn` Right (V.fromList [Just 34, Just 34, Just 29])
+                            scoreResult <- Pl.column @Double filledDf "score"
+                            case scoreResult of
+                                Left err -> expectationFailure (show err)
+                                Right scores -> shouldApproximate 1.0e-12 (V.fromList [Just 9.5, Just 8.25, Just 8.25]) scores
+                            Pl.column @Bool filledDf "active" `shouldReturn` Right (V.fromList [Just True, Just False, Just False])
+
+        it "reports InvalidArgument for invalid eager DataFrame fill-null limits" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    negative <- Pl.dataFrameFillNull (Pl.FillForward (Just (-1))) df
+                    let overflowingLimit = fromIntegral (maxBound :: Word32) + 1
+                    overflow <- Pl.dataFrameFillNull (Pl.FillBackward (Just overflowingLimit)) df
+                    expectInvalidArgumentMessage "fill null limit must be non-negative" negative
+                    expectInvalidArgumentMessage "fill null limit exceeds Polars index size" overflow
+
         it "filters eager DataFrames with boolean Series masks" $ do
             result <- Pl.readCsv valuesCsv
             case result of
@@ -1334,6 +1361,42 @@ main = hspec $ do
                         Left err -> expectationFailure (show err)
                 (Left err, _) -> expectationFailure (show err)
                 (_, Left err) -> expectationFailure (show err)
+
+        it "fills Series nulls with strategies" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    ageResult <- Pl.column @Pl.Series df "age"
+                    case ageResult of
+                        Left err -> expectationFailure (show err)
+                        Right age -> do
+                            forward <- Pl.seriesFillNull (Pl.FillForward Nothing) age
+                            backward <- Pl.seriesFillNull (Pl.FillBackward Nothing) age
+                            zero <- Pl.seriesFillNull Pl.FillZero age
+                            case (forward, backward, zero) of
+                                (Right forwardAge, Right backwardAge, Right zeroAge) -> do
+                                    Pl.seriesInt64 forwardAge `shouldReturn` Right (V.fromList [Just 34, Just 34, Just 29])
+                                    Pl.seriesInt64 backwardAge `shouldReturn` Right (V.fromList [Just 34, Just 29, Just 29])
+                                    Pl.seriesInt64 zeroAge `shouldReturn` Right (V.fromList [Just 34, Just 0, Just 29])
+                                (Left err, _, _) -> expectationFailure (show err)
+                                (_, Left err, _) -> expectationFailure (show err)
+                                (_, _, Left err) -> expectationFailure (show err)
+
+        it "reports InvalidArgument for invalid Series fill-null limits" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    ageResult <- Pl.column @Pl.Series df "age"
+                    case ageResult of
+                        Left err -> expectationFailure (show err)
+                        Right age -> do
+                            negative <- Pl.seriesFillNull (Pl.FillForward (Just (-1))) age
+                            let overflowingLimit = fromIntegral (maxBound :: Word32) + 1
+                            overflow <- Pl.seriesFillNull (Pl.FillBackward (Just overflowingLimit)) age
+                            expectInvalidArgumentMessage "fill null limit must be non-negative" negative
+                            expectInvalidArgumentMessage "fill null limit exceeds Polars index size" overflow
 
         it "reports InvalidArgument for negative Series slices" $ do
             result <- Pl.readCsv valuesCsv

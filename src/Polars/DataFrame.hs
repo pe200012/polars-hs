@@ -15,6 +15,7 @@ module Polars.DataFrame
     , DataFrameSortOptions (..)
     , DataFrameUniqueKeepStrategy (..)
     , DataFrameUniqueOptions (..)
+    , FillNullStrategy (..)
     , ParquetCompression (..)
     , ParquetParallelStrategy (..)
     , ParquetReadOptions (..)
@@ -24,6 +25,7 @@ module Polars.DataFrame
     , dataFrameDropColumns
     , dataFrameDropNulls
     , dataFrameFilter
+    , dataFrameFillNull
     , dataFrameNullCount
     , dataFrameRename
     , dataFrameReverse
@@ -81,6 +83,7 @@ import Polars.Internal.Raw
     , phs_dataframe_drop
     , phs_dataframe_drop_nulls
     , phs_dataframe_filter
+    , phs_dataframe_fill_null
     , phs_dataframe_head
     , phs_dataframe_new
     , phs_dataframe_height
@@ -161,6 +164,16 @@ defaultDataFrameUniqueOptions =
         , dataFrameUniqueKeepStrategy = DataFrameKeepAny
         , dataFrameUniqueMaintainOrder = False
         }
+
+data FillNullStrategy
+    = FillForward !(Maybe Int)
+    | FillBackward !(Maybe Int)
+    | FillMean
+    | FillMin
+    | FillMax
+    | FillZero
+    | FillOne
+    deriving (Eq, Show)
 
 readCsv :: FilePath -> IO (Either PolarsError DataFrame)
 readCsv = readCsvWith defaultCsvReadOptions
@@ -324,6 +337,19 @@ dataFrameUnique options df = case dataFrameUniqueSubset options of
                         (dataFrameUniqueKeepStrategyCode (dataFrameUniqueKeepStrategy options))
                         (toCBool (dataFrameUniqueMaintainOrder options))
                     )
+
+dataFrameFillNull :: FillNullStrategy -> DataFrame -> IO (Either PolarsError DataFrame)
+dataFrameFillNull strategy df = case fillNullStrategyCode strategy of
+    Left err -> pure (Left err)
+    Right (strategyCode, hasLimit, limitValue) ->
+        withDataFrame df $ \ptr ->
+            dataframeOut
+                ( phs_dataframe_fill_null
+                    ptr
+                    strategyCode
+                    (toCBool hasLimit)
+                    limitValue
+                )
 
 dataFrameReverse :: DataFrame -> IO (Either PolarsError DataFrame)
 dataFrameReverse df = withDataFrame df $ \ptr -> dataframeOut (phs_dataframe_reverse ptr)
@@ -586,6 +612,20 @@ dataFrameUniqueKeepStrategyCode DataFrameKeepFirst = 0
 dataFrameUniqueKeepStrategyCode DataFrameKeepLast = 1
 dataFrameUniqueKeepStrategyCode DataFrameKeepNone = 2
 dataFrameUniqueKeepStrategyCode DataFrameKeepAny = 3
+
+fillNullStrategyCode :: FillNullStrategy -> Either PolarsError (CInt, Bool, Word64)
+fillNullStrategyCode (FillForward limit) = fillNullLimitedStrategy 0 limit
+fillNullStrategyCode (FillBackward limit) = fillNullLimitedStrategy 1 limit
+fillNullStrategyCode FillMean = Right (2, False, 0)
+fillNullStrategyCode FillMin = Right (3, False, 0)
+fillNullStrategyCode FillMax = Right (4, False, 0)
+fillNullStrategyCode FillZero = Right (5, False, 0)
+fillNullStrategyCode FillOne = Right (6, False, 0)
+
+fillNullLimitedStrategy :: CInt -> Maybe Int -> Either PolarsError (CInt, Bool, Word64)
+fillNullLimitedStrategy strategy limit = do
+    (hasLimit, limitValue) <- optionalNonNegativeWord64 "fill null limit" limit
+    Right (strategy, hasLimit, limitValue)
 
 invalidArgument :: Text -> PolarsError
 invalidArgument = PolarsError InvalidArgument

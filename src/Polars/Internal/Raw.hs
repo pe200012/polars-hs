@@ -30,6 +30,7 @@ module Polars.Internal.Raw
     , phs_dataframe_drop
     , phs_dataframe_drop_nulls
     , phs_dataframe_filter
+    , phs_dataframe_fill_null
     , phs_dataframe_from_arrow_record_batch
     , phs_dataframe_to_arrow_record_batch
     , phs_dataframe_new
@@ -133,6 +134,7 @@ module Polars.Internal.Raw
     , phs_series_drop_nulls
     , phs_series_dtype
     , phs_series_filter
+    , phs_series_fill_null
     , phs_series_free_finalizer
     , phs_series_head
     , phs_series_is_not_null
@@ -335,6 +337,9 @@ foreign import ccall unsafe "phs_dataframe_slice"
 
 foreign import ccall unsafe "phs_dataframe_filter"
     phs_dataframe_filter :: Ptr RawDataFrame -> Ptr RawSeries -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_dataframe_fill_null"
+    phs_dataframe_fill_null :: Ptr RawDataFrame -> CInt -> CBool -> Word64 -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_dataframe_sort"
     phs_dataframe_sort ::
@@ -670,6 +675,9 @@ foreign import ccall unsafe "phs_series_is_not_null"
 
 foreign import ccall unsafe "phs_series_filter"
     phs_series_filter :: Ptr RawSeries -> Ptr RawSeries -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_series_fill_null"
+    phs_series_fill_null :: Ptr RawSeries -> CInt -> CBool -> Word64 -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_series_to_frame"
     phs_series_to_frame :: Ptr RawSeries -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
