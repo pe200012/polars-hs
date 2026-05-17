@@ -1793,6 +1793,68 @@ main = hspec $ do
                     expectPolarsFailure isFiniteResult
                     expectPolarsFailure isInfiniteResult
 
+        it "computes Series distinct predicates" $ do
+            seriesResult <- Pl.series @T.Text "value" (V.fromList [Just "a", Just "b", Just "a", Nothing, Nothing, Just "c"])
+            case seriesResult of
+                Left err -> expectationFailure (show err)
+                Right values -> do
+                    duplicatedResult <- Pl.seriesIsDuplicated values
+                    uniqueResult <- Pl.seriesIsUnique values
+                    firstResult <- Pl.seriesIsFirstDistinct values
+                    lastResult <- Pl.seriesIsLastDistinct values
+                    case (duplicatedResult, uniqueResult, firstResult, lastResult) of
+                        (Right duplicated, Right unique, Right firstDistinct, Right lastDistinct) -> do
+                            Pl.seriesBool duplicated
+                                `shouldReturn` Right (V.fromList [Just True, Just False, Just True, Just True, Just True, Just False])
+                            Pl.seriesBool unique
+                                `shouldReturn` Right (V.fromList [Just False, Just True, Just False, Just False, Just False, Just True])
+                            Pl.seriesBool firstDistinct
+                                `shouldReturn` Right (V.fromList [Just True, Just True, Just False, Just True, Just False, Just True])
+                            Pl.seriesBool lastDistinct
+                                `shouldReturn` Right (V.fromList [Just False, Just True, Just True, Just False, Just True, Just True])
+                        (Left err, _, _, _) -> expectationFailure (show err)
+                        (_, Left err, _, _) -> expectationFailure (show err)
+                        (_, _, Left err, _) -> expectationFailure (show err)
+                        (_, _, _, Left err) -> expectationFailure (show err)
+
+        it "computes Series distinct predicates for numeric and edge inputs" $ do
+            numericResult <- Pl.series @Int64 "number" (V.fromList [Just 1, Just 1, Just 2, Nothing])
+            boolResult <- Pl.series @Bool "flag" (V.fromList [Just True, Just False, Just True])
+            emptyResult <- Pl.series @Int64 "empty" V.empty
+            singletonResult <- Pl.series @Bool "single" (V.singleton (Just True))
+            case (numericResult, boolResult, emptyResult, singletonResult) of
+                (Right numbers, Right flags, Right empty, Right singleton) -> do
+                    duplicatedNumbers <- Pl.seriesIsDuplicated numbers
+                    uniqueNumbers <- Pl.seriesIsUnique numbers
+                    firstNumbers <- Pl.seriesIsFirstDistinct numbers
+                    lastNumbers <- Pl.seriesIsLastDistinct numbers
+                    case (duplicatedNumbers, uniqueNumbers, firstNumbers, lastNumbers) of
+                        (Right duplicated, Right unique, Right firstDistinct, Right lastDistinct) -> do
+                            Pl.seriesBool duplicated `shouldReturn` Right (V.fromList [Just True, Just True, Just False, Just False])
+                            Pl.seriesBool unique `shouldReturn` Right (V.fromList [Just False, Just False, Just True, Just True])
+                            Pl.seriesBool firstDistinct `shouldReturn` Right (V.fromList [Just True, Just False, Just True, Just True])
+                            Pl.seriesBool lastDistinct `shouldReturn` Right (V.fromList [Just False, Just True, Just True, Just True])
+                        (Left err, _, _, _) -> expectationFailure (show err)
+                        (_, Left err, _, _) -> expectationFailure (show err)
+                        (_, _, Left err, _) -> expectationFailure (show err)
+                        (_, _, _, Left err) -> expectationFailure (show err)
+
+                    duplicatedFlags <- Pl.seriesIsDuplicated flags
+                    firstEmpty <- Pl.seriesIsFirstDistinct empty
+                    lastSingleton <- Pl.seriesIsLastDistinct singleton
+                    case (duplicatedFlags, firstEmpty, lastSingleton) of
+                        (Right duplicated, Right emptyMask, Right singletonMask) -> do
+                            Pl.seriesBool duplicated `shouldReturn` Right (V.fromList [Just True, Just False, Just True])
+                            Pl.seriesBool emptyMask `shouldReturn` Right V.empty
+                            Pl.seriesBool singletonMask `shouldReturn` Right (V.singleton (Just True))
+                        (Left err, _, _) -> expectationFailure (show err)
+                        (_, Left err, _) -> expectationFailure (show err)
+                        (_, _, Left err) -> expectationFailure (show err)
+                (Left err, _, _, _) -> expectationFailure (show err)
+                (_, Left err, _, _) -> expectationFailure (show err)
+                (_, _, Left err, _) -> expectationFailure (show err)
+                (_, _, _, Left err) -> expectationFailure (show err)
+
         it "fills Series nulls with strategies" $ do
             result <- Pl.readCsv valuesCsv
             case result of

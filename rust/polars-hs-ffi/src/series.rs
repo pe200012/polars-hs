@@ -2,6 +2,12 @@ use std::os::raw::{c_char, c_int};
 use std::ptr;
 
 use polars::prelude::*;
+use polars_ops::series::{
+    is_duplicated as polars_series_is_duplicated,
+    is_first_distinct as polars_series_is_first_distinct,
+    is_last_distinct as polars_series_is_last_distinct,
+    is_unique as polars_series_is_unique,
+};
 
 use crate::bytes::{bytes_into_raw, phs_bytes};
 use crate::error::{PhsError, PhsResult, c_str_to_str, ffi_boundary, phs_error, required_mut};
@@ -701,6 +707,50 @@ pub unsafe extern "C" fn phs_series_is_infinite(
     err: *mut *mut phs_error,
 ) -> c_int {
     series_transform(series, out, err, |value| Ok(value.is_infinite()?.into_series()))
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_is_duplicated(
+    series: *const phs_series,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| {
+        Ok(polars_series_is_duplicated(value)?.into_series())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_is_unique(
+    series: *const phs_series,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| {
+        Ok(polars_series_is_unique(value)?.into_series())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_is_first_distinct(
+    series: *const phs_series,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| {
+        Ok(polars_series_is_first_distinct(value)?.into_series())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_series_is_last_distinct(
+    series: *const phs_series,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    series_transform(series, out, err, |value| {
+        Ok(polars_series_is_last_distinct(value)?.into_series())
+    })
 }
 
 #[unsafe(no_mangle)]
@@ -1544,6 +1594,112 @@ mod tests {
         }
 
         unsafe { phs_series_free(series) };
+    }
+
+    #[test]
+    fn series_distinct_predicates_return_boolean_masks() {
+        let series = series_into_raw(Series::new(
+            "value".into(),
+            &[Some("a"), Some("b"), Some("a"), None, None, Some("c")],
+        ));
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_series_is_duplicated(series, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_bool_values(out) },
+            vec![Some(true), Some(false), Some(true), Some(true), Some(true), Some(false)]
+        );
+
+        let status = unsafe { phs_series_is_unique(series, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_bool_values(out) },
+            vec![Some(false), Some(true), Some(false), Some(false), Some(false), Some(true)]
+        );
+
+        let status = unsafe { phs_series_is_first_distinct(series, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_bool_values(out) },
+            vec![Some(true), Some(true), Some(false), Some(true), Some(false), Some(true)]
+        );
+
+        let status = unsafe { phs_series_is_last_distinct(series, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_bool_values(out) },
+            vec![Some(false), Some(true), Some(true), Some(false), Some(true), Some(true)]
+        );
+
+        assert!(err.is_null());
+        unsafe { phs_series_free(series) };
+    }
+
+    #[test]
+    fn series_distinct_predicates_handle_numeric_and_edge_inputs() {
+        let numbers = series_into_raw(Series::new(
+            "number".into(),
+            &[Some(1_i64), Some(1), Some(2), None],
+        ));
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_series_is_duplicated(numbers, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_bool_values(out) },
+            vec![Some(true), Some(true), Some(false), Some(false)]
+        );
+
+        let status = unsafe { phs_series_is_unique(numbers, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_bool_values(out) },
+            vec![Some(false), Some(false), Some(true), Some(true)]
+        );
+
+        let status = unsafe { phs_series_is_first_distinct(numbers, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_bool_values(out) },
+            vec![Some(true), Some(false), Some(true), Some(true)]
+        );
+
+        let status = unsafe { phs_series_is_last_distinct(numbers, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_bool_values(out) },
+            vec![Some(false), Some(true), Some(true), Some(true)]
+        );
+
+        let flags = series_into_raw(Series::new("flag".into(), &[true, false, true]));
+        let status = unsafe { phs_series_is_duplicated(flags, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(
+            unsafe { take_bool_values(out) },
+            vec![Some(true), Some(false), Some(true)]
+        );
+
+        let empty_values: Vec<Option<i64>> = Vec::new();
+        let empty = series_into_raw(Series::new("empty".into(), empty_values));
+        let status = unsafe { phs_series_is_first_distinct(empty, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_bool_values(out) }, Vec::<Option<bool>>::new());
+
+        let singleton = series_into_raw(Series::new("single".into(), &[true]));
+        let status = unsafe { phs_series_is_last_distinct(singleton, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { take_bool_values(out) }, vec![Some(true)]);
+
+        assert!(err.is_null());
+        unsafe {
+            phs_series_free(numbers);
+            phs_series_free(flags);
+            phs_series_free(empty);
+            phs_series_free(singleton);
+        }
     }
 
     #[test]

@@ -31,14 +31,18 @@ module Polars.Series
     , seriesInt16
     , seriesInt32
     , seriesInt64
+    , seriesIsDuplicated
     , seriesIsFinite
+    , seriesIsFirstDistinct
     , seriesIsInfinite
+    , seriesIsLastDistinct
     , seriesIsNan
     , seriesIsNotNan
     , seriesFilter
     , seriesFillNull
     , seriesIsNotNull
     , seriesIsNull
+    , seriesIsUnique
     , seriesLength
     , seriesMax
     , seriesMean
@@ -124,12 +128,16 @@ import Polars.Internal.Raw
     , phs_series_filter
     , phs_series_fill_null
     , phs_series_head
+    , phs_series_is_duplicated
     , phs_series_is_finite
+    , phs_series_is_first_distinct
     , phs_series_is_infinite
+    , phs_series_is_last_distinct
     , phs_series_is_nan
     , phs_series_is_not_nan
     , phs_series_is_not_null
     , phs_series_is_null
+    , phs_series_is_unique
     , phs_series_len
     , phs_series_name
     , phs_series_new_bool
@@ -346,6 +354,18 @@ seriesIsFinite input = seriesUnaryOut input phs_series_is_finite
 
 seriesIsInfinite :: Series -> IO (Either PolarsError Series)
 seriesIsInfinite input = seriesUnaryOut input phs_series_is_infinite
+
+seriesIsDuplicated :: Series -> IO (Either PolarsError Series)
+seriesIsDuplicated input = seriesUnaryOut input phs_series_is_duplicated
+
+seriesIsUnique :: Series -> IO (Either PolarsError Series)
+seriesIsUnique input = seriesUnaryOut input phs_series_is_unique
+
+seriesIsFirstDistinct :: Series -> IO (Either PolarsError Series)
+seriesIsFirstDistinct input = seriesUnaryOut input phs_series_is_first_distinct
+
+seriesIsLastDistinct :: Series -> IO (Either PolarsError Series)
+seriesIsLastDistinct input = seriesUnaryOut input phs_series_is_last_distinct
 
 seriesFilter :: Series -> Series -> IO (Either PolarsError Series)
 seriesFilter mask input =

@@ -854,6 +854,22 @@ int phs_series_is_infinite(const struct phs_series *series,
                            struct phs_series **out,
                            struct phs_error **err);
 
+int phs_series_is_duplicated(const struct phs_series *series,
+                             struct phs_series **out,
+                             struct phs_error **err);
+
+int phs_series_is_unique(const struct phs_series *series,
+                         struct phs_series **out,
+                         struct phs_error **err);
+
+int phs_series_is_first_distinct(const struct phs_series *series,
+                                 struct phs_series **out,
+                                 struct phs_error **err);
+
+int phs_series_is_last_distinct(const struct phs_series *series,
+                                struct phs_series **out,
+                                struct phs_error **err);
+
 int phs_series_filter(const struct phs_series *series,
                       const struct phs_series *mask,
                       struct phs_series **out,
