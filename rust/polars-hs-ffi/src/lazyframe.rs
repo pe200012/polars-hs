@@ -124,6 +124,21 @@ unsafe fn lazyframe_plans_and_opt_state(
     Ok((plans, opt_state))
 }
 
+unsafe fn lazyframe_values(lazyframes: *const *const phs_lazyframe, len: usize) -> PhsResult<Vec<LazyFrame>> {
+    if lazyframes.is_null() && len > 0 {
+        return Err(PhsError::invalid_argument("lazyframes pointer was null"));
+    }
+    let slice = if len == 0 {
+        &[]
+    } else {
+        unsafe { std::slice::from_raw_parts(lazyframes, len) }
+    };
+    slice
+        .iter()
+        .map(|lazyframe| unsafe { lazyframe_ref(*lazyframe) }.map(|handle| handle.value.clone()))
+        .collect()
+}
+
 fn validate_sort_bool_options(label: &str, expr_count: usize, values: &[bool]) -> PhsResult<()> {
     let option_count = values.len();
     if option_count == 1 || option_count == expr_count {
@@ -750,6 +765,24 @@ pub unsafe extern "C" fn phs_lazyframe_with_columns_seq(
         let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
         let exprs = unsafe { expr_vec(exprs, len) }?;
         *out = lazyframe_into_raw(lf.with_columns_seq(exprs));
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_with_context(
+    lazyframe: *const phs_lazyframe,
+    contexts: *const *const phs_lazyframe,
+    len: usize,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        let contexts = unsafe { lazyframe_values(contexts, len) }?;
+        *out = lazyframe_into_raw(lf.with_context(contexts));
         Ok(())
     })
 }
@@ -2126,6 +2159,108 @@ mod tests {
             crate::handles::phs_lazyframe_free(selected);
             crate::handles::phs_lazyframe_free(with_one);
             crate::handles::phs_lazyframe_free(with_many);
+        }
+    }
+
+    #[test]
+    fn lazy_with_context_allows_external_columns() {
+        let lf0 = projection_lazyframe();
+        let employees_path = employees_fixture_path();
+        let mut context_lf = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(unsafe { phs_scan_csv(employees_path.as_ptr(), &mut context_lf, &mut err) }, PHS_OK);
+
+        let age = std::ffi::CString::new("age").unwrap();
+        let salary = std::ffi::CString::new("salary").unwrap();
+        let age_plus_salary = std::ffi::CString::new("age_plus_salary").unwrap();
+        let mut age_expr = ptr::null_mut();
+        let mut salary_expr = ptr::null_mut();
+        let mut salary_first = ptr::null_mut();
+        let mut age_sum = ptr::null_mut();
+        let mut age_alias = ptr::null_mut();
+        assert_eq!(unsafe { crate::expr::phs_expr_col(age.as_ptr(), &mut age_expr, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::expr::phs_expr_col(salary.as_ptr(), &mut salary_expr, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::expr::phs_expr_agg(6, salary_expr, &mut salary_first, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::expr::phs_expr_binary(8, age_expr, salary_first, &mut age_sum, &mut err) }, PHS_OK);
+        assert_eq!(
+            unsafe { crate::expr::phs_expr_alias(age_sum, age_plus_salary.as_ptr(), &mut age_alias, &mut err) },
+            PHS_OK
+        );
+
+        let contexts = [context_lf as *const phs_lazyframe];
+        let mut contextual = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_lazyframe_with_context(lf0, contexts.as_ptr(), contexts.len(), &mut contextual, &mut err) },
+            PHS_OK
+        );
+
+        let exprs = [age_alias as *const phs_expr];
+        let mut selected = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_lazyframe_select(contextual, exprs.as_ptr(), exprs.len(), &mut selected, &mut err) },
+            PHS_OK
+        );
+        let mut df = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_collect(selected, &mut df, &mut err) }, PHS_OK);
+        let values: Vec<Option<i64>> = unsafe { crate::handles::dataframe_ref(df) }
+            .unwrap()
+            .value
+            .column("age_plus_salary")
+            .unwrap()
+            .as_materialized_series()
+            .i64()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(values, vec![Some(134), None, Some(129)]);
+        unsafe { crate::handles::phs_dataframe_free(df) };
+
+        let mut empty_context = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_lazyframe_with_context(lf0, ptr::null(), 0, &mut empty_context, &mut err) },
+            PHS_OK
+        );
+        df = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_collect(empty_context, &mut df, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::handles::dataframe_ref(df) }.unwrap().value.shape(), (3, 3));
+        unsafe { crate::handles::phs_dataframe_free(df) };
+
+        let mut invalid = ptr::null_mut();
+        let status = unsafe { phs_lazyframe_with_context(lf0, ptr::null(), 1, &mut invalid, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "lazyframes pointer was null");
+        err = ptr::null_mut();
+
+        let null_contexts = [ptr::null()];
+        let status = unsafe { phs_lazyframe_with_context(lf0, null_contexts.as_ptr(), null_contexts.len(), &mut invalid, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "lazyframe pointer was null");
+        err = ptr::null_mut();
+
+        let status = unsafe { phs_lazyframe_with_context(ptr::null(), contexts.as_ptr(), contexts.len(), &mut invalid, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "lazyframe pointer was null");
+        err = ptr::null_mut();
+
+        let status = unsafe { phs_lazyframe_with_context(lf0, contexts.as_ptr(), contexts.len(), ptr::null_mut(), &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "out pointer was null");
+
+        unsafe {
+            crate::handles::phs_expr_free(age_expr);
+            crate::handles::phs_expr_free(salary_expr);
+            crate::handles::phs_expr_free(salary_first);
+            crate::handles::phs_expr_free(age_sum);
+            crate::handles::phs_expr_free(age_alias);
+            crate::handles::phs_lazyframe_free(lf0);
+            crate::handles::phs_lazyframe_free(context_lf);
+            crate::handles::phs_lazyframe_free(contextual);
+            crate::handles::phs_lazyframe_free(selected);
+            crate::handles::phs_lazyframe_free(empty_context);
         }
     }
 

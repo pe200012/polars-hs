@@ -2184,6 +2184,37 @@ main = hspec $ do
                         (_, Left err, _) -> expectationFailure (show err)
                         (_, _, Left err) -> expectationFailure (show err)
 
+        it "adds external lazy context columns" $ do
+            valuesResult <- Pl.scanCsv valuesCsv
+            employeesResult <- Pl.scanCsv employeesCsv
+            case (valuesResult, employeesResult) of
+                (Right valuesLf, Right employeesLf) -> do
+                    contextual <- Pl.withContext [employeesLf] valuesLf
+                    emptyContext <- Pl.withContext [] valuesLf
+                    case (contextual, emptyContext) of
+                        (Right contextualLf, Right emptyContextLf) -> do
+                            selected <-
+                                Pl.select
+                                    [ Pl.alias "age_plus_salary" (Pl.col "age" Pl..+ Pl.first_ (Pl.col "salary"))
+                                    ]
+                                    contextualLf
+                            emptyDf <- Pl.collect emptyContextLf
+                            case (selected, emptyDf) of
+                                (Right selectedLf, Right emptyCollected) -> do
+                                    selectedDf <- Pl.collect selectedLf
+                                    case selectedDf of
+                                        Left err -> expectationFailure (show err)
+                                        Right df -> do
+                                            Pl.column @Int64 df "age_plus_salary"
+                                                `shouldReturn` Right (V.fromList [Just 134, Nothing, Just 129])
+                                            Pl.shape emptyCollected `shouldReturn` Right (3, 4)
+                                (Left err, _) -> expectationFailure (show err)
+                                (_, Left err) -> expectationFailure (show err)
+                        (Left err, _) -> expectationFailure (show err)
+                        (_, Left err) -> expectationFailure (show err)
+                (Left err, _) -> expectationFailure (show err)
+                (_, Left err) -> expectationFailure (show err)
+
         it "slices lazy rows and takes lazy head and tail" $ do
             scanResult <- Pl.scanCsv valuesCsv
             case scanResult of

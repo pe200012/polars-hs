@@ -888,6 +888,12 @@ int phs_lazyframe_with_columns_seq(const struct phs_lazyframe *lazyframe,
                                    struct phs_lazyframe **out,
                                    struct phs_error **err);
 
+int phs_lazyframe_with_context(const struct phs_lazyframe *lazyframe,
+                               const struct phs_lazyframe *const *contexts,
+                               uintptr_t len,
+                               struct phs_lazyframe **out,
+                               struct phs_error **err);
+
 int phs_lazyframe_with_row_index(const struct phs_lazyframe *lazyframe,
                                  const char *name,
                                  bool has_offset,

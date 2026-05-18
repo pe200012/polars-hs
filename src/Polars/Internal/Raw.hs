@@ -183,6 +183,7 @@ module Polars.Internal.Raw
     , phs_lazyframe_with_column
     , phs_lazyframe_with_columns
     , phs_lazyframe_with_columns_seq
+    , phs_lazyframe_with_context
     , phs_lazyframe_with_row_index
     , phs_lazyframe_without_optimizations
     , phs_read_csv
@@ -815,6 +816,9 @@ foreign import ccall unsafe "phs_lazyframe_with_column"
 
 foreign import ccall unsafe "phs_lazyframe_with_columns_seq"
     phs_lazyframe_with_columns_seq :: Ptr RawLazyFrame -> Ptr (Ptr RawExpr) -> CSize -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_lazyframe_with_context"
+    phs_lazyframe_with_context :: Ptr RawLazyFrame -> Ptr (Ptr RawLazyFrame) -> CSize -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_lazyframe_with_row_index"
     phs_lazyframe_with_row_index :: Ptr RawLazyFrame -> CString -> CBool -> Word64 -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt

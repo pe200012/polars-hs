@@ -83,6 +83,7 @@ module Polars.LazyFrame
     , withColumn
     , withColumns
     , withColumnsSeq
+    , withContext
     , withPredicatePushdown
     , withProjectionPushdown
     , withRowEstimate
@@ -169,6 +170,7 @@ import Polars.Internal.Raw
     , phs_lazyframe_with_column
     , phs_lazyframe_with_columns
     , phs_lazyframe_with_columns_seq
+    , phs_lazyframe_with_context
     , phs_lazyframe_with_row_index
     , phs_lazyframe_without_optimizations
     , phs_scan_csv_options
@@ -476,6 +478,11 @@ withColumns exprs lf = withLazyFrame lf $ \lfPtr ->
 withColumnsSeq :: [Expr] -> LazyFrame -> IO (Either PolarsError LazyFrame)
 withColumnsSeq exprs lf = withLazyFrame lf $ \lfPtr ->
     withCompiledExprs exprs $ \exprArray len -> lazyFrameOut (phs_lazyframe_with_columns_seq lfPtr exprArray len)
+
+-- | Add external lazy frames as context for expression resolution.
+withContext :: [LazyFrame] -> LazyFrame -> IO (Either PolarsError LazyFrame)
+withContext contexts lf = withLazyFrame lf $ \lfPtr ->
+    withLazyFrameList contexts $ \contextArray len -> lazyFrameOut (phs_lazyframe_with_context lfPtr contextArray len)
 
 withRowIndex :: Text -> Maybe Int -> LazyFrame -> IO (Either PolarsError LazyFrame)
 withRowIndex name offset lf = case optionalNonNegativeWord64 "withRowIndex offset" offset of
