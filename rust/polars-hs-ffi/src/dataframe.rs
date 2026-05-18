@@ -890,6 +890,35 @@ pub unsafe extern "C" fn phs_dataframe_partition_by(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_explode(
+    dataframe: *const phs_dataframe,
+    names: *const *const c_char,
+    names_len: usize,
+    empty_as_null: bool,
+    keep_nulls: bool,
+    out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        let names = unsafe { name_vec(names, names_len, "names") }?;
+        if names.is_empty() {
+            return Err(PhsError::invalid_argument(
+                "explode requires at least one column",
+            ));
+        }
+        let options = ExplodeOptions {
+            empty_as_null,
+            keep_nulls,
+        };
+        *out = dataframe_into_raw(handle.value.explode(names.iter().map(String::as_str), options)?);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_dataframe_array_len(array: *const phs_dataframe_array) -> usize {
     if array.is_null() {
         0
@@ -2617,6 +2646,88 @@ mod tests {
         assert_eq!(message, "out pointer was null");
 
         unsafe { crate::handles::phs_dataframe_free(df) };
+    }
+
+    #[test]
+    fn dataframe_explode_list_columns_work() {
+        let part0 = Series::new(PlSmallStr::from_static(""), ["red", "green", "blue"]);
+        let part1 = Series::new(PlSmallStr::from_static(""), ["red", "red"]);
+        let part2 = Series::new(PlSmallStr::from_static(""), ["日本", "語"]);
+        let part3 = Series::new(PlSmallStr::from_static(""), ["solo"]);
+        let parts = Column::new(PlSmallStr::from_static("parts"), [part0, part1, part2, part3]);
+        let id = Column::new(PlSmallStr::from_static("id"), [1i32, 2, 3, 4]);
+        let df = dataframe_into_raw(DataFrame::new_infer_height(vec![id, parts]).unwrap());
+        let parts_name = std::ffi::CString::new("parts").unwrap();
+        let missing_name = std::ffi::CString::new("missing").unwrap();
+        let id_name = std::ffi::CString::new("id").unwrap();
+        let names = [parts_name.as_ptr()];
+        let missing_names = [missing_name.as_ptr()];
+        let id_names = [id_name.as_ptr()];
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_dataframe_explode(df, names.as_ptr(), names.len(), true, true, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let exploded = out;
+        let exploded_ref = unsafe { dataframe_ref(exploded) }.unwrap();
+        assert_eq!(exploded_ref.value.shape(), (8, 2));
+        let ids: Vec<Option<i32>> = exploded_ref
+            .value
+            .column("id")
+            .unwrap()
+            .as_materialized_series()
+            .i32()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(ids, vec![Some(1), Some(1), Some(1), Some(2), Some(2), Some(3), Some(3), Some(4)]);
+        let values: Vec<Option<&str>> = exploded_ref
+            .value
+            .column("parts")
+            .unwrap()
+            .as_materialized_series()
+            .str()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(
+            values,
+            vec![Some("red"), Some("green"), Some("blue"), Some("red"), Some("red"), Some("日本"), Some("語"), Some("solo")]
+        );
+
+        let status = unsafe { phs_dataframe_explode(df, ptr::null(), 0, true, true, &mut out, &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "explode requires at least one column");
+
+        let status = unsafe { phs_dataframe_explode(df, ptr::null(), 1, true, true, &mut out, &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "names pointer was null");
+
+        let null_name = [ptr::null()];
+        let status = unsafe { phs_dataframe_explode(df, null_name.as_ptr(), null_name.len(), true, true, &mut out, &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "names pointer was null");
+
+        let status = unsafe { phs_dataframe_explode(df, missing_names.as_ptr(), missing_names.len(), true, true, &mut out, &mut err) };
+        assert_ne!(status, PHS_OK);
+        unsafe { take_error_message(err) };
+
+        let status = unsafe { phs_dataframe_explode(df, id_names.as_ptr(), id_names.len(), true, true, &mut out, &mut err) };
+        assert_ne!(status, PHS_OK);
+        unsafe { take_error_message(err) };
+
+        let status = unsafe { phs_dataframe_explode(df, names.as_ptr(), names.len(), true, true, ptr::null_mut(), &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "out pointer was null");
+
+        unsafe {
+            crate::handles::phs_dataframe_free(exploded);
+            crate::handles::phs_dataframe_free(df);
+        }
     }
 
     #[test]

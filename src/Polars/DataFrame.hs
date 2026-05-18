@@ -12,6 +12,7 @@ module Polars.DataFrame
     ( CsvReadOptions (..)
     , CsvWriteOptions (..)
     , DataFrame
+    , DataFrameExplodeOptions (..)
     , DataFrameJoinOptions (..)
     , DataFrameJoinType (..)
     , DataFramePartitionOptions (..)
@@ -31,6 +32,7 @@ module Polars.DataFrame
     , dataFrameDropColumns
     , dataFrameDropNulls
     , dataFrameEstimatedSize
+    , dataFrameExplode
     , dataFrameFilter
     , dataFrameFillNull
     , dataFrameFirstColNChunks
@@ -65,6 +67,7 @@ module Polars.DataFrame
     , height
     , defaultCsvReadOptions
     , defaultCsvWriteOptions
+    , defaultDataFrameExplodeOptions
     , defaultDataFrameJoinOptions
     , defaultDataFramePartitionOptions
     , defaultDataFrameSampleOptions
@@ -123,6 +126,7 @@ import Polars.Internal.Raw
     , phs_dataframe_clear
     , phs_dataframe_drop
     , phs_dataframe_drop_nulls
+    , phs_dataframe_explode
     , phs_dataframe_estimated_size
     , phs_dataframe_filter
     , phs_dataframe_fill_null
@@ -284,6 +288,21 @@ defaultDataFramePartitionOptions =
         { dataFramePartitionColumns = []
         , dataFramePartitionIncludeKey = True
         , dataFramePartitionMaintainOrder = False
+        }
+
+data DataFrameExplodeOptions = DataFrameExplodeOptions
+    { dataFrameExplodeColumns :: ![Text]
+    , dataFrameExplodeEmptyAsNull :: !Bool
+    , dataFrameExplodeKeepNulls :: !Bool
+    }
+    deriving (Eq, Show)
+
+defaultDataFrameExplodeOptions :: DataFrameExplodeOptions
+defaultDataFrameExplodeOptions =
+    DataFrameExplodeOptions
+        { dataFrameExplodeColumns = []
+        , dataFrameExplodeEmptyAsNull = True
+        , dataFrameExplodeKeepNulls = True
         }
 
 data FillNullStrategy
@@ -486,6 +505,22 @@ dataFramePartitionBy options df
                         nameLen
                         (toCBool (dataFramePartitionIncludeKey options))
                         (toCBool (dataFramePartitionMaintainOrder options))
+                    )
+
+dataFrameExplode :: DataFrameExplodeOptions -> DataFrame -> IO (Either PolarsError DataFrame)
+dataFrameExplode options df
+    | null (dataFrameExplodeColumns options) =
+        pure (Left (invalidArgument "dataFrameExplode requires at least one column name"))
+    | otherwise =
+        withDataFrame df $ \dfPtr ->
+            withCStringList (dataFrameExplodeColumns options) $ \nameArray nameLen ->
+                dataframeOut
+                    ( phs_dataframe_explode
+                        dfPtr
+                        nameArray
+                        nameLen
+                        (toCBool (dataFrameExplodeEmptyAsNull options))
+                        (toCBool (dataFrameExplodeKeepNulls options))
                     )
 
 dataFrameRename :: [(Text, Text)] -> DataFrame -> IO (Either PolarsError DataFrame)

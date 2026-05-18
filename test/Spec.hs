@@ -1331,6 +1331,66 @@ main = hspec $ do
                     expectInvalidArgumentMessage "dataFramePartitionBy requires at least one column name" emptyColumns
                     expectPolarsFailure missingColumn
 
+        it "explodes eager DataFrame list columns" $ do
+            scanResult <- Pl.scanCsv phrasesCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    withParts <- Pl.withColumns [Pl.alias "parts" (Pl.strSplit (Pl.col "phrase") (Pl.litText " "))] lf0
+                    case withParts of
+                        Left err -> expectationFailure (show err)
+                        Right lf1 -> do
+                            collected <- Pl.collect lf1
+                            case collected of
+                                Left err -> expectationFailure (show err)
+                                Right df -> do
+                                    exploded <-
+                                        Pl.dataFrameExplode
+                                            Pl.defaultDataFrameExplodeOptions {Pl.dataFrameExplodeColumns = ["parts"]}
+                                            df
+                                    emptyColumns <- Pl.dataFrameExplode Pl.defaultDataFrameExplodeOptions df
+                                    missingColumn <-
+                                        Pl.dataFrameExplode
+                                            Pl.defaultDataFrameExplodeOptions {Pl.dataFrameExplodeColumns = ["missing"]}
+                                            df
+                                    scalarColumn <-
+                                        Pl.dataFrameExplode
+                                            Pl.defaultDataFrameExplodeOptions {Pl.dataFrameExplodeColumns = ["phrase"]}
+                                            df
+                                    case exploded of
+                                        Left err -> expectationFailure (show err)
+                                        Right out -> do
+                                            Pl.shape out `shouldReturn` Right (8, 2)
+                                            Pl.column @T.Text out "phrase"
+                                                `shouldReturn` Right
+                                                    ( V.fromList
+                                                        [ Just "red green blue"
+                                                        , Just "red green blue"
+                                                        , Just "red green blue"
+                                                        , Just "red red"
+                                                        , Just "red red"
+                                                        , Just "日本 語"
+                                                        , Just "日本 語"
+                                                        , Just "solo"
+                                                        ]
+                                                    )
+                                            Pl.column @T.Text out "parts"
+                                                `shouldReturn` Right
+                                                    ( V.fromList
+                                                        [ Just "red"
+                                                        , Just "green"
+                                                        , Just "blue"
+                                                        , Just "red"
+                                                        , Just "red"
+                                                        , Just "日本"
+                                                        , Just "語"
+                                                        , Just "solo"
+                                                        ]
+                                                    )
+                                    expectInvalidArgumentMessage "dataFrameExplode requires at least one column name" emptyColumns
+                                    expectPolarsFailure missingColumn
+                                    expectPolarsFailure scalarColumn
+
         it "broadcasts unit-length eager DataFrame columns" $ do
             dfResult <- Pl.readCsv valuesCsv
             scoreResult <- Pl.series @Double "score" (V.fromList [Just 10.0])

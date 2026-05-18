@@ -242,6 +242,14 @@ int phs_dataframe_partition_by(const struct phs_dataframe *dataframe,
                                struct phs_dataframe_array **out,
                                struct phs_error **err);
 
+int phs_dataframe_explode(const struct phs_dataframe *dataframe,
+                          const char *const *names,
+                          uintptr_t names_len,
+                          bool empty_as_null,
+                          bool keep_nulls,
+                          struct phs_dataframe **out,
+                          struct phs_error **err);
+
 uintptr_t phs_dataframe_array_len(const struct phs_dataframe_array *array);
 
 int phs_dataframe_array_get(const struct phs_dataframe_array *array,

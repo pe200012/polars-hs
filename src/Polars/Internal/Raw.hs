@@ -34,6 +34,7 @@ module Polars.Internal.Raw
     , phs_dataframe_column_bool
     , phs_dataframe_drop
     , phs_dataframe_drop_nulls
+    , phs_dataframe_explode
     , phs_dataframe_filter
     , phs_dataframe_fill_null
     , phs_dataframe_from_arrow_record_batch
@@ -404,6 +405,9 @@ foreign import ccall unsafe "phs_dataframe_select"
 
 foreign import ccall unsafe "phs_dataframe_drop"
     phs_dataframe_drop :: Ptr RawDataFrame -> Ptr CString -> CSize -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_dataframe_explode"
+    phs_dataframe_explode :: Ptr RawDataFrame -> Ptr CString -> CSize -> CBool -> CBool -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_dataframe_rename"
     phs_dataframe_rename :: Ptr RawDataFrame -> Ptr CString -> Ptr CString -> CSize -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
