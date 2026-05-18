@@ -19,6 +19,7 @@ module Polars.LazyFrame
     , RenameOptions (..)
     , UniqueKeepStrategy (..)
     , UniqueOptions (..)
+    , cache
     , collect
     , defaultCsvReadOptions
     , defaultLazyFrameExplodeOptions
@@ -35,7 +36,10 @@ module Polars.LazyFrame
     , fillNulls
     , filter
     , gatherEvery
+    , lazyClear
+    , lazyFirst
     , lazyHead
+    , lazyLast
     , lazyTail
     , limit
     , nullCount
@@ -83,6 +87,8 @@ import Polars.Internal.Raw
     , RawExpr
     , RawLazyFrame
     , phs_lazyframe_collect
+    , phs_lazyframe_cache
+    , phs_lazyframe_clear
     , phs_lazyframe_drop
     , phs_lazyframe_drop_nulls
     , phs_lazyframe_explode
@@ -90,8 +96,10 @@ import Polars.Internal.Raw
     , phs_lazyframe_fill_nan
     , phs_lazyframe_fill_null
     , phs_lazyframe_filter
+    , phs_lazyframe_first
     , phs_lazyframe_gather_every
     , phs_lazyframe_head
+    , phs_lazyframe_last
     , phs_lazyframe_limit
     , phs_lazyframe_bottom_k
     , phs_lazyframe_null_count
@@ -314,6 +322,22 @@ unpivot options lf =
                                 variablePtr
                                 valuePtr
                             )
+
+-- | Return an empty lazy frame with the same schema.
+lazyClear :: LazyFrame -> IO (Either PolarsError LazyFrame)
+lazyClear lf = withLazyFrame lf $ \lfPtr -> lazyFrameOut (phs_lazyframe_clear lfPtr)
+
+-- | Cache this lazy plan node for repeated use during query execution.
+cache :: LazyFrame -> IO (Either PolarsError LazyFrame)
+cache lf = withLazyFrame lf $ \lfPtr -> lazyFrameOut (phs_lazyframe_cache lfPtr)
+
+-- | Return the first row of a lazy frame.
+lazyFirst :: LazyFrame -> IO (Either PolarsError LazyFrame)
+lazyFirst lf = withLazyFrame lf $ \lfPtr -> lazyFrameOut (phs_lazyframe_first lfPtr)
+
+-- | Return the last row of a lazy frame.
+lazyLast :: LazyFrame -> IO (Either PolarsError LazyFrame)
+lazyLast lf = withLazyFrame lf $ \lfPtr -> lazyFrameOut (phs_lazyframe_last lfPtr)
 
 dropColumns :: [Text] -> LazyFrame -> IO (Either PolarsError LazyFrame)
 dropColumns [] _ = pure (Left (invalidArgument "dropColumns requires at least one column name"))

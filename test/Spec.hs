@@ -2143,6 +2143,39 @@ main = hspec $ do
                     expectLazyCollectPolarsFailure duplicate
                     expectInvalidArgumentMessage "withRowIndex offset must be non-negative" negative
 
+        it "clears caches and selects boundary lazy rows" $ do
+            scanResult <- Pl.scanCsv valuesCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    cleared <- Pl.lazyClear lf0
+                    cached <- Pl.cache lf0
+                    firstRow <- Pl.lazyFirst lf0
+                    lastRow <- Pl.lazyLast lf0
+                    case (cleared, cached, firstRow, lastRow) of
+                        (Right clearedLf, Right cachedLf, Right firstLf, Right lastLf) -> do
+                            clearedDf <- Pl.collect clearedLf
+                            cachedDf <- Pl.collect cachedLf
+                            firstDf <- Pl.collect firstLf
+                            lastDf <- Pl.collect lastLf
+                            case (clearedDf, cachedDf, firstDf, lastDf) of
+                                (Right clearedDf', Right cachedDf', Right firstDf', Right lastDf') -> do
+                                    Pl.shape clearedDf' `shouldReturn` Right (0, 4)
+                                    clearedSchema <- Pl.schema clearedDf'
+                                    fmap (map Pl.fieldName) clearedSchema `shouldBe` Right ["name", "age", "score", "active"]
+                                    Pl.column @T.Text cachedDf' "name"
+                                        `shouldReturn` Right (V.fromList [Just "Alice", Just "Bob", Just "Carol"])
+                                    Pl.column @T.Text firstDf' "name" `shouldReturn` Right (V.fromList [Just "Alice"])
+                                    Pl.column @T.Text lastDf' "name" `shouldReturn` Right (V.fromList [Just "Carol"])
+                                (Left err, _, _, _) -> expectationFailure (show err)
+                                (_, Left err, _, _) -> expectationFailure (show err)
+                                (_, _, Left err, _) -> expectationFailure (show err)
+                                (_, _, _, Left err) -> expectationFailure (show err)
+                        (Left err, _, _, _) -> expectationFailure (show err)
+                        (_, Left err, _, _) -> expectationFailure (show err)
+                        (_, _, Left err, _) -> expectationFailure (show err)
+                        (_, _, _, Left err) -> expectationFailure (show err)
+
         it "gathers every nth lazy row" $ do
             scanResult <- Pl.scanCsv valuesCsv
             case scanResult of

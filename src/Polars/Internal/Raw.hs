@@ -98,6 +98,8 @@ module Polars.Internal.Raw
     , phs_dataframe_with_columns
     , phs_dataframe_with_row_index
     , phs_dataframe_width
+    , phs_lazyframe_cache
+    , phs_lazyframe_clear
     , phs_error_code
     , phs_error_free
     , phs_error_message
@@ -143,11 +145,13 @@ module Polars.Internal.Raw
     , phs_lazyframe_fill_nan
     , phs_lazyframe_fill_null
     , phs_lazyframe_filter
+    , phs_lazyframe_first
     , phs_lazyframe_free_finalizer
     , phs_lazyframe_gather_every
     , phs_lazyframe_group_by_agg
     , phs_lazyframe_head
     , phs_lazyframe_join
+    , phs_lazyframe_last
     , phs_lazyframe_limit
     , phs_lazyframe_bottom_k
     , phs_lazyframe_null_count
@@ -771,6 +775,18 @@ foreign import ccall unsafe "phs_lazyframe_unpivot"
         Ptr (Ptr RawLazyFrame) ->
         Ptr (Ptr RawError) ->
         IO CInt
+
+foreign import ccall unsafe "phs_lazyframe_clear"
+    phs_lazyframe_clear :: Ptr RawLazyFrame -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_lazyframe_cache"
+    phs_lazyframe_cache :: Ptr RawLazyFrame -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_lazyframe_first"
+    phs_lazyframe_first :: Ptr RawLazyFrame -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_lazyframe_last"
+    phs_lazyframe_last :: Ptr RawLazyFrame -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_lazyframe_sort"
     phs_lazyframe_sort :: Ptr RawLazyFrame -> Ptr CString -> CSize -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt

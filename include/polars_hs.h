@@ -835,6 +835,22 @@ int phs_lazyframe_unpivot(const struct phs_lazyframe *lazyframe,
                           struct phs_lazyframe **out,
                           struct phs_error **err);
 
+int phs_lazyframe_clear(const struct phs_lazyframe *lazyframe,
+                        struct phs_lazyframe **out,
+                        struct phs_error **err);
+
+int phs_lazyframe_cache(const struct phs_lazyframe *lazyframe,
+                        struct phs_lazyframe **out,
+                        struct phs_error **err);
+
+int phs_lazyframe_first(const struct phs_lazyframe *lazyframe,
+                        struct phs_lazyframe **out,
+                        struct phs_error **err);
+
+int phs_lazyframe_last(const struct phs_lazyframe *lazyframe,
+                       struct phs_lazyframe **out,
+                       struct phs_error **err);
+
 int phs_lazyframe_sort(const struct phs_lazyframe *lazyframe,
                        const char *const *names,
                        uintptr_t len,

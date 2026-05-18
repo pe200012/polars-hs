@@ -500,6 +500,66 @@ pub unsafe extern "C" fn phs_lazyframe_unpivot(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_clear(
+    lazyframe: *const phs_lazyframe,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        *out = lazyframe_into_raw(lf.limit(0));
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_cache(
+    lazyframe: *const phs_lazyframe,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        *out = lazyframe_into_raw(lf.cache());
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_first(
+    lazyframe: *const phs_lazyframe,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        *out = lazyframe_into_raw(lf.first());
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_last(
+    lazyframe: *const phs_lazyframe,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        *out = lazyframe_into_raw(lf.last());
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_lazyframe_sort(
     lazyframe: *const phs_lazyframe,
     names: *const *const c_char,
@@ -1547,6 +1607,89 @@ mod tests {
             crate::handles::phs_lazyframe_free(default_lf);
             crate::handles::phs_dataframe_free(indexed_df);
             crate::handles::phs_dataframe_free(default_df);
+        }
+    }
+
+    #[test]
+    fn lazy_basic_views_cache_clear_first_last_work() {
+        let path = employees_fixture_path();
+        let mut lf0 = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(unsafe { phs_scan_csv(path.as_ptr(), &mut lf0, &mut err) }, PHS_OK);
+
+        let mut out = ptr::null_mut();
+        let status = unsafe { phs_lazyframe_clear(lf0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let clear_lf = out;
+        let mut clear_df = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_collect(clear_lf, &mut clear_df, &mut err) }, PHS_OK);
+        let clear_ref = unsafe { crate::handles::dataframe_ref(clear_df) }.unwrap();
+        assert_eq!(clear_ref.value.shape(), (0, 4));
+        let names: Vec<&str> = clear_ref.value.get_column_names().into_iter().map(|name| name.as_str()).collect();
+        assert_eq!(names, vec!["id", "name", "department", "salary"]);
+
+        let status = unsafe { phs_lazyframe_cache(lf0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let cache_lf = out;
+        let mut cache_df = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_collect(cache_lf, &mut cache_df, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::handles::dataframe_ref(cache_df) }.unwrap().value.shape(), (4, 4));
+
+        let status = unsafe { phs_lazyframe_first(lf0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let first_lf = out;
+        let mut first_df = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_collect(first_lf, &mut first_df, &mut err) }, PHS_OK);
+        let names: Vec<Option<&str>> = unsafe { crate::handles::dataframe_ref(first_df) }
+            .unwrap()
+            .value
+            .column("name")
+            .unwrap()
+            .as_materialized_series()
+            .str()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(names, vec![Some("Alice")]);
+
+        let status = unsafe { phs_lazyframe_last(lf0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let last_lf = out;
+        let mut last_df = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_collect(last_lf, &mut last_df, &mut err) }, PHS_OK);
+        let names: Vec<Option<&str>> = unsafe { crate::handles::dataframe_ref(last_df) }
+            .unwrap()
+            .value
+            .column("name")
+            .unwrap()
+            .as_materialized_series()
+            .str()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(names, vec![Some("Eve")]);
+
+        let status = unsafe { phs_lazyframe_first(ptr::null(), &mut out, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "lazyframe pointer was null");
+        err = ptr::null_mut();
+
+        let status = unsafe { phs_lazyframe_clear(lf0, ptr::null_mut(), &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "out pointer was null");
+
+        unsafe {
+            crate::handles::phs_lazyframe_free(lf0);
+            crate::handles::phs_lazyframe_free(clear_lf);
+            crate::handles::phs_lazyframe_free(cache_lf);
+            crate::handles::phs_lazyframe_free(first_lf);
+            crate::handles::phs_lazyframe_free(last_lf);
+            crate::handles::phs_dataframe_free(clear_df);
+            crate::handles::phs_dataframe_free(cache_df);
+            crate::handles::phs_dataframe_free(first_df);
+            crate::handles::phs_dataframe_free(last_df);
         }
     }
 
