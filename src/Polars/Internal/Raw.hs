@@ -145,6 +145,7 @@ module Polars.Internal.Raw
     , phs_lazyframe_collect_with_engine
     , phs_lazyframe_describe_plan
     , phs_lazyframe_drop
+    , phs_lazyframe_drop_nans
     , phs_lazyframe_drop_nulls
     , phs_lazyframe_explode
     , phs_lazyframe_explain
@@ -891,6 +892,9 @@ foreign import ccall unsafe "phs_lazyframe_tail"
 
 foreign import ccall unsafe "phs_lazyframe_drop_nulls"
     phs_lazyframe_drop_nulls :: Ptr RawLazyFrame -> Ptr CString -> CSize -> CBool -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_lazyframe_drop_nans"
+    phs_lazyframe_drop_nans :: Ptr RawLazyFrame -> Ptr CString -> CSize -> CBool -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_lazyframe_fill_null"
     phs_lazyframe_fill_null :: Ptr RawLazyFrame -> Ptr RawExpr -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt

@@ -1077,6 +1077,25 @@ pub unsafe extern "C" fn phs_lazyframe_drop_nulls(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_drop_nans(
+    lazyframe: *const phs_lazyframe,
+    names: *const *const c_char,
+    len: usize,
+    has_subset: bool,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        let subset = unsafe { optional_selector(names, len, has_subset, "drop_nans subset") }?;
+        *out = lazyframe_into_raw(lf.drop_nans(subset));
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_lazyframe_fill_null(
     lazyframe: *const phs_lazyframe,
     value: *const phs_expr,
@@ -1300,6 +1319,18 @@ mod tests {
         let parts = Column::new(PlSmallStr::from_static("parts"), [part0, part1, part2, part3]);
         let id = Column::new(PlSmallStr::from_static("id"), [1i32, 2, 3, 4]);
         lazyframe_into_raw(DataFrame::new_infer_height(vec![id, parts]).unwrap().lazy())
+    }
+
+    fn nan_lazyframe() -> *mut phs_lazyframe {
+        let value = Column::new(
+            PlSmallStr::from_static("value"),
+            [1.0_f64, f64::NAN, 3.0_f64, 4.0_f64],
+        );
+        let other = Column::new(
+            PlSmallStr::from_static("other"),
+            [10.0_f64, 20.0_f64, f64::NAN, 40.0_f64],
+        );
+        lazyframe_into_raw(DataFrame::new_infer_height(vec![value, other]).unwrap().lazy())
     }
 
     fn push_schema_field(bytes: &mut Vec<u8>, name: &[u8], dtype_tag: u16, dtype_detail: &[u8]) {
@@ -1821,6 +1852,86 @@ mod tests {
             crate::handles::phs_lazyframe_free(lf1);
             crate::handles::phs_lazyframe_free(lf2);
             crate::handles::phs_dataframe_free(df);
+        }
+    }
+
+    #[test]
+    fn lazy_drop_nans_removes_nan_rows() {
+        let lf0 = nan_lazyframe();
+        let mut err = ptr::null_mut();
+
+        let mut all_clean = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_lazyframe_drop_nans(lf0, ptr::null(), 0, false, &mut all_clean, &mut err) },
+            PHS_OK
+        );
+        let mut df = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_collect(all_clean, &mut df, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::handles::dataframe_ref(df) }.unwrap().value.shape(), (2, 2));
+        let values: Vec<Option<f64>> = unsafe { crate::handles::dataframe_ref(df) }
+            .unwrap()
+            .value
+            .column("value")
+            .unwrap()
+            .as_materialized_series()
+            .f64()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(values, vec![Some(1.0), Some(4.0)]);
+        unsafe { crate::handles::phs_dataframe_free(df) };
+
+        let value = std::ffi::CString::new("value").unwrap();
+        let names = [value.as_ptr()];
+        let mut value_clean = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_lazyframe_drop_nans(lf0, names.as_ptr(), names.len(), true, &mut value_clean, &mut err) },
+            PHS_OK
+        );
+        df = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_collect(value_clean, &mut df, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::handles::dataframe_ref(df) }.unwrap().value.shape(), (3, 2));
+        let values: Vec<Option<f64>> = unsafe { crate::handles::dataframe_ref(df) }
+            .unwrap()
+            .value
+            .column("value")
+            .unwrap()
+            .as_materialized_series()
+            .f64()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(values, vec![Some(1.0), Some(3.0), Some(4.0)]);
+        unsafe { crate::handles::phs_dataframe_free(df) };
+
+        let mut invalid = ptr::null_mut();
+        let status = unsafe { phs_lazyframe_drop_nans(lf0, ptr::null(), 0, true, &mut invalid, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "drop_nans subset requires at least one column name");
+        err = ptr::null_mut();
+
+        let status = unsafe { phs_lazyframe_drop_nans(lf0, ptr::null(), 1, true, &mut invalid, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "names pointer was null");
+        err = ptr::null_mut();
+
+        let status = unsafe { phs_lazyframe_drop_nans(ptr::null(), ptr::null(), 0, false, &mut invalid, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "lazyframe pointer was null");
+        err = ptr::null_mut();
+
+        let status = unsafe { phs_lazyframe_drop_nans(lf0, ptr::null(), 0, false, ptr::null_mut(), &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "out pointer was null");
+
+        unsafe {
+            crate::handles::phs_lazyframe_free(lf0);
+            crate::handles::phs_lazyframe_free(all_clean);
+            crate::handles::phs_lazyframe_free(value_clean);
         }
     }
 

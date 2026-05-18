@@ -986,6 +986,13 @@ int phs_lazyframe_drop_nulls(const struct phs_lazyframe *lazyframe,
                              struct phs_lazyframe **out,
                              struct phs_error **err);
 
+int phs_lazyframe_drop_nans(const struct phs_lazyframe *lazyframe,
+                            const char *const *names,
+                            uintptr_t len,
+                            bool has_subset,
+                            struct phs_lazyframe **out,
+                            struct phs_error **err);
+
 int phs_lazyframe_fill_null(const struct phs_lazyframe *lazyframe,
                             const struct phs_expr *value,
                             struct phs_lazyframe **out,

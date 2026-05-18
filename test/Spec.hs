@@ -2487,25 +2487,43 @@ main = hspec $ do
                         Left err -> pure (Left err)
                         Right lf -> Pl.fillNulls (Pl.litInt 0) lf
                     filledNans <- Pl.fillNans (Pl.litDouble 0.0) specialsLf
-                    case (dense, filledNulls, filledNans) of
-                        (Right denseLf, Right nullLf, Right nanLf) -> do
+                    droppedNans <- Pl.dropNans Nothing specialsLf
+                    droppedNanSubset <- Pl.dropNans (Just ["value"]) specialsLf
+                    case (dense, filledNulls, filledNans, droppedNans, droppedNanSubset) of
+                        (Right denseLf, Right nullLf, Right nanLf, Right droppedNanLf, Right droppedNanSubsetLf) -> do
                             denseDf <- Pl.collect denseLf
                             nullDf <- Pl.collect nullLf
                             nanDf <- Pl.collect nanLf
-                            case (denseDf, nullDf, nanDf) of
-                                (Right dDf, Right nDf, Right fDf) -> do
+                            droppedNanDf <- Pl.collect droppedNanLf
+                            droppedNanSubsetDf <- Pl.collect droppedNanSubsetLf
+                            case (denseDf, nullDf, nanDf, droppedNanDf, droppedNanSubsetDf) of
+                                (Right dDf, Right nDf, Right fDf, Right dnDf, Right dnsDf) -> do
                                     Pl.column @T.Text dDf "name" `shouldReturn` Right (V.fromList [Just "Alice"])
                                     Pl.column @Int64 nDf "age" `shouldReturn` Right (V.fromList [Just 34, Just 0, Just 29])
                                     values <- Pl.column @Double fDf "value"
                                     case values of
                                         Left err -> expectationFailure (show err)
                                         Right actual -> shouldApproximate 1.0e-12 (V.fromList [Just 1.0, Just 0.0, Just (1 / 0), Just (-(1 / 0))]) actual
-                                (Left err, _, _) -> expectationFailure (show err)
-                                (_, Left err, _) -> expectationFailure (show err)
-                                (_, _, Left err) -> expectationFailure (show err)
-                        (Left err, _, _) -> expectationFailure (show err)
-                        (_, Left err, _) -> expectationFailure (show err)
-                        (_, _, Left err) -> expectationFailure (show err)
+                                    Pl.shape dnDf `shouldReturn` Right (3, 1)
+                                    droppedValues <- Pl.column @Double dnDf "value"
+                                    case droppedValues of
+                                        Left err -> expectationFailure (show err)
+                                        Right actual -> shouldApproximate 1.0e-12 (V.fromList [Just 1.0, Just (1 / 0), Just (-(1 / 0))]) actual
+                                    Pl.shape dnsDf `shouldReturn` Right (3, 1)
+                                    droppedSubsetValues <- Pl.column @Double dnsDf "value"
+                                    case droppedSubsetValues of
+                                        Left err -> expectationFailure (show err)
+                                        Right actual -> shouldApproximate 1.0e-12 (V.fromList [Just 1.0, Just (1 / 0), Just (-(1 / 0))]) actual
+                                (Left err, _, _, _, _) -> expectationFailure (show err)
+                                (_, Left err, _, _, _) -> expectationFailure (show err)
+                                (_, _, Left err, _, _) -> expectationFailure (show err)
+                                (_, _, _, Left err, _) -> expectationFailure (show err)
+                                (_, _, _, _, Left err) -> expectationFailure (show err)
+                        (Left err, _, _, _, _) -> expectationFailure (show err)
+                        (_, Left err, _, _, _) -> expectationFailure (show err)
+                        (_, _, Left err, _, _) -> expectationFailure (show err)
+                        (_, _, _, Left err, _) -> expectationFailure (show err)
+                        (_, _, _, _, Left err) -> expectationFailure (show err)
                 (Left err, _) -> expectationFailure (show err)
                 (_, Left err) -> expectationFailure (show err)
 
@@ -2550,6 +2568,7 @@ main = hspec $ do
                     sliceResult <- Pl.slice 0 (-1) lf
                     headResult <- Pl.lazyHead (-1) lf
                     dropNullsResult <- Pl.dropNulls (Just []) lf
+                    dropNansResult <- Pl.dropNans (Just []) lf
                     uniqueResult <- Pl.unique Pl.defaultUniqueOptions {Pl.uniqueSubset = Just []} lf
                     case dropResult of
                         Right _ -> expectationFailure "expected InvalidArgument for empty dropColumns"
@@ -2565,6 +2584,9 @@ main = hspec $ do
                         Left err -> Pl.polarsErrorCode err `shouldBe` Pl.InvalidArgument
                     case dropNullsResult of
                         Right _ -> expectationFailure "expected InvalidArgument for empty dropNulls subset"
+                        Left err -> Pl.polarsErrorCode err `shouldBe` Pl.InvalidArgument
+                    case dropNansResult of
+                        Right _ -> expectationFailure "expected InvalidArgument for empty dropNans subset"
                         Left err -> Pl.polarsErrorCode err `shouldBe` Pl.InvalidArgument
                     case uniqueResult of
                         Right _ -> expectationFailure "expected InvalidArgument for empty unique subset"

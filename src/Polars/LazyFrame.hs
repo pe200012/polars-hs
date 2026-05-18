@@ -42,6 +42,7 @@ module Polars.LazyFrame
     , describePlan
     , describePlanTree
     , dropColumns
+    , dropNans
     , dropNulls
     , explode
     , explain
@@ -126,6 +127,7 @@ import Polars.Internal.Raw
     , phs_lazyframe_clear
     , phs_lazyframe_describe_plan
     , phs_lazyframe_drop
+    , phs_lazyframe_drop_nans
     , phs_lazyframe_drop_nulls
     , phs_lazyframe_explode
     , phs_lazyframe_explain
@@ -566,6 +568,12 @@ dropNulls :: Maybe [Text] -> LazyFrame -> IO (Either PolarsError LazyFrame)
 dropNulls (Just []) _ = pure (Left (invalidArgument "dropNulls subset requires at least one column name"))
 dropNulls subset lf = withLazyFrame lf $ \lfPtr -> withMaybeCStringList subset $ \nameArray len hasSubset ->
     lazyFrameOut (phs_lazyframe_drop_nulls lfPtr nameArray len (toCBool hasSubset))
+
+-- | Drop rows containing NaN values, optionally restricted to named columns.
+dropNans :: Maybe [Text] -> LazyFrame -> IO (Either PolarsError LazyFrame)
+dropNans (Just []) _ = pure (Left (invalidArgument "dropNans subset requires at least one column name"))
+dropNans subset lf = withLazyFrame lf $ \lfPtr -> withMaybeCStringList subset $ \nameArray len hasSubset ->
+    lazyFrameOut (phs_lazyframe_drop_nans lfPtr nameArray len (toCBool hasSubset))
 
 fillNulls :: Expr -> LazyFrame -> IO (Either PolarsError LazyFrame)
 fillNulls value lf = lazyFrameExprOut value lf phs_lazyframe_fill_null
