@@ -18,6 +18,7 @@ module Polars.DataFrame
     , DataFramePartitionOptions (..)
     , DataFrameSampleOptions (..)
     , DataFrameSortOptions (..)
+    , DataFrameToDummiesOptions (..)
     , DataFrameTransposeColumnNames (..)
     , DataFrameTransposeOptions (..)
     , DataFrameUnpivotOptions (..)
@@ -66,6 +67,7 @@ module Polars.DataFrame
     , dataFrameSplitAt
     , dataFrameSort
     , dataFrameTake
+    , dataFrameToDummies
     , dataFrameTranspose
     , dataFrameUnpivot
     , dataFrameUnique
@@ -81,6 +83,7 @@ module Polars.DataFrame
     , defaultDataFramePartitionOptions
     , defaultDataFrameSampleOptions
     , defaultDataFrameSortOptions
+    , defaultDataFrameToDummiesOptions
     , defaultDataFrameTransposeOptions
     , defaultDataFrameUnpivotOptions
     , defaultDataFrameUniqueOptions
@@ -175,6 +178,7 @@ import Polars.Internal.Raw
     , phs_dataframe_sort
     , phs_dataframe_tail
     , phs_dataframe_take
+    , phs_dataframe_to_dummies
     , phs_dataframe_transpose
     , phs_dataframe_unpivot
     , phs_dataframe_to_text
@@ -355,6 +359,23 @@ defaultDataFrameUnpivotOptions =
         , dataFrameUnpivotIndex = []
         , dataFrameUnpivotVariableName = Nothing
         , dataFrameUnpivotValueName = Nothing
+        }
+
+data DataFrameToDummiesOptions = DataFrameToDummiesOptions
+    { dataFrameToDummiesColumns :: !(Maybe [Text])
+    , dataFrameToDummiesSeparator :: !(Maybe Text)
+    , dataFrameToDummiesDropFirst :: !Bool
+    , dataFrameToDummiesDropNulls :: !Bool
+    }
+    deriving (Eq, Show)
+
+defaultDataFrameToDummiesOptions :: DataFrameToDummiesOptions
+defaultDataFrameToDummiesOptions =
+    DataFrameToDummiesOptions
+        { dataFrameToDummiesColumns = Nothing
+        , dataFrameToDummiesSeparator = Nothing
+        , dataFrameToDummiesDropFirst = False
+        , dataFrameToDummiesDropNulls = False
         }
 
 data FillNullStrategy
@@ -649,6 +670,22 @@ dataFrameUnpivot options df =
                                 variablePtr
                                 valuePtr
                             )
+
+dataFrameToDummies :: DataFrameToDummiesOptions -> DataFrame -> IO (Either PolarsError DataFrame)
+dataFrameToDummies options df =
+    withDataFrame df $ \dfPtr ->
+        withMaybeCStringList (dataFrameToDummiesColumns options) $ \columnArray columnLen hasColumns ->
+            withMaybeTextCString (dataFrameToDummiesSeparator options) $ \separatorPtr _ ->
+                dataframeOut
+                    ( phs_dataframe_to_dummies
+                        dfPtr
+                        (toCBool hasColumns)
+                        columnArray
+                        columnLen
+                        separatorPtr
+                        (toCBool (dataFrameToDummiesDropFirst options))
+                        (toCBool (dataFrameToDummiesDropNulls options))
+                    )
 
 dataFrameRename :: [(Text, Text)] -> DataFrame -> IO (Either PolarsError DataFrame)
 dataFrameRename [] _ = pure (Left (invalidArgument "dataFrameRename requires at least one column pair"))

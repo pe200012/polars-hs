@@ -283,6 +283,16 @@ int phs_dataframe_unpivot(const struct phs_dataframe *dataframe,
                           struct phs_dataframe **out,
                           struct phs_error **err);
 
+int phs_dataframe_to_dummies(const struct phs_dataframe *dataframe,
+                             bool has_columns,
+                             const char *const *columns,
+                             uintptr_t columns_len,
+                             const char *separator,
+                             bool drop_first,
+                             bool drop_nulls,
+                             struct phs_dataframe **out,
+                             struct phs_error **err);
+
 uintptr_t phs_dataframe_array_len(const struct phs_dataframe_array *array);
 
 int phs_dataframe_array_get(const struct phs_dataframe_array *array,

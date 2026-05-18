@@ -5,7 +5,7 @@ use std::ptr;
 
 use either::Either;
 use polars::prelude::*;
-use polars_ops::prelude::UnpivotDF;
+use polars_ops::prelude::{DataFrameOps, UnpivotDF};
 
 use crate::bytes::{bytes_into_raw, phs_bytes};
 use crate::error::{PhsError, PhsResult, c_str_to_str, ffi_boundary, phs_error, required_mut};
@@ -1063,6 +1063,45 @@ pub unsafe extern "C" fn phs_dataframe_unpivot(
             variable_name,
         );
         *out = dataframe_into_raw(handle.value.unpivot2(args)?);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_to_dummies(
+    dataframe: *const phs_dataframe,
+    has_columns: bool,
+    columns: *const *const c_char,
+    columns_len: usize,
+    separator: *const c_char,
+    drop_first: bool,
+    drop_nulls: bool,
+    out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        let columns = if has_columns {
+            Some(unsafe { name_vec(columns, columns_len, "columns") }?)
+        } else {
+            None
+        };
+        let column_refs = columns
+            .as_ref()
+            .map(|names| names.iter().map(String::as_str).collect());
+        let separator = if separator.is_null() {
+            None
+        } else {
+            Some(unsafe { c_str_to_str(separator, "separator") }?)
+        };
+        *out = dataframe_into_raw(handle.value._to_dummies(
+            column_refs,
+            separator,
+            drop_first,
+            drop_nulls,
+        )?);
         Ok(())
     })
 }
@@ -3352,6 +3391,238 @@ mod tests {
             crate::handles::phs_dataframe_free(default_on);
             crate::handles::phs_dataframe_free(explicit);
             crate::handles::phs_dataframe_free(df);
+        }
+    }
+
+    #[test]
+    fn dataframe_to_dummies_encodes_indicator_columns() {
+        let employees = read_fixture_dataframe("employees.csv");
+        let values = read_values_dataframe();
+        let department = std::ffi::CString::new("department").unwrap();
+        let age = std::ffi::CString::new("age").unwrap();
+        let missing = std::ffi::CString::new("missing").unwrap();
+        let separator = std::ffi::CString::new(":").unwrap();
+        let department_columns = [department.as_ptr()];
+        let age_columns = [age.as_ptr()];
+        let missing_columns = [missing.as_ptr()];
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe {
+            phs_dataframe_to_dummies(
+                employees,
+                false,
+                ptr::null(),
+                0,
+                ptr::null(),
+                false,
+                false,
+                &mut out,
+                &mut err,
+            )
+        };
+        assert_eq!(status, PHS_OK);
+        let all_columns = out;
+        let all_ref = unsafe { dataframe_ref(all_columns) }.unwrap();
+        assert_eq!(all_ref.value.shape(), (4, 15));
+        let alice: Vec<Option<u8>> = all_ref
+            .value
+            .column("name_Alice")
+            .unwrap()
+            .as_materialized_series()
+            .u8()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(alice, vec![Some(1), Some(0), Some(0), Some(0)]);
+
+        let status = unsafe {
+            phs_dataframe_to_dummies(
+                employees,
+                true,
+                department_columns.as_ptr(),
+                department_columns.len(),
+                separator.as_ptr(),
+                false,
+                false,
+                &mut out,
+                &mut err,
+            )
+        };
+        assert_eq!(status, PHS_OK);
+        let selected = out;
+        let selected_ref = unsafe { dataframe_ref(selected) }.unwrap();
+        let selected_names: Vec<&str> = selected_ref
+            .value
+            .get_column_names()
+            .into_iter()
+            .map(|name| name.as_str())
+            .collect();
+        assert_eq!(
+            selected_names,
+            vec![
+                "id",
+                "name",
+                "department:Engineering",
+                "department:Sales",
+                "department:Support",
+                "salary"
+            ]
+        );
+        let engineering: Vec<Option<u8>> = selected_ref
+            .value
+            .column("department:Engineering")
+            .unwrap()
+            .as_materialized_series()
+            .u8()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(engineering, vec![Some(1), Some(1), Some(0), Some(0)]);
+
+        let status = unsafe {
+            phs_dataframe_to_dummies(
+                employees,
+                true,
+                department_columns.as_ptr(),
+                department_columns.len(),
+                ptr::null(),
+                true,
+                false,
+                &mut out,
+                &mut err,
+            )
+        };
+        assert_eq!(status, PHS_OK);
+        let drop_first = out;
+        let drop_first_names: Vec<&str> = unsafe { dataframe_ref(drop_first) }
+            .unwrap()
+            .value
+            .get_column_names()
+            .into_iter()
+            .map(|name| name.as_str())
+            .collect();
+        assert_eq!(
+            drop_first_names,
+            vec!["id", "name", "department_Sales", "department_Support", "salary"]
+        );
+
+        let status = unsafe {
+            phs_dataframe_to_dummies(
+                values,
+                true,
+                age_columns.as_ptr(),
+                age_columns.len(),
+                ptr::null(),
+                true,
+                true,
+                &mut out,
+                &mut err,
+            )
+        };
+        assert_eq!(status, PHS_OK);
+        let drop_nulls = out;
+        let age_29: Vec<Option<u8>> = unsafe { dataframe_ref(drop_nulls) }
+            .unwrap()
+            .value
+            .column("age_29")
+            .unwrap()
+            .as_materialized_series()
+            .u8()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(age_29, vec![Some(0), Some(0), Some(1)]);
+
+        let status = unsafe {
+            phs_dataframe_to_dummies(
+                employees,
+                true,
+                ptr::null(),
+                0,
+                ptr::null(),
+                false,
+                false,
+                &mut out,
+                &mut err,
+            )
+        };
+        assert_eq!(status, PHS_OK);
+        let empty_columns = out;
+        assert_eq!(
+            unsafe { dataframe_ref(empty_columns) }
+                .unwrap()
+                .value
+                .get_column_names(),
+            ["id", "name", "department", "salary"]
+        );
+
+        let status = unsafe {
+            phs_dataframe_to_dummies(
+                employees,
+                true,
+                missing_columns.as_ptr(),
+                missing_columns.len(),
+                ptr::null(),
+                false,
+                false,
+                &mut out,
+                &mut err,
+            )
+        };
+        assert_eq!(status, PHS_OK);
+        let missing_columns = out;
+        assert_eq!(
+            unsafe { dataframe_ref(missing_columns) }
+                .unwrap()
+                .value
+                .get_column_names(),
+            ["id", "name", "department", "salary"]
+        );
+
+        let status = unsafe {
+            phs_dataframe_to_dummies(
+                employees,
+                true,
+                ptr::null(),
+                1,
+                ptr::null(),
+                false,
+                false,
+                &mut out,
+                &mut err,
+            )
+        };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "columns pointer was null");
+
+        let status = unsafe {
+            phs_dataframe_to_dummies(
+                employees,
+                true,
+                department_columns.as_ptr(),
+                department_columns.len(),
+                ptr::null(),
+                false,
+                false,
+                ptr::null_mut(),
+                &mut err,
+            )
+        };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "out pointer was null");
+
+        unsafe {
+            crate::handles::phs_dataframe_free(missing_columns);
+            crate::handles::phs_dataframe_free(empty_columns);
+            crate::handles::phs_dataframe_free(drop_nulls);
+            crate::handles::phs_dataframe_free(drop_first);
+            crate::handles::phs_dataframe_free(selected);
+            crate::handles::phs_dataframe_free(all_columns);
+            crate::handles::phs_dataframe_free(values);
+            crate::handles::phs_dataframe_free(employees);
         }
     }
 

@@ -1607,6 +1607,95 @@ main = hspec $ do
                         (_, _, Left err) -> expectationFailure (show err)
                     expectPolarsFailure missingColumn
 
+        it "encodes eager DataFrames as dummy indicator columns" $ do
+            employeesResult <- Pl.readCsv employeesCsv
+            valuesResult <- Pl.readCsv valuesCsv
+            case (employeesResult, valuesResult) of
+                (Right employeesDf, Right valuesDf) -> do
+                    allColumnsOut <- Pl.dataFrameToDummies Pl.defaultDataFrameToDummiesOptions employeesDf
+                    selectedOut <-
+                        Pl.dataFrameToDummies
+                            Pl.defaultDataFrameToDummiesOptions
+                                { Pl.dataFrameToDummiesColumns = Just ["department"]
+                                , Pl.dataFrameToDummiesSeparator = Just ":"
+                                }
+                            employeesDf
+                    dropFirstOut <-
+                        Pl.dataFrameToDummies
+                            Pl.defaultDataFrameToDummiesOptions
+                                { Pl.dataFrameToDummiesColumns = Just ["department"]
+                                , Pl.dataFrameToDummiesDropFirst = True
+                                }
+                            employeesDf
+                    dropNullsOut <-
+                        Pl.dataFrameToDummies
+                            Pl.defaultDataFrameToDummiesOptions
+                                { Pl.dataFrameToDummiesColumns = Just ["age"]
+                                , Pl.dataFrameToDummiesDropFirst = True
+                                , Pl.dataFrameToDummiesDropNulls = True
+                                }
+                            valuesDf
+                    emptyColumnsOut <-
+                        Pl.dataFrameToDummies
+                            Pl.defaultDataFrameToDummiesOptions {Pl.dataFrameToDummiesColumns = Just []}
+                            employeesDf
+                    missingColumn <-
+                        Pl.dataFrameToDummies
+                            Pl.defaultDataFrameToDummiesOptions {Pl.dataFrameToDummiesColumns = Just ["missing"]}
+                            employeesDf
+                    case (allColumnsOut, selectedOut, dropFirstOut, dropNullsOut, emptyColumnsOut, missingColumn) of
+                        (Right allColumnsDf, Right selectedDf, Right dropFirstDf, Right dropNullsDf, Right emptyColumnsDf, Right missingDf) -> do
+                            Pl.shape allColumnsDf `shouldReturn` Right (4, 15)
+                            Pl.column @Word8 allColumnsDf "name_Alice"
+                                `shouldReturn` Right (V.fromList [Just 1, Just 0, Just 0, Just 0])
+
+                            selectedSchema <- Pl.schema selectedDf
+                            fmap (map Pl.fieldName) selectedSchema
+                                `shouldBe` Right
+                                    [ "id"
+                                    , "name"
+                                    , "department:Engineering"
+                                    , "department:Sales"
+                                    , "department:Support"
+                                    , "salary"
+                                    ]
+                            Pl.column @Word8 selectedDf "department:Engineering"
+                                `shouldReturn` Right (V.fromList [Just 1, Just 1, Just 0, Just 0])
+
+                            dropFirstSchema <- Pl.schema dropFirstDf
+                            fmap (map Pl.fieldName) dropFirstSchema
+                                `shouldBe` Right ["id", "name", "department_Sales", "department_Support", "salary"]
+
+                            dropNullsSchema <- Pl.schema dropNullsDf
+                            fmap (map Pl.fieldName) dropNullsSchema
+                                `shouldBe` Right ["name", "age_29", "score", "active"]
+                            Pl.column @Word8 dropNullsDf "age_29"
+                                `shouldReturn` Right (V.fromList [Just 0, Just 0, Just 1])
+
+                            emptySchema <- Pl.schema emptyColumnsDf
+                            fmap (map Pl.fieldName) emptySchema
+                                `shouldBe` Right ["id", "name", "department", "salary"]
+                            Pl.column @T.Text emptyColumnsDf "department"
+                                `shouldReturn` Right
+                                    ( V.fromList
+                                        [ Just "Engineering"
+                                        , Just "Engineering"
+                                        , Just "Sales"
+                                        , Just "Support"
+                                        ]
+                                    )
+                            missingSchema <- Pl.schema missingDf
+                            fmap (map Pl.fieldName) missingSchema
+                                `shouldBe` Right ["id", "name", "department", "salary"]
+                        (Left err, _, _, _, _, _) -> expectationFailure (show err)
+                        (_, Left err, _, _, _, _) -> expectationFailure (show err)
+                        (_, _, Left err, _, _, _) -> expectationFailure (show err)
+                        (_, _, _, Left err, _, _) -> expectationFailure (show err)
+                        (_, _, _, _, Left err, _) -> expectationFailure (show err)
+                        (_, _, _, _, _, Left err) -> expectationFailure (show err)
+                (Left err, _) -> expectationFailure (show err)
+                (_, Left err) -> expectationFailure (show err)
+
         it "broadcasts unit-length eager DataFrame columns" $ do
             dfResult <- Pl.readCsv valuesCsv
             scoreResult <- Pl.series @Double "score" (V.fromList [Just 10.0])

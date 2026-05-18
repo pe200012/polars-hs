@@ -90,6 +90,7 @@ module Polars.Internal.Raw
     , phs_dataframe_take
     , phs_dataframe_to_ipc_bytes
     , phs_dataframe_to_text
+    , phs_dataframe_to_dummies
     , phs_dataframe_transpose
     , phs_dataframe_unpivot
     , phs_dataframe_unique
@@ -443,6 +444,19 @@ foreign import ccall safe "phs_dataframe_unpivot"
         CSize ->
         CString ->
         CString ->
+        Ptr (Ptr RawDataFrame) ->
+        Ptr (Ptr RawError) ->
+        IO CInt
+
+foreign import ccall safe "phs_dataframe_to_dummies"
+    phs_dataframe_to_dummies ::
+        Ptr RawDataFrame ->
+        CBool ->
+        Ptr CString ->
+        CSize ->
+        CString ->
+        CBool ->
+        CBool ->
         Ptr (Ptr RawDataFrame) ->
         Ptr (Ptr RawError) ->
         IO CInt
