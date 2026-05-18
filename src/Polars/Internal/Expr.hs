@@ -11,6 +11,7 @@ release them.
 -}
 module Polars.Internal.Expr
     ( compileExpr
+    , dtypeCode
     , withCompiledExprs
     ) where
 

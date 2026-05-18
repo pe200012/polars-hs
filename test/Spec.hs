@@ -2066,6 +2066,26 @@ main = hspec $ do
                                         (_, _, _, Left err, _) -> expectationFailure (show err)
                                         (_, _, _, _, Left err) -> expectationFailure (show err)
 
+        it "casts lazy frame columns" $ do
+            scanResult <- Pl.scanCsv fixtureCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    casted <- Pl.castColumns [("age", Pl.Float64)] True lf0
+                    allText <- Pl.castAllColumns Pl.Utf8 False lf0
+                    case (casted, allText) of
+                        (Right castedLf, Right allTextLf) -> do
+                            castedDf <- Pl.collect castedLf
+                            allTextDf <- Pl.collect allTextLf
+                            case (castedDf, allTextDf) of
+                                (Right df0, Right df1) -> do
+                                    Pl.column @Double df0 "age" `shouldReturn` Right (V.fromList [Just 34.0, Just 45.0, Just 29.0])
+                                    Pl.column @T.Text df1 "age" `shouldReturn` Right (V.fromList [Just "34", Just "45", Just "29"])
+                                (Left err, _) -> expectationFailure (show err)
+                                (_, Left err) -> expectationFailure (show err)
+                        (Left err, _) -> expectationFailure (show err)
+                        (_, Left err) -> expectationFailure (show err)
+
         it "profiles lazy execution and returns result and timing frames" $ do
             scanResult <- Pl.scanCsv salesCsv
             case scanResult of

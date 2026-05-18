@@ -28,6 +28,8 @@ module Polars.LazyFrame
     , collectStreaming
     , collectSchema
     , collectWithEngine
+    , castAllColumns
+    , castColumns
     , defaultCsvReadOptions
     , defaultLazyFrameExplodeOptions
     , defaultLazyFrameTopKOptions
@@ -102,7 +104,7 @@ import Polars.Error (PolarsError (..), PolarsErrorCode (InvalidArgument))
 import Polars.Expr (Expr)
 import Polars.Internal.Bytes (copyAndFreeBytes)
 import Polars.Internal.CString (withFilePathCString, withMaybeTextCString, withTextCString)
-import Polars.Internal.Expr (compileExpr, withCompiledExprs)
+import Polars.Internal.Expr (compileExpr, dtypeCode, withCompiledExprs)
 import Polars.Internal.Managed (DataFrame, LazyFrame, mkDataFrame, mkLazyFrame, withLazyFrame, withManagedExpr)
 import Polars.Internal.Raw
     ( RawBytes
@@ -119,6 +121,8 @@ import Polars.Internal.Raw
     , phs_lazyframe_collect_schema
     , phs_lazyframe_collect_with_engine
     , phs_lazyframe_cache
+    , phs_lazyframe_cast
+    , phs_lazyframe_cast_all
     , phs_lazyframe_clear
     , phs_lazyframe_describe_plan
     , phs_lazyframe_drop
@@ -162,7 +166,7 @@ import Polars.IO
     , defaultParquetScanOptions
     )
 import Polars.Internal.Result (consumeError, nullPointerError)
-import Polars.Schema (Field, parseSchemaBytes)
+import Polars.Schema (DataType, Field, parseSchemaBytes)
 
 newtype RenameOptions = RenameOptions
     { renameStrict :: Bool
@@ -322,6 +326,25 @@ collectAllWithEngine engine lfs = withLazyFrameList lfs $ \ptr len ->
 -- | Collect a lazy query with the Polars streaming engine.
 collectStreaming :: LazyFrame -> IO (Either PolarsError DataFrame)
 collectStreaming = collectWithEngine LazyStreaming
+
+-- | Cast named lazy frame columns to datatypes.
+castColumns :: [(Text, DataType)] -> Bool -> LazyFrame -> IO (Either PolarsError LazyFrame)
+castColumns columns strict lf =
+    case traverse (dtypeCode . snd) columns of
+        Left err -> pure (Left err)
+        Right dtypeCodes ->
+            withLazyFrame lf $ \ptr ->
+                withCastPairs columns dtypeCodes $ \names dtypes len ->
+                    lazyFrameOut (phs_lazyframe_cast ptr names dtypes len (toCBool strict))
+
+-- | Cast every lazy frame column to a datatype.
+castAllColumns :: DataType -> Bool -> LazyFrame -> IO (Either PolarsError LazyFrame)
+castAllColumns dtype strict lf =
+    case dtypeCode dtype of
+        Left err -> pure (Left err)
+        Right dtypeC ->
+            withLazyFrame lf $ \ptr ->
+                lazyFrameOut (phs_lazyframe_cast_all ptr dtypeC (toCBool strict))
 
 -- | Resolve the schema of the current lazy logical plan.
 collectSchema :: LazyFrame -> IO (Either PolarsError [Field])
@@ -718,6 +741,11 @@ withLazyFrameList lfs action = go lfs []
   where
     go [] acc = withArray (P.reverse acc) $ \ptr -> action ptr (fromIntegral (length acc))
     go (lf : rest) acc = withLazyFrame lf $ \ptr -> go rest (ptr : acc)
+
+withCastPairs :: [(Text, DataType)] -> [CInt] -> (Ptr CString -> Ptr CInt -> CSize -> IO a) -> IO a
+withCastPairs columns dtypeCodes action =
+    withCStringList (map fst columns) $ \names len ->
+        withArray dtypeCodes $ \dtypes -> action names dtypes len
 
 withRenamePairs :: [(Text, Text)] -> (Ptr CString -> Ptr CString -> CSize -> IO a) -> IO a
 withRenamePairs values action = go values [] []

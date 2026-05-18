@@ -64,6 +64,44 @@ unsafe fn bool_vec(values: *const u8, len: usize, label: &str) -> PhsResult<Vec<
         .collect()
 }
 
+unsafe fn dtype_vec(dtypes: *const c_int, len: usize) -> PhsResult<Vec<DataType>> {
+    if dtypes.is_null() && len > 0 {
+        return Err(PhsError::invalid_argument("dtypes pointer was null"));
+    }
+    let slice = if len == 0 {
+        &[]
+    } else {
+        unsafe { std::slice::from_raw_parts(dtypes, len) }
+    };
+    slice.iter().map(|dtype| dtype_from_code(*dtype)).collect()
+}
+
+fn dtype_from_code(code: c_int) -> PhsResult<DataType> {
+    match code {
+        0 => Ok(DataType::Boolean),
+        1 => Ok(DataType::Int8),
+        2 => Ok(DataType::Int16),
+        3 => Ok(DataType::Int32),
+        4 => Ok(DataType::Int64),
+        5 => Ok(DataType::UInt8),
+        6 => Ok(DataType::UInt16),
+        7 => Ok(DataType::UInt32),
+        8 => Ok(DataType::UInt64),
+        9 => Ok(DataType::Float32),
+        10 => Ok(DataType::Float64),
+        11 => Ok(DataType::String),
+        12 => Ok(DataType::Date),
+        13 => Ok(DataType::Datetime(TimeUnit::Milliseconds, None)),
+        14 => Ok(DataType::Duration(TimeUnit::Milliseconds)),
+        15 => Ok(DataType::Time),
+        16 => Ok(DataType::Binary),
+        17 => Ok(DataType::Null),
+        value => Err(PhsError::invalid_argument(format!(
+            "unknown dtype code {value}"
+        ))),
+    }
+}
+
 unsafe fn lazyframe_plans_and_opt_state(
     lazyframes: *const *const phs_lazyframe,
     len: usize,
@@ -545,6 +583,50 @@ pub unsafe extern "C" fn phs_lazyframe_with_optimization(
         *out = ptr::null_mut();
         let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
         *out = lazyframe_into_raw(apply_optimizer_toggle(lf, optimization, toggle)?);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_cast(
+    lazyframe: *const phs_lazyframe,
+    names: *const *const c_char,
+    dtypes: *const c_int,
+    len: usize,
+    strict: bool,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        let names = unsafe { name_vec(names, len) }?;
+        let dtypes = unsafe { dtype_vec(dtypes, len) }?;
+        let cast_map = names
+            .iter()
+            .zip(dtypes)
+            .map(|(name, dtype)| (name.as_str(), dtype))
+            .collect::<PlHashMap<_, _>>();
+        *out = lazyframe_into_raw(lf.cast(cast_map, strict));
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_cast_all(
+    lazyframe: *const phs_lazyframe,
+    dtype: c_int,
+    strict: bool,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        let dtype = dtype_from_code(dtype)?;
+        *out = lazyframe_into_raw(lf.cast_all(dtype, strict));
         Ok(())
     })
 }
@@ -1603,6 +1685,98 @@ mod tests {
             crate::handles::phs_lazyframe_free(lf0);
             crate::handles::phs_lazyframe_free(filtered);
             crate::handles::phs_lazyframe_free(selected);
+        }
+    }
+
+    #[test]
+    fn lazy_cast_columns_and_all_update_output_dtypes() {
+        let path = fixture_path();
+        let mut lf0 = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(unsafe { phs_scan_csv(path.as_ptr(), &mut lf0, &mut err) }, PHS_OK);
+
+        let age = std::ffi::CString::new("age").unwrap();
+        let names = [age.as_ptr()];
+        let dtypes = [10];
+        let mut casted = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_lazyframe_cast(lf0, names.as_ptr(), dtypes.as_ptr(), names.len(), true, &mut casted, &mut err) },
+            PHS_OK
+        );
+        let mut df = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_collect(casted, &mut df, &mut err) }, PHS_OK);
+        assert_eq!(
+            unsafe { crate::handles::dataframe_ref(df) }
+                .unwrap()
+                .value
+                .column("age")
+                .unwrap()
+                .dtype(),
+            &DataType::Float64
+        );
+        unsafe { crate::handles::phs_dataframe_free(df) };
+
+        let mut all_text = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_cast_all(lf0, 11, false, &mut all_text, &mut err) }, PHS_OK);
+        df = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_collect(all_text, &mut df, &mut err) }, PHS_OK);
+        assert_eq!(
+            unsafe { crate::handles::dataframe_ref(df) }
+                .unwrap()
+                .value
+                .column("age")
+                .unwrap()
+                .dtype(),
+            &DataType::String
+        );
+        unsafe { crate::handles::phs_dataframe_free(df) };
+
+        let mut no_op = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_lazyframe_cast(lf0, ptr::null(), ptr::null(), 0, true, &mut no_op, &mut err) },
+            PHS_OK
+        );
+        df = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_collect(no_op, &mut df, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::handles::dataframe_ref(df) }.unwrap().value.shape(), (3, 2));
+        unsafe { crate::handles::phs_dataframe_free(df) };
+
+        let mut invalid = ptr::null_mut();
+        let invalid_dtypes = [99];
+        let status = unsafe { phs_lazyframe_cast(lf0, names.as_ptr(), invalid_dtypes.as_ptr(), names.len(), true, &mut invalid, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "unknown dtype code 99");
+        err = ptr::null_mut();
+
+        let status = unsafe { phs_lazyframe_cast(lf0, ptr::null(), dtypes.as_ptr(), names.len(), true, &mut invalid, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "names pointer was null");
+        err = ptr::null_mut();
+
+        let status = unsafe { phs_lazyframe_cast(lf0, names.as_ptr(), ptr::null(), names.len(), true, &mut invalid, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "dtypes pointer was null");
+        err = ptr::null_mut();
+
+        let status = unsafe { phs_lazyframe_cast_all(ptr::null(), 11, true, &mut invalid, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "lazyframe pointer was null");
+        err = ptr::null_mut();
+
+        let status = unsafe { phs_lazyframe_cast_all(lf0, 11, true, ptr::null_mut(), &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "out pointer was null");
+
+        unsafe {
+            crate::handles::phs_lazyframe_free(lf0);
+            crate::handles::phs_lazyframe_free(casted);
+            crate::handles::phs_lazyframe_free(all_text);
+            crate::handles::phs_lazyframe_free(no_op);
         }
     }
 

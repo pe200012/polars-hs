@@ -835,6 +835,20 @@ int phs_lazyframe_with_optimization(const struct phs_lazyframe *lazyframe,
                                     struct phs_lazyframe **out,
                                     struct phs_error **err);
 
+int phs_lazyframe_cast(const struct phs_lazyframe *lazyframe,
+                       const char *const *names,
+                       const int *dtypes,
+                       uintptr_t len,
+                       bool strict,
+                       struct phs_lazyframe **out,
+                       struct phs_error **err);
+
+int phs_lazyframe_cast_all(const struct phs_lazyframe *lazyframe,
+                           int dtype,
+                           bool strict,
+                           struct phs_lazyframe **out,
+                           struct phs_error **err);
+
 int phs_lazyframe_filter(const struct phs_lazyframe *lazyframe,
                          const struct phs_expr *predicate,
                          struct phs_lazyframe **out,

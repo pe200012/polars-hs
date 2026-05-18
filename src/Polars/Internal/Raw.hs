@@ -99,6 +99,8 @@ module Polars.Internal.Raw
     , phs_dataframe_with_row_index
     , phs_dataframe_width
     , phs_lazyframe_cache
+    , phs_lazyframe_cast
+    , phs_lazyframe_cast_all
     , phs_lazyframe_clear
     , phs_error_code
     , phs_error_free
@@ -772,6 +774,12 @@ foreign import ccall safe "phs_lazyframe_to_dot"
 
 foreign import ccall safe "phs_lazyframe_profile"
     phs_lazyframe_profile :: Ptr RawLazyFrame -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_lazyframe_cast"
+    phs_lazyframe_cast :: Ptr RawLazyFrame -> Ptr CString -> Ptr CInt -> CSize -> CBool -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_lazyframe_cast_all"
+    phs_lazyframe_cast_all :: Ptr RawLazyFrame -> CInt -> CBool -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall safe "phs_lazyframe_without_optimizations"
     phs_lazyframe_without_optimizations :: Ptr RawLazyFrame -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
