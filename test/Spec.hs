@@ -1854,6 +1854,26 @@ main = hspec $ do
                                         Left err -> expectationFailure (show err)
                                         Right df -> Pl.shape df `shouldReturn` Right (1, 1)
 
+        it "removes lazy frame rows where predicates are true" $ do
+            scanResult <- Pl.scanCsv valuesCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf -> do
+                    belowOrNull <- Pl.removeRows (Pl.col "age" Pl..> Pl.litInt 30) lf
+                    withoutNullAge <- Pl.removeRows (Pl.isNull (Pl.col "age")) lf
+                    case (belowOrNull, withoutNullAge) of
+                        (Right belowOrNullLf, Right withoutNullAgeLf) -> do
+                            belowOrNullDf <- Pl.collect belowOrNullLf
+                            withoutNullAgeDf <- Pl.collect withoutNullAgeLf
+                            case (belowOrNullDf, withoutNullAgeDf) of
+                                (Right bDf, Right nDf) -> do
+                                    Pl.column @T.Text bDf "name" `shouldReturn` Right (V.fromList [Just "Bob", Just "Carol"])
+                                    Pl.column @T.Text nDf "name" `shouldReturn` Right (V.fromList [Just "Alice", Just "Carol"])
+                                (Left err, _) -> expectationFailure (show err)
+                                (_, Left err) -> expectationFailure (show err)
+                        (Left err, _) -> expectationFailure (show err)
+                        (_, Left err) -> expectationFailure (show err)
+
         it "scans CSV files with parser options" $
             withTempFileContent "polars-hs-custom-scan.csv" "Alice;34\nBob;NA\n" $ \path -> do
                 let options =

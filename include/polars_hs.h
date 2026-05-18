@@ -854,6 +854,11 @@ int phs_lazyframe_filter(const struct phs_lazyframe *lazyframe,
                          struct phs_lazyframe **out,
                          struct phs_error **err);
 
+int phs_lazyframe_remove(const struct phs_lazyframe *lazyframe,
+                         const struct phs_expr *predicate,
+                         struct phs_lazyframe **out,
+                         struct phs_error **err);
+
 int phs_lazyframe_select(const struct phs_lazyframe *lazyframe,
                          const struct phs_expr *const *exprs,
                          uintptr_t len,

@@ -63,6 +63,7 @@ module Polars.LazyFrame
     , nullCount
     , profile
     , rename
+    , removeRows
     , reverse
     , scanCsv
     , scanCsvWith
@@ -148,6 +149,7 @@ import Polars.Internal.Raw
     , phs_lazyframe_null_count
     , phs_lazyframe_profile
     , phs_lazyframe_rename
+    , phs_lazyframe_remove
     , phs_lazyframe_reverse
     , phs_lazyframe_select
     , phs_lazyframe_shift
@@ -441,12 +443,11 @@ optimizerToggle code enabled lf = withLazyFrame lf $ \ptr ->
     lazyFrameOut (phs_lazyframe_with_optimization ptr code (toCBool enabled))
 
 filter :: Expr -> LazyFrame -> IO (Either PolarsError LazyFrame)
-filter predicate lf = do
-    compiled <- compileExpr predicate
-    case compiled of
-        Left err -> pure (Left err)
-        Right managed -> withLazyFrame lf $ \lfPtr ->
-            withManagedExpr managed $ \exprPtr -> lazyFrameOut (phs_lazyframe_filter lfPtr exprPtr)
+filter predicate lf = lazyFrameExprOut predicate lf phs_lazyframe_filter
+
+-- | Remove rows where the predicate evaluates to true.
+removeRows :: Expr -> LazyFrame -> IO (Either PolarsError LazyFrame)
+removeRows predicate lf = lazyFrameExprOut predicate lf phs_lazyframe_remove
 
 select :: [Expr] -> LazyFrame -> IO (Either PolarsError LazyFrame)
 select exprs lf = withLazyFrame lf $ \lfPtr ->

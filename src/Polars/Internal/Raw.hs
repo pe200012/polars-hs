@@ -166,6 +166,7 @@ module Polars.Internal.Raw
     , phs_lazyframe_null_count
     , phs_lazyframe_profile
     , phs_lazyframe_rename
+    , phs_lazyframe_remove
     , phs_lazyframe_reverse
     , phs_lazyframe_select
     , phs_lazyframe_shift
@@ -793,6 +794,9 @@ foreign import ccall safe "phs_lazyframe_with_optimization"
 
 foreign import ccall unsafe "phs_lazyframe_filter"
     phs_lazyframe_filter :: Ptr RawLazyFrame -> Ptr RawExpr -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_lazyframe_remove"
+    phs_lazyframe_remove :: Ptr RawLazyFrame -> Ptr RawExpr -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_lazyframe_select"
     phs_lazyframe_select :: Ptr RawLazyFrame -> Ptr (Ptr RawExpr) -> CSize -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
