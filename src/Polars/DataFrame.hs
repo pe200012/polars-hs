@@ -20,6 +20,7 @@ module Polars.DataFrame
     , DataFrameSortOptions (..)
     , DataFrameTransposeColumnNames (..)
     , DataFrameTransposeOptions (..)
+    , DataFrameUnpivotOptions (..)
     , DataFrameUniqueKeepStrategy (..)
     , DataFrameUniqueOptions (..)
     , FillNullStrategy (..)
@@ -66,6 +67,7 @@ module Polars.DataFrame
     , dataFrameSort
     , dataFrameTake
     , dataFrameTranspose
+    , dataFrameUnpivot
     , dataFrameUnique
     , dataFrameVStack
     , dataFrameWithColumns
@@ -80,6 +82,7 @@ module Polars.DataFrame
     , defaultDataFrameSampleOptions
     , defaultDataFrameSortOptions
     , defaultDataFrameTransposeOptions
+    , defaultDataFrameUnpivotOptions
     , defaultDataFrameUniqueOptions
     , defaultParquetReadOptions
     , defaultParquetStatisticsOptions
@@ -173,6 +176,7 @@ import Polars.Internal.Raw
     , phs_dataframe_tail
     , phs_dataframe_take
     , phs_dataframe_transpose
+    , phs_dataframe_unpivot
     , phs_dataframe_to_text
     , phs_dataframe_unique
     , phs_dataframe_vstack
@@ -334,6 +338,23 @@ defaultDataFrameTransposeOptions =
     DataFrameTransposeOptions
         { dataFrameTransposeKeepNamesAs = Nothing
         , dataFrameTransposeColumnNames = TransposeDefaultColumnNames
+        }
+
+data DataFrameUnpivotOptions = DataFrameUnpivotOptions
+    { dataFrameUnpivotOn :: !(Maybe [Text])
+    , dataFrameUnpivotIndex :: ![Text]
+    , dataFrameUnpivotVariableName :: !(Maybe Text)
+    , dataFrameUnpivotValueName :: !(Maybe Text)
+    }
+    deriving (Eq, Show)
+
+defaultDataFrameUnpivotOptions :: DataFrameUnpivotOptions
+defaultDataFrameUnpivotOptions =
+    DataFrameUnpivotOptions
+        { dataFrameUnpivotOn = Nothing
+        , dataFrameUnpivotIndex = []
+        , dataFrameUnpivotVariableName = Nothing
+        , dataFrameUnpivotValueName = Nothing
         }
 
 data FillNullStrategy
@@ -608,6 +629,25 @@ dataFrameTranspose options df =
                                 nullPtr
                                 nameArray
                                 nameLen
+                            )
+
+dataFrameUnpivot :: DataFrameUnpivotOptions -> DataFrame -> IO (Either PolarsError DataFrame)
+dataFrameUnpivot options df =
+    withDataFrame df $ \dfPtr ->
+        withMaybeCStringList (dataFrameUnpivotOn options) $ \onArray onLen hasOn ->
+            withCStringList (dataFrameUnpivotIndex options) $ \indexArray indexLen ->
+                withMaybeTextCString (dataFrameUnpivotVariableName options) $ \variablePtr _ ->
+                    withMaybeTextCString (dataFrameUnpivotValueName options) $ \valuePtr _ ->
+                        dataframeOut
+                            ( phs_dataframe_unpivot
+                                dfPtr
+                                (toCBool hasOn)
+                                onArray
+                                onLen
+                                indexArray
+                                indexLen
+                                variablePtr
+                                valuePtr
                             )
 
 dataFrameRename :: [(Text, Text)] -> DataFrame -> IO (Either PolarsError DataFrame)

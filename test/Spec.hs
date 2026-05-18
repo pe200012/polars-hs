@@ -1535,6 +1535,78 @@ main = hspec $ do
                 (_, Left err, _) -> expectationFailure (show err)
                 (_, _, Left err) -> expectationFailure (show err)
 
+        it "unpivots eager DataFrames from wide to long format" $ do
+            result <- Pl.readCsv employeesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    explicitOut <-
+                        Pl.dataFrameUnpivot
+                            Pl.defaultDataFrameUnpivotOptions
+                                { Pl.dataFrameUnpivotIndex = ["department"]
+                                , Pl.dataFrameUnpivotOn = Just ["salary"]
+                                , Pl.dataFrameUnpivotVariableName = Just "metric"
+                                , Pl.dataFrameUnpivotValueName = Just "amount"
+                                }
+                            df
+                    defaultOnOut <-
+                        Pl.dataFrameUnpivot
+                            Pl.defaultDataFrameUnpivotOptions
+                                { Pl.dataFrameUnpivotIndex = ["department"]
+                                , Pl.dataFrameUnpivotOn = Nothing
+                                }
+                            df
+                    emptyOnOut <-
+                        Pl.dataFrameUnpivot
+                            Pl.defaultDataFrameUnpivotOptions
+                                { Pl.dataFrameUnpivotIndex = ["department"]
+                                , Pl.dataFrameUnpivotOn = Just []
+                                }
+                            df
+                    missingColumn <-
+                        Pl.dataFrameUnpivot
+                            Pl.defaultDataFrameUnpivotOptions
+                                { Pl.dataFrameUnpivotIndex = ["missing"]
+                                , Pl.dataFrameUnpivotOn = Just ["salary"]
+                                }
+                            df
+                    case (explicitOut, defaultOnOut, emptyOnOut) of
+                        (Right explicitDf, Right defaultDf, Right emptyDf) -> do
+                            Pl.shape explicitDf `shouldReturn` Right (4, 3)
+                            explicitSchema <- Pl.schema explicitDf
+                            fmap (map Pl.fieldName) explicitSchema `shouldBe` Right ["department", "metric", "amount"]
+                            Pl.column @T.Text explicitDf "department"
+                                `shouldReturn` Right (V.fromList [Just "Engineering", Just "Engineering", Just "Sales", Just "Support"])
+                            Pl.column @T.Text explicitDf "metric"
+                                `shouldReturn` Right (V.fromList [Just "salary", Just "salary", Just "salary", Just "salary"])
+                            Pl.column @Int64 explicitDf "amount"
+                                `shouldReturn` Right (V.fromList [Just 100, Just 150, Just 90, Just 80])
+                            Pl.shape defaultDf `shouldReturn` Right (12, 3)
+                            Pl.column @T.Text defaultDf "variable"
+                                `shouldReturn` Right
+                                    ( V.fromList
+                                        [ Just "id"
+                                        , Just "id"
+                                        , Just "id"
+                                        , Just "id"
+                                        , Just "name"
+                                        , Just "name"
+                                        , Just "name"
+                                        , Just "name"
+                                        , Just "salary"
+                                        , Just "salary"
+                                        , Just "salary"
+                                        , Just "salary"
+                                        ]
+                                    )
+                            Pl.shape emptyDf `shouldReturn` Right (0, 3)
+                            emptySchema <- Pl.schema emptyDf
+                            fmap (map Pl.fieldName) emptySchema `shouldBe` Right ["department", "variable", "value"]
+                        (Left err, _, _) -> expectationFailure (show err)
+                        (_, Left err, _) -> expectationFailure (show err)
+                        (_, _, Left err) -> expectationFailure (show err)
+                    expectPolarsFailure missingColumn
+
         it "broadcasts unit-length eager DataFrame columns" $ do
             dfResult <- Pl.readCsv valuesCsv
             scoreResult <- Pl.series @Double "score" (V.fromList [Just 10.0])

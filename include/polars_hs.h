@@ -272,6 +272,17 @@ int phs_dataframe_transpose(const struct phs_dataframe *dataframe,
                             struct phs_dataframe **out,
                             struct phs_error **err);
 
+int phs_dataframe_unpivot(const struct phs_dataframe *dataframe,
+                          bool has_on,
+                          const char *const *on,
+                          uintptr_t on_len,
+                          const char *const *index,
+                          uintptr_t index_len,
+                          const char *variable_name,
+                          const char *value_name,
+                          struct phs_dataframe **out,
+                          struct phs_error **err);
+
 uintptr_t phs_dataframe_array_len(const struct phs_dataframe_array *array);
 
 int phs_dataframe_array_get(const struct phs_dataframe_array *array,

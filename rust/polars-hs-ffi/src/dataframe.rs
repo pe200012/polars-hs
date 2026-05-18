@@ -5,6 +5,7 @@ use std::ptr;
 
 use either::Either;
 use polars::prelude::*;
+use polars_ops::prelude::UnpivotDF;
 
 use crate::bytes::{bytes_into_raw, phs_bytes};
 use crate::error::{PhsError, PhsResult, c_str_to_str, ffi_boundary, phs_error, required_mut};
@@ -109,6 +110,10 @@ fn idx_ca_from_u64_slice(values: &[u64], label: &str) -> PhsResult<IdxCa> {
         .map(|value| idx_size_from_u64(*value, label))
         .collect::<PhsResult<Vec<IdxSize>>>()?;
     Ok(IdxCa::from_vec(PlSmallStr::EMPTY, indices))
+}
+
+fn pl_small_names(names: Vec<String>) -> Vec<PlSmallStr> {
+    names.into_iter().map(PlSmallStr::from_string).collect()
 }
 
 fn validate_sort_bool_options(label: &str, column_count: usize, values: &[bool]) -> PhsResult<()> {
@@ -1011,6 +1016,53 @@ pub unsafe extern "C" fn phs_dataframe_transpose(
         };
         let mut value = handle.value.clone();
         *out = dataframe_into_raw(value.transpose(keep_names_as, new_col_names)?);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_unpivot(
+    dataframe: *const phs_dataframe,
+    has_on: bool,
+    on: *const *const c_char,
+    on_len: usize,
+    index: *const *const c_char,
+    index_len: usize,
+    variable_name: *const c_char,
+    value_name: *const c_char,
+    out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        let on = if has_on {
+            Some(pl_small_names(unsafe { name_vec(on, on_len, "on") }?))
+        } else {
+            None
+        };
+        let index = pl_small_names(unsafe { name_vec(index, index_len, "index") }?);
+        let variable_name = if variable_name.is_null() {
+            None
+        } else {
+            Some(PlSmallStr::from_str(unsafe {
+                c_str_to_str(variable_name, "variable_name")?
+            }))
+        };
+        let value_name = if value_name.is_null() {
+            None
+        } else {
+            Some(PlSmallStr::from_str(unsafe { c_str_to_str(value_name, "value_name")? }))
+        };
+        let args = UnpivotArgsIR::new(
+            handle.value.get_column_names_owned(),
+            on,
+            index,
+            value_name,
+            variable_name,
+        );
+        *out = dataframe_into_raw(handle.value.unpivot2(args)?);
         Ok(())
     })
 }
@@ -3179,6 +3231,127 @@ mod tests {
             crate::handles::phs_dataframe_free(default_out);
             crate::handles::phs_dataframe_free(named);
             crate::handles::phs_dataframe_free(numeric);
+        }
+    }
+
+    #[test]
+    fn dataframe_unpivot_returns_long_form_frames() {
+        let df = read_fixture_dataframe("employees.csv");
+        let department = std::ffi::CString::new("department").unwrap();
+        let salary = std::ffi::CString::new("salary").unwrap();
+        let metric = std::ffi::CString::new("metric").unwrap();
+        let amount = std::ffi::CString::new("amount").unwrap();
+        let index = [department.as_ptr()];
+        let on = [salary.as_ptr()];
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe {
+            phs_dataframe_unpivot(
+                df,
+                true,
+                on.as_ptr(),
+                on.len(),
+                index.as_ptr(),
+                index.len(),
+                metric.as_ptr(),
+                amount.as_ptr(),
+                &mut out,
+                &mut err,
+            )
+        };
+        assert_eq!(status, PHS_OK);
+        let explicit = out;
+        assert_eq!(unsafe { dataframe_ref(explicit) }.unwrap().value.shape(), (4, 3));
+        let values: Vec<Option<i64>> = unsafe { dataframe_ref(explicit) }
+            .unwrap()
+            .value
+            .column("amount")
+            .unwrap()
+            .as_materialized_series()
+            .i64()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(values, vec![Some(100), Some(150), Some(90), Some(80)]);
+
+        let status = unsafe {
+            phs_dataframe_unpivot(
+                df,
+                false,
+                ptr::null(),
+                0,
+                index.as_ptr(),
+                index.len(),
+                ptr::null(),
+                ptr::null(),
+                &mut out,
+                &mut err,
+            )
+        };
+        assert_eq!(status, PHS_OK);
+        let default_on = out;
+        assert_eq!(unsafe { dataframe_ref(default_on) }.unwrap().value.shape(), (12, 3));
+
+        let status = unsafe {
+            phs_dataframe_unpivot(
+                df,
+                true,
+                ptr::null(),
+                0,
+                index.as_ptr(),
+                index.len(),
+                ptr::null(),
+                ptr::null(),
+                &mut out,
+                &mut err,
+            )
+        };
+        assert_eq!(status, PHS_OK);
+        let empty_on = out;
+        assert_eq!(unsafe { dataframe_ref(empty_on) }.unwrap().value.shape(), (0, 3));
+
+        let status = unsafe {
+            phs_dataframe_unpivot(
+                df,
+                true,
+                ptr::null(),
+                1,
+                index.as_ptr(),
+                index.len(),
+                ptr::null(),
+                ptr::null(),
+                &mut out,
+                &mut err,
+            )
+        };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "on pointer was null");
+
+        let status = unsafe {
+            phs_dataframe_unpivot(
+                df,
+                true,
+                on.as_ptr(),
+                on.len(),
+                index.as_ptr(),
+                index.len(),
+                ptr::null(),
+                ptr::null(),
+                ptr::null_mut(),
+                &mut err,
+            )
+        };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "out pointer was null");
+
+        unsafe {
+            crate::handles::phs_dataframe_free(empty_on);
+            crate::handles::phs_dataframe_free(default_on);
+            crate::handles::phs_dataframe_free(explicit);
+            crate::handles::phs_dataframe_free(df);
         }
     }
 
