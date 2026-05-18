@@ -14,6 +14,7 @@ module Polars.DataFrame
     , DataFrame
     , DataFrameJoinOptions (..)
     , DataFrameJoinType (..)
+    , DataFramePartitionOptions (..)
     , DataFrameSampleOptions (..)
     , DataFrameSortOptions (..)
     , DataFrameUniqueKeepStrategy (..)
@@ -42,6 +43,7 @@ module Polars.DataFrame
     , dataFrameMaxNChunks
     , dataFrameNewFromIndex
     , dataFrameNullCount
+    , dataFramePartitionBy
     , dataFrameRechunk
     , dataFrameReplaceColumn
     , dataFrameRename
@@ -64,6 +66,7 @@ module Polars.DataFrame
     , defaultCsvReadOptions
     , defaultCsvWriteOptions
     , defaultDataFrameJoinOptions
+    , defaultDataFramePartitionOptions
     , defaultDataFrameSampleOptions
     , defaultDataFrameSortOptions
     , defaultDataFrameUniqueOptions
@@ -87,6 +90,7 @@ module Polars.DataFrame
 
 import Prelude hiding (head, tail)
 
+import Control.Exception (bracket)
 import Control.Monad (when)
 import qualified Data.ByteString as BS
 import Data.Bits ((.|.), shiftL)
@@ -109,9 +113,13 @@ import Polars.Internal.Managed (DataFrame, Series, mkDataFrame, mkSeries, withDa
 import Polars.Internal.Raw
     ( RawBytes
     , RawDataFrame
+    , RawDataFrameArray
     , RawError
     , RawSeries
     , phs_dataframe_align_chunks
+    , phs_dataframe_array_free
+    , phs_dataframe_array_get
+    , phs_dataframe_array_len
     , phs_dataframe_clear
     , phs_dataframe_drop
     , phs_dataframe_drop_nulls
@@ -132,6 +140,7 @@ import Polars.Internal.Raw
     , phs_dataframe_new
     , phs_dataframe_new_from_index
     , phs_dataframe_null_count
+    , phs_dataframe_partition_by
     , phs_dataframe_rechunk
     , phs_dataframe_replace_column
     , phs_dataframe_rename
@@ -260,6 +269,21 @@ defaultDataFrameSampleOptions =
         { dataFrameSampleWithReplacement = False
         , dataFrameSampleShuffle = False
         , dataFrameSampleSeed = Nothing
+        }
+
+data DataFramePartitionOptions = DataFramePartitionOptions
+    { dataFramePartitionColumns :: ![Text]
+    , dataFramePartitionIncludeKey :: !Bool
+    , dataFramePartitionMaintainOrder :: !Bool
+    }
+    deriving (Eq, Show)
+
+defaultDataFramePartitionOptions :: DataFramePartitionOptions
+defaultDataFramePartitionOptions =
+    DataFramePartitionOptions
+        { dataFramePartitionColumns = []
+        , dataFramePartitionIncludeKey = True
+        , dataFramePartitionMaintainOrder = False
         }
 
 data FillNullStrategy
@@ -447,6 +471,22 @@ dataFrameReplaceColumn index column df = case nonNegativeWord64 "dataFrameReplac
         withDataFrame df $ \dfPtr ->
             withSeries column $ \seriesPtr ->
                 dataframeOut (phs_dataframe_replace_column dfPtr indexValue seriesPtr)
+
+dataFramePartitionBy :: DataFramePartitionOptions -> DataFrame -> IO (Either PolarsError [DataFrame])
+dataFramePartitionBy options df
+    | null (dataFramePartitionColumns options) =
+        pure (Left (invalidArgument "dataFramePartitionBy requires at least one column name"))
+    | otherwise =
+        withDataFrame df $ \dfPtr ->
+            withCStringList (dataFramePartitionColumns options) $ \nameArray nameLen ->
+                dataframeArrayOut
+                    ( phs_dataframe_partition_by
+                        dfPtr
+                        nameArray
+                        nameLen
+                        (toCBool (dataFramePartitionIncludeKey options))
+                        (toCBool (dataFramePartitionMaintainOrder options))
+                    )
 
 dataFrameRename :: [(Text, Text)] -> DataFrame -> IO (Either PolarsError DataFrame)
 dataFrameRename [] _ = pure (Left (invalidArgument "dataFrameRename requires at least one column pair"))
@@ -724,6 +764,43 @@ dataframePairOut action =
                                         rightDf <- mkDataFrame right
                                         pure (Right (leftDf, rightDf))
                     else Left <$> (consumeError (fromIntegralStatus status) =<< peek errPtr)
+
+dataframeArrayOut :: (Ptr (Ptr RawDataFrameArray) -> Ptr (Ptr RawError) -> IO CInt) -> IO (Either PolarsError [DataFrame])
+dataframeArrayOut action =
+    alloca $ \outPtr ->
+        alloca $ \errPtr -> do
+            poke outPtr nullPtr
+            poke errPtr nullPtr
+            status <- action outPtr errPtr
+            if fromIntegralStatus status == 0
+                then do
+                    array <- peek outPtr
+                    if array == nullPtr
+                        then pure (Left (nullPointerError "dataframe array output"))
+                        else bracket (pure array) phs_dataframe_array_free dataframeArrayToList
+                else Left <$> (consumeError (fromIntegralStatus status) =<< peek errPtr)
+
+dataframeArrayToList :: Ptr RawDataFrameArray -> IO (Either PolarsError [DataFrame])
+dataframeArrayToList array = do
+    len <- phs_dataframe_array_len array
+    let go index acc
+            | index >= len = pure (Right (reverse acc))
+            | otherwise =
+                alloca $ \outPtr ->
+                    alloca $ \errPtr -> do
+                        poke outPtr nullPtr
+                        poke errPtr nullPtr
+                        status <- phs_dataframe_array_get array index outPtr errPtr
+                        if fromIntegralStatus status == 0
+                            then do
+                                ptr <- peek outPtr
+                                if ptr == nullPtr
+                                    then pure (Left (nullPointerError "dataframe array item output"))
+                                    else do
+                                        df <- mkDataFrame ptr
+                                        go (index + 1) (df : acc)
+                            else Left <$> (consumeError (fromIntegralStatus status) =<< peek errPtr)
+    go 0 []
 
 unitOut :: (Ptr (Ptr RawError) -> IO CInt) -> IO (Either PolarsError ())
 unitOut action =

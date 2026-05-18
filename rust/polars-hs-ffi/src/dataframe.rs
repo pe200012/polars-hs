@@ -18,6 +18,29 @@ use crate::series::{
 
 const SCHEMA_MAGIC: &[u8; 8] = b"PHS1SCH\0";
 
+#[repr(C)]
+pub struct phs_dataframe_array {
+    _private: [u8; 0],
+}
+
+struct DataFrameArrayHandle {
+    values: Vec<DataFrame>,
+}
+
+fn dataframe_array_into_raw(values: Vec<DataFrame>) -> *mut phs_dataframe_array {
+    Box::into_raw(Box::new(DataFrameArrayHandle { values })) as *mut phs_dataframe_array
+}
+
+unsafe fn dataframe_array_ref<'a>(
+    ptr: *const phs_dataframe_array,
+) -> PhsResult<&'a DataFrameArrayHandle> {
+    if ptr.is_null() {
+        Err(PhsError::invalid_argument("dataframe array pointer was null"))
+    } else {
+        Ok(unsafe { &*(ptr as *const DataFrameArrayHandle) })
+    }
+}
+
 unsafe fn c_path(path: *const c_char) -> PhsResult<PathBuf> {
     Ok(PathBuf::from(unsafe { c_str_to_str(path, "path") }?))
 }
@@ -830,6 +853,77 @@ pub unsafe extern "C" fn phs_dataframe_replace_column(
         *out = dataframe_into_raw(df);
         Ok(())
     })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_partition_by(
+    dataframe: *const phs_dataframe,
+    names: *const *const c_char,
+    names_len: usize,
+    include_key: bool,
+    maintain_order: bool,
+    out: *mut *mut phs_dataframe_array,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        let names = unsafe { name_vec(names, names_len, "names") }?;
+        if names.is_empty() {
+            return Err(PhsError::invalid_argument(
+                "partition_by requires at least one column",
+            ));
+        }
+        let names = names
+            .iter()
+            .map(|name| PlSmallStr::from_str(name))
+            .collect::<Vec<_>>();
+        let partitions = if maintain_order {
+            handle.value.partition_by_stable(names, include_key)?
+        } else {
+            handle.value.partition_by(names, include_key)?
+        };
+        *out = dataframe_array_into_raw(partitions);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_array_len(array: *const phs_dataframe_array) -> usize {
+    if array.is_null() {
+        0
+    } else {
+        unsafe { (*(array as *const DataFrameArrayHandle)).values.len() }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_array_get(
+    array: *const phs_dataframe_array,
+    index: usize,
+    out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let array = unsafe { dataframe_array_ref(array) }?;
+        let value = array.values.get(index).ok_or_else(|| {
+            PhsError::invalid_argument(format!("dataframe array index {index} out of bounds"))
+        })?;
+        *out = dataframe_into_raw(value.clone());
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_array_free(array: *mut phs_dataframe_array) {
+    if !array.is_null() {
+        unsafe {
+            drop(Box::from_raw(array as *mut DataFrameArrayHandle));
+        }
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -2434,6 +2528,95 @@ mod tests {
             crate::handles::phs_series_free(active);
             crate::handles::phs_dataframe_free(df);
         }
+    }
+
+    #[test]
+    fn dataframe_partition_by_returns_group_frames() {
+        let df = read_fixture_dataframe("employees.csv");
+        let department = std::ffi::CString::new("department").unwrap();
+        let missing = std::ffi::CString::new("missing").unwrap();
+        let names = [department.as_ptr()];
+        let missing_names = [missing.as_ptr()];
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_dataframe_partition_by(df, names.as_ptr(), names.len(), true, true, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let partitions = out;
+        assert_eq!(unsafe { phs_dataframe_array_len(partitions) }, 3);
+
+        let mut frame_out = ptr::null_mut();
+        let status = unsafe { phs_dataframe_array_get(partitions, 0, &mut frame_out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let engineering = frame_out;
+
+        let status = unsafe { phs_dataframe_array_get(partitions, 0, ptr::null_mut(), &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "out pointer was null");
+
+        let status = unsafe { phs_dataframe_array_get(partitions, 99, &mut frame_out, &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "dataframe array index 99 out of bounds");
+
+        let status = unsafe { phs_dataframe_array_get(ptr::null(), 0, &mut frame_out, &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "dataframe array pointer was null");
+
+        unsafe {
+            phs_dataframe_array_free(partitions);
+            phs_dataframe_array_free(ptr::null_mut());
+        }
+        let values: Vec<Option<&str>> = unsafe { dataframe_ref(engineering) }
+            .unwrap()
+            .value
+            .column("name")
+            .unwrap()
+            .as_materialized_series()
+            .str()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(values, vec![Some("Alice"), Some("Bob")]);
+
+        unsafe { crate::handles::phs_dataframe_free(engineering) };
+
+        let status = unsafe { phs_dataframe_partition_by(df, names.as_ptr(), names.len(), false, true, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let no_key_partitions = out;
+        let status = unsafe { phs_dataframe_array_get(no_key_partitions, 0, &mut frame_out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let engineering_no_key = frame_out;
+        let names_without_key: Vec<&str> = unsafe { dataframe_ref(engineering_no_key) }
+            .unwrap()
+            .value
+            .get_column_names()
+            .into_iter()
+            .map(|name| name.as_str())
+            .collect();
+        assert_eq!(names_without_key, vec!["id", "name", "salary"]);
+        unsafe {
+            crate::handles::phs_dataframe_free(engineering_no_key);
+            phs_dataframe_array_free(no_key_partitions);
+        }
+
+        let status = unsafe { phs_dataframe_partition_by(df, ptr::null(), 0, true, true, &mut out, &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "partition_by requires at least one column");
+
+        let status = unsafe { phs_dataframe_partition_by(df, missing_names.as_ptr(), missing_names.len(), true, true, &mut out, &mut err) };
+        assert_ne!(status, PHS_OK);
+        unsafe { take_error_message(err) };
+
+        let status = unsafe { phs_dataframe_partition_by(df, names.as_ptr(), names.len(), true, true, ptr::null_mut(), &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "out pointer was null");
+
+        unsafe { crate::handles::phs_dataframe_free(df) };
     }
 
     #[test]

@@ -42,6 +42,10 @@ typedef struct phs_bytes {
   uint8_t _private[0];
 } phs_bytes;
 
+typedef struct phs_dataframe_array {
+  uint8_t _private[0];
+} phs_dataframe_array;
+
 typedef struct phs_expr {
   uint8_t _private[0];
 } phs_expr;
@@ -229,6 +233,23 @@ int phs_dataframe_replace_column(const struct phs_dataframe *dataframe,
                                  const struct phs_series *series,
                                  struct phs_dataframe **out,
                                  struct phs_error **err);
+
+int phs_dataframe_partition_by(const struct phs_dataframe *dataframe,
+                               const char *const *names,
+                               uintptr_t names_len,
+                               bool include_key,
+                               bool maintain_order,
+                               struct phs_dataframe_array **out,
+                               struct phs_error **err);
+
+uintptr_t phs_dataframe_array_len(const struct phs_dataframe_array *array);
+
+int phs_dataframe_array_get(const struct phs_dataframe_array *array,
+                            uintptr_t index,
+                            struct phs_dataframe **out,
+                            struct phs_error **err);
+
+void phs_dataframe_array_free(struct phs_dataframe_array *array);
 
 int phs_dataframe_fill_null(const struct phs_dataframe *dataframe,
                             int strategy,

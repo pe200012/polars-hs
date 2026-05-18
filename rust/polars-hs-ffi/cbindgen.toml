@@ -10,6 +10,7 @@ prefix = ""
 include = [
   "phs_bytes",
   "phs_dataframe",
+  "phs_dataframe_array",
   "phs_error",
   "phs_expr",
   "phs_lazyframe"

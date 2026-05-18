@@ -12,11 +12,15 @@ module Polars.Internal.Raw
     , RawArrowSeries
     , RawBytes
     , RawDataFrame
+    , RawDataFrameArray
     , RawError
     , RawExpr
     , RawLazyFrame
     , RawSeries
     , phs_dataframe_align_chunks
+    , phs_dataframe_array_free
+    , phs_dataframe_array_get
+    , phs_dataframe_array_len
     , phs_bytes_data
     , phs_bytes_free
     , phs_arrow_record_batch_array
@@ -62,6 +66,7 @@ module Polars.Internal.Raw
     , phs_dataframe_max_n_chunks
     , phs_dataframe_new_from_index
     , phs_dataframe_null_count
+    , phs_dataframe_partition_by
     , phs_dataframe_rechunk
     , phs_dataframe_rename
     , phs_dataframe_insert_column
@@ -261,6 +266,7 @@ data RawArrowRecordBatch
 data RawArrowSeries
 data RawBytes
 data RawDataFrame
+data RawDataFrameArray
 data RawError
 data RawExpr
 data RawLazyFrame
@@ -431,6 +437,18 @@ foreign import ccall safe "phs_dataframe_insert_column"
 
 foreign import ccall safe "phs_dataframe_replace_column"
     phs_dataframe_replace_column :: Ptr RawDataFrame -> Word64 -> Ptr RawSeries -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_dataframe_partition_by"
+    phs_dataframe_partition_by :: Ptr RawDataFrame -> Ptr CString -> CSize -> CBool -> CBool -> Ptr (Ptr RawDataFrameArray) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_dataframe_array_len"
+    phs_dataframe_array_len :: Ptr RawDataFrameArray -> IO CSize
+
+foreign import ccall safe "phs_dataframe_array_get"
+    phs_dataframe_array_get :: Ptr RawDataFrameArray -> CSize -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_dataframe_array_free"
+    phs_dataframe_array_free :: Ptr RawDataFrameArray -> IO ()
 
 foreign import ccall unsafe "phs_dataframe_sort"
     phs_dataframe_sort ::

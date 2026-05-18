@@ -1289,6 +1289,48 @@ main = hspec $ do
                 (_, _, _, _, _, Left err, _) -> expectationFailure (show err)
                 (_, _, _, _, _, _, Left err) -> expectationFailure (show err)
 
+        it "partitions eager DataFrames by groups" $ do
+            result <- Pl.readCsv employeesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right employees -> do
+                    stableParts <-
+                        Pl.dataFramePartitionBy
+                            Pl.defaultDataFramePartitionOptions
+                                { Pl.dataFramePartitionColumns = ["department"]
+                                , Pl.dataFramePartitionMaintainOrder = True
+                                }
+                            employees
+                    noKeyParts <-
+                        Pl.dataFramePartitionBy
+                            Pl.defaultDataFramePartitionOptions
+                                { Pl.dataFramePartitionColumns = ["department"]
+                                , Pl.dataFramePartitionIncludeKey = False
+                                , Pl.dataFramePartitionMaintainOrder = True
+                                }
+                            employees
+                    emptyColumns <- Pl.dataFramePartitionBy Pl.defaultDataFramePartitionOptions employees
+                    missingColumn <-
+                        Pl.dataFramePartitionBy
+                            Pl.defaultDataFramePartitionOptions {Pl.dataFramePartitionColumns = ["missing"]}
+                            employees
+                    case stableParts of
+                        Left err -> expectationFailure (show err)
+                        Right [engineering, sales, support] -> do
+                            Pl.column @T.Text engineering "name" `shouldReturn` Right (V.fromList [Just "Alice", Just "Bob"])
+                            Pl.column @T.Text sales "name" `shouldReturn` Right (V.singleton (Just "Carol"))
+                            Pl.column @T.Text support "name" `shouldReturn` Right (V.singleton (Just "Eve"))
+                            Pl.column @T.Text engineering "department" `shouldReturn` Right (V.fromList [Just "Engineering", Just "Engineering"])
+                        Right parts -> expectationFailure ("unexpected partition count: " <> show (length parts))
+                    case noKeyParts of
+                        Left err -> expectationFailure (show err)
+                        Right (engineeringNoKey : _) -> do
+                            schemaResult <- Pl.schema engineeringNoKey
+                            fmap (map Pl.fieldName) schemaResult `shouldBe` Right ["id", "name", "salary"]
+                        Right [] -> expectationFailure "expected partition output"
+                    expectInvalidArgumentMessage "dataFramePartitionBy requires at least one column name" emptyColumns
+                    expectPolarsFailure missingColumn
+
         it "broadcasts unit-length eager DataFrame columns" $ do
             dfResult <- Pl.readCsv valuesCsv
             scoreResult <- Pl.series @Double "score" (V.fromList [Just 10.0])
