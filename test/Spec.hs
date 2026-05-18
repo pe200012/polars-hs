@@ -1935,6 +1935,32 @@ main = hspec $ do
                             fmap (T.isInfixOf "SCAN") optimized `shouldBe` Right True
                             fmap (T.isInfixOf "FILTER") unoptimized `shouldBe` Right True
 
+        it "describes lazy plans as text trees and dot graphs" $ do
+            scanResult <- Pl.scanCsv fixtureCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    filtered <- Pl.filter (Pl.col "age" Pl..> Pl.litInt 35) lf0
+                    case filtered of
+                        Left err -> expectationFailure (show err)
+                        Right lf1 -> do
+                            plan <- Pl.describePlan lf1
+                            optimized <- Pl.describeOptimizedPlan lf1
+                            tree <- Pl.describePlanTree lf1
+                            optimizedTree <- Pl.describeOptimizedPlanTree lf1
+                            dot <- Pl.toDot True lf1
+                            fmap (T.isInfixOf "FILTER") plan `shouldBe` Right True
+                            fmap (T.isInfixOf "SCAN") optimized `shouldBe` Right True
+                            fmap (T.isInfixOf "FILTER") tree `shouldBe` Right True
+                            fmap (T.isInfixOf "SCAN") optimizedTree `shouldBe` Right True
+                            fmap (T.isInfixOf "digraph") dot `shouldBe` Right True
+                    missing <- Pl.select [Pl.col "missing"] lf0
+                    case missing of
+                        Left err -> expectationFailure (show err)
+                        Right missingLf -> do
+                            missingPlan <- Pl.describeOptimizedPlan missingLf
+                            expectPolarsFailure missingPlan
+
         it "profiles lazy execution and returns result and timing frames" $ do
             scanResult <- Pl.scanCsv salesCsv
             case scanResult of

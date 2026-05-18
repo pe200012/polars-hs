@@ -350,6 +350,45 @@ pub unsafe extern "C" fn phs_lazyframe_explain(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_describe_plan(
+    lazyframe: *const phs_lazyframe,
+    optimized: bool,
+    tree: bool,
+    out: *mut *mut phs_bytes,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        let plan = match (optimized, tree) {
+            (false, false) => lf.describe_plan()?,
+            (false, true) => lf.describe_plan_tree()?,
+            (true, false) => lf.describe_optimized_plan()?,
+            (true, true) => lf.describe_optimized_plan_tree()?,
+        };
+        *out = bytes_into_raw(plan.into_bytes());
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_to_dot(
+    lazyframe: *const phs_lazyframe,
+    optimized: bool,
+    out: *mut *mut phs_bytes,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        *out = bytes_into_raw(lf.to_dot(optimized)?.into_bytes());
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_lazyframe_profile(
     lazyframe: *const phs_lazyframe,
     result_out: *mut *mut phs_dataframe,
@@ -980,6 +1019,10 @@ mod tests {
         bytes
     }
 
+    unsafe fn take_text(raw: *mut phs_bytes) -> String {
+        String::from_utf8(unsafe { take_raw_bytes(raw) }).unwrap()
+    }
+
     unsafe fn take_error_message(raw: *mut phs_error) -> String {
         assert!(!raw.is_null());
         let message = unsafe { CStr::from_ptr(crate::error::phs_error_message(raw)) }
@@ -1111,6 +1154,76 @@ mod tests {
             crate::handles::phs_expr_free(missing_expr);
             crate::handles::phs_lazyframe_free(lf0);
             crate::handles::phs_lazyframe_free(selected);
+            crate::handles::phs_lazyframe_free(missing_lf);
+        }
+    }
+
+    #[test]
+    fn lazy_plan_introspection_returns_text_and_dot_outputs() {
+        let path = fixture_path();
+        let mut lf0 = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(unsafe { phs_scan_csv(path.as_ptr(), &mut lf0, &mut err) }, PHS_OK);
+
+        let age = std::ffi::CString::new("age").unwrap();
+        let mut age_expr = ptr::null_mut();
+        let mut lit_expr = ptr::null_mut();
+        let mut pred_expr = ptr::null_mut();
+        assert_eq!(unsafe { crate::expr::phs_expr_col(age.as_ptr(), &mut age_expr, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::expr::phs_expr_lit_int(35, &mut lit_expr, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::expr::phs_expr_binary(2, age_expr, lit_expr, &mut pred_expr, &mut err) }, PHS_OK);
+
+        let mut filtered = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_filter(lf0, pred_expr, &mut filtered, &mut err) }, PHS_OK);
+
+        let mut out = ptr::null_mut();
+        let status = unsafe { phs_lazyframe_describe_plan(filtered, false, false, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let plan = unsafe { take_text(out) };
+        assert!(plan.contains("FILTER"));
+        assert!(plan.contains("SCAN"));
+
+        let status = unsafe { phs_lazyframe_describe_plan(filtered, false, true, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let tree = unsafe { take_text(out) };
+        assert!(tree.contains("FILTER"));
+        assert!(tree.contains("SCAN"));
+
+        let status = unsafe { phs_lazyframe_to_dot(filtered, true, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let dot = unsafe { take_text(out) };
+        assert!(dot.contains("digraph"));
+        assert!(dot.contains("SCAN"));
+
+        let missing = std::ffi::CString::new("missing").unwrap();
+        let mut missing_expr = ptr::null_mut();
+        assert_eq!(unsafe { crate::expr::phs_expr_col(missing.as_ptr(), &mut missing_expr, &mut err) }, PHS_OK);
+        let exprs = [missing_expr as *const phs_expr];
+        let mut missing_lf = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_select(lf0, exprs.as_ptr(), exprs.len(), &mut missing_lf, &mut err) }, PHS_OK);
+        let status = unsafe { phs_lazyframe_describe_plan(missing_lf, true, false, &mut out, &mut err) };
+        assert_eq!(status, crate::error::PHS_POLARS_ERROR);
+        unsafe { crate::error::phs_error_free(err) };
+        err = ptr::null_mut();
+
+        let status = unsafe { phs_lazyframe_describe_plan(ptr::null(), false, false, &mut out, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "lazyframe pointer was null");
+        err = ptr::null_mut();
+
+        let status = unsafe { phs_lazyframe_to_dot(filtered, false, ptr::null_mut(), &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "out pointer was null");
+
+        unsafe {
+            crate::handles::phs_expr_free(age_expr);
+            crate::handles::phs_expr_free(lit_expr);
+            crate::handles::phs_expr_free(pred_expr);
+            crate::handles::phs_expr_free(missing_expr);
+            crate::handles::phs_lazyframe_free(lf0);
+            crate::handles::phs_lazyframe_free(filtered);
             crate::handles::phs_lazyframe_free(missing_lf);
         }
     }

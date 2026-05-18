@@ -30,6 +30,10 @@ module Polars.LazyFrame
     , defaultParquetScanOptions
     , defaultRenameOptions
     , defaultUniqueOptions
+    , describeOptimizedPlan
+    , describeOptimizedPlanTree
+    , describePlan
+    , describePlanTree
     , dropColumns
     , dropNulls
     , explode
@@ -55,6 +59,7 @@ module Polars.LazyFrame
     , select
     , slice
     , sort
+    , toDot
     , topK
     , bottomK
     , unique
@@ -92,6 +97,7 @@ import Polars.Internal.Raw
     , phs_lazyframe_collect_schema
     , phs_lazyframe_cache
     , phs_lazyframe_clear
+    , phs_lazyframe_describe_plan
     , phs_lazyframe_drop
     , phs_lazyframe_drop_nulls
     , phs_lazyframe_explode
@@ -113,6 +119,7 @@ import Polars.Internal.Raw
     , phs_lazyframe_slice
     , phs_lazyframe_sort
     , phs_lazyframe_tail
+    , phs_lazyframe_to_dot
     , phs_lazyframe_top_k
     , phs_lazyframe_unique
     , phs_lazyframe_unpivot
@@ -271,6 +278,31 @@ collectSchema lf = withLazyFrame lf $ \ptr -> schemaOut (phs_lazyframe_collect_s
 explain :: Bool -> LazyFrame -> IO (Either PolarsError Text)
 explain optimized lf = withLazyFrame lf $ \ptr ->
     bytesOut (phs_lazyframe_explain ptr (toCBool optimized))
+
+-- | Describe the naive logical plan as flat text.
+describePlan :: LazyFrame -> IO (Either PolarsError Text)
+describePlan = describePlanWith False False
+
+-- | Describe the naive logical plan as a tree.
+describePlanTree :: LazyFrame -> IO (Either PolarsError Text)
+describePlanTree = describePlanWith False True
+
+-- | Describe the optimized logical plan as flat text.
+describeOptimizedPlan :: LazyFrame -> IO (Either PolarsError Text)
+describeOptimizedPlan = describePlanWith True False
+
+-- | Describe the optimized logical plan as a tree.
+describeOptimizedPlanTree :: LazyFrame -> IO (Either PolarsError Text)
+describeOptimizedPlanTree = describePlanWith True True
+
+-- | Render the lazy logical plan as DOT graph text.
+toDot :: Bool -> LazyFrame -> IO (Either PolarsError Text)
+toDot optimized lf = withLazyFrame lf $ \ptr ->
+    bytesOut (phs_lazyframe_to_dot ptr (toCBool optimized))
+
+describePlanWith :: Bool -> Bool -> LazyFrame -> IO (Either PolarsError Text)
+describePlanWith optimized tree lf = withLazyFrame lf $ \ptr ->
+    bytesOut (phs_lazyframe_describe_plan ptr (toCBool optimized) (toCBool tree))
 
 profile :: LazyFrame -> IO (Either PolarsError (DataFrame, DataFrame))
 profile lf = withLazyFrame lf $ \ptr -> profileOut (phs_lazyframe_profile ptr)

@@ -139,6 +139,7 @@ module Polars.Internal.Raw
     , phs_expr_unary_i64
     , phs_lazyframe_collect
     , phs_lazyframe_collect_schema
+    , phs_lazyframe_describe_plan
     , phs_lazyframe_drop
     , phs_lazyframe_drop_nulls
     , phs_lazyframe_explode
@@ -163,6 +164,7 @@ module Polars.Internal.Raw
     , phs_lazyframe_slice
     , phs_lazyframe_sort
     , phs_lazyframe_tail
+    , phs_lazyframe_to_dot
     , phs_lazyframe_top_k
     , phs_lazyframe_unique
     , phs_lazyframe_unpivot
@@ -747,6 +749,12 @@ foreign import ccall safe "phs_lazyframe_collect_schema"
 
 foreign import ccall safe "phs_lazyframe_explain"
     phs_lazyframe_explain :: Ptr RawLazyFrame -> CBool -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_lazyframe_describe_plan"
+    phs_lazyframe_describe_plan :: Ptr RawLazyFrame -> CBool -> CBool -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_lazyframe_to_dot"
+    phs_lazyframe_to_dot :: Ptr RawLazyFrame -> CBool -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall safe "phs_lazyframe_profile"
     phs_lazyframe_profile :: Ptr RawLazyFrame -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt

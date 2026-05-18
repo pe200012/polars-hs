@@ -793,6 +793,17 @@ int phs_lazyframe_explain(const struct phs_lazyframe *lazyframe,
                           struct phs_bytes **out,
                           struct phs_error **err);
 
+int phs_lazyframe_describe_plan(const struct phs_lazyframe *lazyframe,
+                                bool optimized,
+                                bool tree,
+                                struct phs_bytes **out,
+                                struct phs_error **err);
+
+int phs_lazyframe_to_dot(const struct phs_lazyframe *lazyframe,
+                         bool optimized,
+                         struct phs_bytes **out,
+                         struct phs_error **err);
+
 int phs_lazyframe_profile(const struct phs_lazyframe *lazyframe,
                           struct phs_dataframe **result_out,
                           struct phs_dataframe **profile_out,
