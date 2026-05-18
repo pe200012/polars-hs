@@ -2143,6 +2143,120 @@ main = hspec $ do
                     expectLazyCollectPolarsFailure duplicate
                     expectInvalidArgumentMessage "withRowIndex offset must be non-negative" negative
 
+        it "gathers every nth lazy row" $ do
+            scanResult <- Pl.scanCsv valuesCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    everyTwo <- Pl.gatherEvery 2 0 lf0
+                    offsetRows <- Pl.gatherEvery 2 1 lf0
+                    emptyRows <- Pl.gatherEvery 2 10 lf0
+                    zeroStep <- Pl.gatherEvery 0 0 lf0
+                    negativeStep <- Pl.gatherEvery (-1) 0 lf0
+                    negativeOffset <- Pl.gatherEvery 2 (-1) lf0
+                    case (everyTwo, offsetRows, emptyRows) of
+                        (Right everyTwoLf, Right offsetLf, Right emptyLf) -> do
+                            everyTwoDf <- Pl.collect everyTwoLf
+                            offsetDf <- Pl.collect offsetLf
+                            emptyDf <- Pl.collect emptyLf
+                            case (everyTwoDf, offsetDf, emptyDf) of
+                                (Right everyTwoDf', Right offsetDf', Right emptyDf') -> do
+                                    Pl.shape everyTwoDf' `shouldReturn` Right (2, 4)
+                                    Pl.column @T.Text everyTwoDf' "name" `shouldReturn` Right (V.fromList [Just "Alice", Just "Carol"])
+                                    Pl.column @Int64 everyTwoDf' "age" `shouldReturn` Right (V.fromList [Just 34, Just 29])
+                                    Pl.shape offsetDf' `shouldReturn` Right (1, 4)
+                                    Pl.column @T.Text offsetDf' "name" `shouldReturn` Right (V.fromList [Just "Bob"])
+                                    Pl.shape emptyDf' `shouldReturn` Right (0, 4)
+                                (Left err, _, _) -> expectationFailure (show err)
+                                (_, Left err, _) -> expectationFailure (show err)
+                                (_, _, Left err) -> expectationFailure (show err)
+                        (Left err, _, _) -> expectationFailure (show err)
+                        (_, Left err, _) -> expectationFailure (show err)
+                        (_, _, Left err) -> expectationFailure (show err)
+                    expectInvalidArgumentMessage "gatherEvery step must be positive" zeroStep
+                    expectInvalidArgumentMessage "gatherEvery step must be non-negative" negativeStep
+                    expectInvalidArgumentMessage "gatherEvery offset must be non-negative" negativeOffset
+
+        it "unpivots lazy frames from wide to long format" $ do
+            scanResult <- Pl.scanCsv employeesCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    explicitOut <-
+                        Pl.unpivot
+                            Pl.defaultLazyFrameUnpivotOptions
+                                { Pl.lazyFrameUnpivotIndex = ["department"]
+                                , Pl.lazyFrameUnpivotOn = Just ["salary"]
+                                , Pl.lazyFrameUnpivotVariableName = Just "metric"
+                                , Pl.lazyFrameUnpivotValueName = Just "amount"
+                                }
+                            lf0
+                    defaultOnOut <-
+                        Pl.unpivot
+                            Pl.defaultLazyFrameUnpivotOptions
+                                { Pl.lazyFrameUnpivotIndex = ["department"]
+                                , Pl.lazyFrameUnpivotOn = Nothing
+                                }
+                            lf0
+                    emptyOnOut <-
+                        Pl.unpivot
+                            Pl.defaultLazyFrameUnpivotOptions
+                                { Pl.lazyFrameUnpivotIndex = ["department"]
+                                , Pl.lazyFrameUnpivotOn = Just []
+                                }
+                            lf0
+                    missingColumn <-
+                        Pl.unpivot
+                            Pl.defaultLazyFrameUnpivotOptions
+                                { Pl.lazyFrameUnpivotIndex = ["missing"]
+                                , Pl.lazyFrameUnpivotOn = Just ["salary"]
+                                }
+                            lf0
+                    case (explicitOut, defaultOnOut, emptyOnOut) of
+                        (Right explicitLf, Right defaultLf, Right emptyLf) -> do
+                            explicitDf <- Pl.collect explicitLf
+                            defaultDf <- Pl.collect defaultLf
+                            emptyDf <- Pl.collect emptyLf
+                            case (explicitDf, defaultDf, emptyDf) of
+                                (Right explicitDf', Right defaultDf', Right emptyDf') -> do
+                                    Pl.shape explicitDf' `shouldReturn` Right (4, 3)
+                                    explicitSchema <- Pl.schema explicitDf'
+                                    fmap (map Pl.fieldName) explicitSchema `shouldBe` Right ["department", "metric", "amount"]
+                                    Pl.column @T.Text explicitDf' "department"
+                                        `shouldReturn` Right (V.fromList [Just "Engineering", Just "Engineering", Just "Sales", Just "Support"])
+                                    Pl.column @T.Text explicitDf' "metric"
+                                        `shouldReturn` Right (V.fromList [Just "salary", Just "salary", Just "salary", Just "salary"])
+                                    Pl.column @Int64 explicitDf' "amount"
+                                        `shouldReturn` Right (V.fromList [Just 100, Just 150, Just 90, Just 80])
+                                    Pl.shape defaultDf' `shouldReturn` Right (12, 3)
+                                    Pl.column @T.Text defaultDf' "variable"
+                                        `shouldReturn` Right
+                                            ( V.fromList
+                                                [ Just "id"
+                                                , Just "id"
+                                                , Just "id"
+                                                , Just "id"
+                                                , Just "name"
+                                                , Just "name"
+                                                , Just "name"
+                                                , Just "name"
+                                                , Just "salary"
+                                                , Just "salary"
+                                                , Just "salary"
+                                                , Just "salary"
+                                                ]
+                                            )
+                                    Pl.shape emptyDf' `shouldReturn` Right (0, 3)
+                                    emptySchema <- Pl.schema emptyDf'
+                                    fmap (map Pl.fieldName) emptySchema `shouldBe` Right ["department", "variable", "value"]
+                                (Left err, _, _) -> expectationFailure (show err)
+                                (_, Left err, _) -> expectationFailure (show err)
+                                (_, _, Left err) -> expectationFailure (show err)
+                        (Left err, _, _) -> expectationFailure (show err)
+                        (_, Left err, _) -> expectationFailure (show err)
+                        (_, _, Left err) -> expectationFailure (show err)
+                    expectLazyCollectPolarsFailure missingColumn
+
         it "validates lazy top and bottom row arguments" $ do
             scanResult <- Pl.scanCsv employeesCsv
             case scanResult of

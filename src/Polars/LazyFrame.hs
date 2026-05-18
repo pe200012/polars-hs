@@ -13,6 +13,7 @@ module Polars.LazyFrame
     , LazyFrame
     , LazyFrameExplodeOptions (..)
     , LazyFrameTopKOptions (..)
+    , LazyFrameUnpivotOptions (..)
     , ParquetParallelStrategy (..)
     , ParquetScanOptions (..)
     , RenameOptions (..)
@@ -22,6 +23,7 @@ module Polars.LazyFrame
     , defaultCsvReadOptions
     , defaultLazyFrameExplodeOptions
     , defaultLazyFrameTopKOptions
+    , defaultLazyFrameUnpivotOptions
     , defaultParquetScanOptions
     , defaultRenameOptions
     , defaultUniqueOptions
@@ -32,6 +34,7 @@ module Polars.LazyFrame
     , fillNans
     , fillNulls
     , filter
+    , gatherEvery
     , lazyHead
     , lazyTail
     , limit
@@ -49,6 +52,7 @@ module Polars.LazyFrame
     , topK
     , bottomK
     , unique
+    , unpivot
     , withColumns
     , withRowIndex
     ) where
@@ -86,6 +90,7 @@ import Polars.Internal.Raw
     , phs_lazyframe_fill_nan
     , phs_lazyframe_fill_null
     , phs_lazyframe_filter
+    , phs_lazyframe_gather_every
     , phs_lazyframe_head
     , phs_lazyframe_limit
     , phs_lazyframe_bottom_k
@@ -99,6 +104,7 @@ import Polars.Internal.Raw
     , phs_lazyframe_tail
     , phs_lazyframe_top_k
     , phs_lazyframe_unique
+    , phs_lazyframe_unpivot
     , phs_lazyframe_with_columns
     , phs_lazyframe_with_row_index
     , phs_scan_csv_options
@@ -172,6 +178,24 @@ defaultLazyFrameExplodeOptions =
         { lazyFrameExplodeColumns = []
         , lazyFrameExplodeEmptyAsNull = True
         , lazyFrameExplodeKeepNulls = True
+        }
+
+-- | Options for unpivoting a lazy frame from wide to long format.
+data LazyFrameUnpivotOptions = LazyFrameUnpivotOptions
+    { lazyFrameUnpivotOn :: !(Maybe [Text])
+    , lazyFrameUnpivotIndex :: ![Text]
+    , lazyFrameUnpivotVariableName :: !(Maybe Text)
+    , lazyFrameUnpivotValueName :: !(Maybe Text)
+    }
+    deriving stock (Eq, Show)
+
+defaultLazyFrameUnpivotOptions :: LazyFrameUnpivotOptions
+defaultLazyFrameUnpivotOptions =
+    LazyFrameUnpivotOptions
+        { lazyFrameUnpivotOn = Nothing
+        , lazyFrameUnpivotIndex = []
+        , lazyFrameUnpivotVariableName = Nothing
+        , lazyFrameUnpivotValueName = Nothing
         }
 
 scanCsv :: FilePath -> IO (Either PolarsError LazyFrame)
@@ -258,6 +282,38 @@ withRowIndex name offset lf = case optionalNonNegativeWord64 "withRowIndex offse
         withLazyFrame lf $ \lfPtr ->
             withTextCString name $ \namePtr ->
                 lazyFrameOut (phs_lazyframe_with_row_index lfPtr namePtr (toCBool hasOffset) offsetValue)
+
+-- | Gather every nth lazy row, starting at the offset.
+gatherEvery :: Int -> Int -> LazyFrame -> IO (Either PolarsError LazyFrame)
+gatherEvery step offset lf
+    | step == 0 = pure (Left (invalidArgument "gatherEvery step must be positive"))
+    | otherwise =
+        case (nonNegativeWord64 "gatherEvery step" step, nonNegativeWord64 "gatherEvery offset" offset) of
+            (Left err, _) -> pure (Left err)
+            (_, Left err) -> pure (Left err)
+            (Right stepValue, Right offsetValue) ->
+                withLazyFrame lf $ \lfPtr ->
+                    lazyFrameOut (phs_lazyframe_gather_every lfPtr stepValue offsetValue)
+
+-- | Unpivot a lazy frame from wide to long format.
+unpivot :: LazyFrameUnpivotOptions -> LazyFrame -> IO (Either PolarsError LazyFrame)
+unpivot options lf =
+    withLazyFrame lf $ \lfPtr ->
+        withMaybeCStringList (lazyFrameUnpivotOn options) $ \onArray onLen hasOn ->
+            withCStringList (lazyFrameUnpivotIndex options) $ \indexArray indexLen ->
+                withMaybeTextCString (lazyFrameUnpivotVariableName options) $ \variablePtr _ ->
+                    withMaybeTextCString (lazyFrameUnpivotValueName options) $ \valuePtr _ ->
+                        lazyFrameOut
+                            ( phs_lazyframe_unpivot
+                                lfPtr
+                                (toCBool hasOn)
+                                onArray
+                                onLen
+                                indexArray
+                                indexLen
+                                variablePtr
+                                valuePtr
+                            )
 
 dropColumns :: [Text] -> LazyFrame -> IO (Either PolarsError LazyFrame)
 dropColumns [] _ = pure (Left (invalidArgument "dropColumns requires at least one column name"))

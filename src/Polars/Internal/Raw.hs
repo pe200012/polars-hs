@@ -144,6 +144,7 @@ module Polars.Internal.Raw
     , phs_lazyframe_fill_null
     , phs_lazyframe_filter
     , phs_lazyframe_free_finalizer
+    , phs_lazyframe_gather_every
     , phs_lazyframe_group_by_agg
     , phs_lazyframe_head
     , phs_lazyframe_join
@@ -159,6 +160,7 @@ module Polars.Internal.Raw
     , phs_lazyframe_tail
     , phs_lazyframe_top_k
     , phs_lazyframe_unique
+    , phs_lazyframe_unpivot
     , phs_lazyframe_with_columns
     , phs_lazyframe_with_row_index
     , phs_read_csv
@@ -752,6 +754,23 @@ foreign import ccall unsafe "phs_lazyframe_with_columns"
 
 foreign import ccall unsafe "phs_lazyframe_with_row_index"
     phs_lazyframe_with_row_index :: Ptr RawLazyFrame -> CString -> CBool -> Word64 -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_lazyframe_gather_every"
+    phs_lazyframe_gather_every :: Ptr RawLazyFrame -> Word64 -> Word64 -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_lazyframe_unpivot"
+    phs_lazyframe_unpivot ::
+        Ptr RawLazyFrame ->
+        CBool ->
+        Ptr CString ->
+        CSize ->
+        Ptr CString ->
+        CSize ->
+        CString ->
+        CString ->
+        Ptr (Ptr RawLazyFrame) ->
+        Ptr (Ptr RawError) ->
+        IO CInt
 
 foreign import ccall unsafe "phs_lazyframe_sort"
     phs_lazyframe_sort :: Ptr RawLazyFrame -> Ptr CString -> CSize -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt

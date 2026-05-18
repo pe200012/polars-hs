@@ -113,6 +113,14 @@ fn selector_from_names(names: Vec<PlSmallStr>, label: &str) -> PhsResult<Selecto
     }
 }
 
+fn selector_from_names_allow_empty(names: Vec<PlSmallStr>) -> Selector {
+    if names.is_empty() {
+        empty()
+    } else {
+        by_name(names, true, false)
+    }
+}
+
 unsafe fn optional_selector(
     names: *const *const c_char,
     len: usize,
@@ -417,6 +425,76 @@ pub unsafe extern "C" fn phs_lazyframe_with_row_index(
         let name = PlSmallStr::from_str(unsafe { c_str_to_str(name, "name") }?);
         let offset = if has_offset { Some(idx_size_from_u64(offset, "row index offset")?) } else { None };
         *out = lazyframe_into_raw(lf.with_row_index(name, offset));
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_gather_every(
+    lazyframe: *const phs_lazyframe,
+    step: u64,
+    offset: u64,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        let step = usize_from_u64(step, "lazyframe gather-every step")?;
+        if step == 0 {
+            return Err(PhsError::invalid_argument(
+                "lazyframe gather-every step must be positive",
+            ));
+        }
+        let offset = usize_from_u64(offset, "lazyframe gather-every offset")?;
+        *out = lazyframe_into_raw(lf.select([all().as_expr().gather_every(step, offset)]));
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_unpivot(
+    lazyframe: *const phs_lazyframe,
+    has_on: bool,
+    on: *const *const c_char,
+    on_len: usize,
+    index: *const *const c_char,
+    index_len: usize,
+    variable_name: *const c_char,
+    value_name: *const c_char,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        let on = if has_on {
+            Some(selector_from_names_allow_empty(unsafe { name_vec(on, on_len) }?))
+        } else {
+            None
+        };
+        let index = selector_from_names_allow_empty(unsafe { name_vec(index, index_len) }?);
+        let variable_name = if variable_name.is_null() {
+            None
+        } else {
+            Some(PlSmallStr::from_str(unsafe {
+                c_str_to_str(variable_name, "variable_name")?
+            }))
+        };
+        let value_name = if value_name.is_null() {
+            None
+        } else {
+            Some(PlSmallStr::from_str(unsafe { c_str_to_str(value_name, "value_name")? }))
+        };
+        let args = UnpivotArgsDSL {
+            on,
+            index,
+            variable_name,
+            value_name,
+        };
+        *out = lazyframe_into_raw(lf.unpivot(args));
         Ok(())
     })
 }
@@ -1469,6 +1547,261 @@ mod tests {
             crate::handles::phs_lazyframe_free(default_lf);
             crate::handles::phs_dataframe_free(indexed_df);
             crate::handles::phs_dataframe_free(default_df);
+        }
+    }
+
+    #[test]
+    fn lazy_gather_every_returns_strided_rows() {
+        let path = employees_fixture_path();
+        let mut lf0 = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(unsafe { phs_scan_csv(path.as_ptr(), &mut lf0, &mut err) }, PHS_OK);
+
+        let mut out = ptr::null_mut();
+        let status = unsafe { phs_lazyframe_gather_every(lf0, 2, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let every_two_lf = out;
+        let mut every_two_df = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_collect(every_two_lf, &mut every_two_df, &mut err) }, PHS_OK);
+        let names: Vec<Option<&str>> = unsafe { crate::handles::dataframe_ref(every_two_df) }
+            .unwrap()
+            .value
+            .column("name")
+            .unwrap()
+            .as_materialized_series()
+            .str()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(names, vec![Some("Alice"), Some("Carol")]);
+
+        let status = unsafe { phs_lazyframe_gather_every(lf0, 2, 1, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let offset_lf = out;
+        let mut offset_df = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_collect(offset_lf, &mut offset_df, &mut err) }, PHS_OK);
+        let names: Vec<Option<&str>> = unsafe { crate::handles::dataframe_ref(offset_df) }
+            .unwrap()
+            .value
+            .column("name")
+            .unwrap()
+            .as_materialized_series()
+            .str()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(names, vec![Some("Bob"), Some("Eve")]);
+
+        let status = unsafe { phs_lazyframe_gather_every(lf0, 2, 10, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let empty_lf = out;
+        let mut empty_df = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_collect(empty_lf, &mut empty_df, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::handles::dataframe_ref(empty_df) }.unwrap().value.shape(), (0, 4));
+
+        let status = unsafe { phs_lazyframe_gather_every(lf0, 0, 0, &mut out, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "lazyframe gather-every step must be positive");
+        err = ptr::null_mut();
+
+        let status = unsafe { phs_lazyframe_gather_every(ptr::null(), 2, 0, &mut out, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "lazyframe pointer was null");
+        err = ptr::null_mut();
+
+        let status = unsafe { phs_lazyframe_gather_every(lf0, 2, 0, ptr::null_mut(), &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "out pointer was null");
+
+        unsafe {
+            crate::handles::phs_lazyframe_free(lf0);
+            crate::handles::phs_lazyframe_free(every_two_lf);
+            crate::handles::phs_lazyframe_free(offset_lf);
+            crate::handles::phs_lazyframe_free(empty_lf);
+            crate::handles::phs_dataframe_free(every_two_df);
+            crate::handles::phs_dataframe_free(offset_df);
+            crate::handles::phs_dataframe_free(empty_df);
+        }
+    }
+
+    #[test]
+    fn lazy_unpivot_returns_long_form_frames() {
+        let path = employees_fixture_path();
+        let mut lf0 = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(unsafe { phs_scan_csv(path.as_ptr(), &mut lf0, &mut err) }, PHS_OK);
+
+        let department = std::ffi::CString::new("department").unwrap();
+        let salary = std::ffi::CString::new("salary").unwrap();
+        let missing = std::ffi::CString::new("missing").unwrap();
+        let metric = std::ffi::CString::new("metric").unwrap();
+        let amount = std::ffi::CString::new("amount").unwrap();
+        let index = [department.as_ptr()];
+        let on = [salary.as_ptr()];
+        let missing_index = [missing.as_ptr()];
+        let mut out = ptr::null_mut();
+
+        let status = unsafe {
+            phs_lazyframe_unpivot(
+                lf0,
+                true,
+                on.as_ptr(),
+                on.len(),
+                index.as_ptr(),
+                index.len(),
+                metric.as_ptr(),
+                amount.as_ptr(),
+                &mut out,
+                &mut err,
+            )
+        };
+        assert_eq!(status, PHS_OK);
+        let explicit_lf = out;
+        let mut explicit_df = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_collect(explicit_lf, &mut explicit_df, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::handles::dataframe_ref(explicit_df) }.unwrap().value.shape(), (4, 3));
+        let values: Vec<Option<i64>> = unsafe { crate::handles::dataframe_ref(explicit_df) }
+            .unwrap()
+            .value
+            .column("amount")
+            .unwrap()
+            .as_materialized_series()
+            .i64()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(values, vec![Some(100), Some(150), Some(90), Some(80)]);
+
+        let status = unsafe {
+            phs_lazyframe_unpivot(
+                lf0,
+                false,
+                ptr::null(),
+                0,
+                index.as_ptr(),
+                index.len(),
+                ptr::null(),
+                ptr::null(),
+                &mut out,
+                &mut err,
+            )
+        };
+        assert_eq!(status, PHS_OK);
+        let default_lf = out;
+        let mut default_df = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_collect(default_lf, &mut default_df, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::handles::dataframe_ref(default_df) }.unwrap().value.shape(), (12, 3));
+
+        let status = unsafe {
+            phs_lazyframe_unpivot(
+                lf0,
+                true,
+                ptr::null(),
+                0,
+                index.as_ptr(),
+                index.len(),
+                ptr::null(),
+                ptr::null(),
+                &mut out,
+                &mut err,
+            )
+        };
+        assert_eq!(status, PHS_OK);
+        let empty_lf = out;
+        let mut empty_df = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_collect(empty_lf, &mut empty_df, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::handles::dataframe_ref(empty_df) }.unwrap().value.shape(), (0, 3));
+
+        let status = unsafe {
+            phs_lazyframe_unpivot(
+                lf0,
+                true,
+                on.as_ptr(),
+                on.len(),
+                missing_index.as_ptr(),
+                missing_index.len(),
+                ptr::null(),
+                ptr::null(),
+                &mut out,
+                &mut err,
+            )
+        };
+        assert_eq!(status, PHS_OK);
+        let missing_lf = out;
+        let mut missing_df = ptr::null_mut();
+        let status = unsafe { phs_lazyframe_collect(missing_lf, &mut missing_df, &mut err) };
+        assert_ne!(status, PHS_OK);
+        unsafe { take_error_message(err) };
+        err = ptr::null_mut();
+
+        let status = unsafe {
+            phs_lazyframe_unpivot(
+                lf0,
+                true,
+                ptr::null(),
+                1,
+                index.as_ptr(),
+                index.len(),
+                ptr::null(),
+                ptr::null(),
+                &mut out,
+                &mut err,
+            )
+        };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "names pointer was null");
+        err = ptr::null_mut();
+
+        let status = unsafe {
+            phs_lazyframe_unpivot(
+                ptr::null(),
+                true,
+                on.as_ptr(),
+                on.len(),
+                index.as_ptr(),
+                index.len(),
+                ptr::null(),
+                ptr::null(),
+                &mut out,
+                &mut err,
+            )
+        };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "lazyframe pointer was null");
+        err = ptr::null_mut();
+
+        let status = unsafe {
+            phs_lazyframe_unpivot(
+                lf0,
+                true,
+                on.as_ptr(),
+                on.len(),
+                index.as_ptr(),
+                index.len(),
+                ptr::null(),
+                ptr::null(),
+                ptr::null_mut(),
+                &mut err,
+            )
+        };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "out pointer was null");
+
+        unsafe {
+            crate::handles::phs_lazyframe_free(lf0);
+            crate::handles::phs_lazyframe_free(explicit_lf);
+            crate::handles::phs_lazyframe_free(default_lf);
+            crate::handles::phs_lazyframe_free(empty_lf);
+            crate::handles::phs_lazyframe_free(missing_lf);
+            crate::handles::phs_dataframe_free(explicit_df);
+            crate::handles::phs_dataframe_free(default_df);
+            crate::handles::phs_dataframe_free(empty_df);
         }
     }
 

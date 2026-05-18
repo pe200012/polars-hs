@@ -818,6 +818,23 @@ int phs_lazyframe_with_row_index(const struct phs_lazyframe *lazyframe,
                                  struct phs_lazyframe **out,
                                  struct phs_error **err);
 
+int phs_lazyframe_gather_every(const struct phs_lazyframe *lazyframe,
+                               uint64_t step,
+                               uint64_t offset,
+                               struct phs_lazyframe **out,
+                               struct phs_error **err);
+
+int phs_lazyframe_unpivot(const struct phs_lazyframe *lazyframe,
+                          bool has_on,
+                          const char *const *on,
+                          uintptr_t on_len,
+                          const char *const *index,
+                          uintptr_t index_len,
+                          const char *variable_name,
+                          const char *value_name,
+                          struct phs_lazyframe **out,
+                          struct phs_error **err);
+
 int phs_lazyframe_sort(const struct phs_lazyframe *lazyframe,
                        const char *const *names,
                        uintptr_t len,
