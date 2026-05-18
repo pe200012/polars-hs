@@ -24,6 +24,7 @@ module Polars.DataFrame
     , ParquetStatisticsOptions (..)
     , ParquetWriteOptions (..)
     , dataFrame
+    , dataFrameAlignChunks
     , dataFrameClear
     , dataFrameDropColumns
     , dataFrameDropNulls
@@ -35,10 +36,13 @@ module Polars.DataFrame
     , dataFrameIsEmpty
     , dataFrameJoin
     , dataFrameMaxNChunks
+    , dataFrameNewFromIndex
     , dataFrameNullCount
+    , dataFrameRechunk
     , dataFrameRename
     , dataFrameReverse
     , dataFrameSelect
+    , dataFrameShouldRechunk
     , dataFrameSlice
     , dataFrameSplitAt
     , dataFrameSort
@@ -97,6 +101,7 @@ import Polars.Internal.Raw
     , RawDataFrame
     , RawError
     , RawSeries
+    , phs_dataframe_align_chunks
     , phs_dataframe_clear
     , phs_dataframe_drop
     , phs_dataframe_drop_nulls
@@ -112,12 +117,15 @@ import Polars.Internal.Raw
     , phs_dataframe_join
     , phs_dataframe_max_n_chunks
     , phs_dataframe_new
+    , phs_dataframe_new_from_index
     , phs_dataframe_null_count
+    , phs_dataframe_rechunk
     , phs_dataframe_rename
     , phs_dataframe_reverse
     , phs_dataframe_schema
     , phs_dataframe_select
     , phs_dataframe_shape
+    , phs_dataframe_should_rechunk
     , phs_dataframe_slice
     , phs_dataframe_split_at
     , phs_dataframe_sort
@@ -482,6 +490,24 @@ dataFrameClear df = withDataFrame df $ \ptr -> dataframeOut (phs_dataframe_clear
 
 dataFrameSplitAt :: Int -> DataFrame -> IO (Either PolarsError (DataFrame, DataFrame))
 dataFrameSplitAt offset df = withDataFrame df $ \ptr -> dataframePairOut (phs_dataframe_split_at ptr (fromIntegral offset))
+
+dataFrameNewFromIndex :: Int -> Int -> DataFrame -> IO (Either PolarsError DataFrame)
+dataFrameNewFromIndex index len df =
+    case (nonNegativeWord64 "dataFrameNewFromIndex index" index, nonNegativeWord64 "dataFrameNewFromIndex length" len) of
+        (Left err, _) -> pure (Left err)
+        (_, Left err) -> pure (Left err)
+        (Right indexValue, Right lenValue) ->
+            withDataFrame df $ \ptr ->
+                dataframeOut (phs_dataframe_new_from_index ptr indexValue lenValue)
+
+dataFrameRechunk :: DataFrame -> IO (Either PolarsError DataFrame)
+dataFrameRechunk df = withDataFrame df $ \ptr -> dataframeOut (phs_dataframe_rechunk ptr)
+
+dataFrameAlignChunks :: DataFrame -> IO (Either PolarsError DataFrame)
+dataFrameAlignChunks df = withDataFrame df $ \ptr -> dataframeOut (phs_dataframe_align_chunks ptr)
+
+dataFrameShouldRechunk :: DataFrame -> IO (Either PolarsError Bool)
+dataFrameShouldRechunk df = withDataFrame df $ \ptr -> boolOut (phs_dataframe_should_rechunk ptr)
 
 height :: DataFrame -> IO (Either PolarsError Int)
 height df = withDataFrame df $ \ptr -> word64Out (phs_dataframe_height ptr)

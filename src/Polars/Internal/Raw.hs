@@ -16,6 +16,7 @@ module Polars.Internal.Raw
     , RawExpr
     , RawLazyFrame
     , RawSeries
+    , phs_dataframe_align_chunks
     , phs_bytes_data
     , phs_bytes_free
     , phs_arrow_record_batch_array
@@ -57,12 +58,15 @@ module Polars.Internal.Raw
     , phs_dataframe_is_empty
     , phs_dataframe_join
     , phs_dataframe_max_n_chunks
+    , phs_dataframe_new_from_index
     , phs_dataframe_null_count
+    , phs_dataframe_rechunk
     , phs_dataframe_rename
     , phs_dataframe_reverse
     , phs_dataframe_schema
     , phs_dataframe_select
     , phs_dataframe_shape
+    , phs_dataframe_should_rechunk
     , phs_dataframe_slice
     , phs_dataframe_split_at
     , phs_dataframe_sort
@@ -460,6 +464,18 @@ foreign import ccall unsafe "phs_dataframe_clear"
 
 foreign import ccall unsafe "phs_dataframe_split_at"
     phs_dataframe_split_at :: Ptr RawDataFrame -> CLLong -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_dataframe_new_from_index"
+    phs_dataframe_new_from_index :: Ptr RawDataFrame -> Word64 -> Word64 -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_dataframe_rechunk"
+    phs_dataframe_rechunk :: Ptr RawDataFrame -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_dataframe_align_chunks"
+    phs_dataframe_align_chunks :: Ptr RawDataFrame -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_dataframe_should_rechunk"
+    phs_dataframe_should_rechunk :: Ptr RawDataFrame -> Ptr CBool -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall safe "phs_dataframe_from_arrow_record_batch"
     phs_dataframe_from_arrow_record_batch :: Ptr () -> Ptr () -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt

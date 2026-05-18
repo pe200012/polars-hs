@@ -1032,6 +1032,73 @@ pub unsafe extern "C" fn phs_dataframe_split_at(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_new_from_index(
+    dataframe: *const phs_dataframe,
+    index: u64,
+    len: u64,
+    out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        let index = usize_from_u64(index, "dataframe new-from-index index")?;
+        let len = usize_from_u64(len, "dataframe new-from-index length")?;
+        *out = dataframe_into_raw(handle.value.new_from_index(index, len));
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_rechunk(
+    dataframe: *const phs_dataframe,
+    out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        let mut dataframe = handle.value.clone();
+        dataframe.rechunk_mut();
+        *out = dataframe_into_raw(dataframe);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_align_chunks(
+    dataframe: *const phs_dataframe,
+    out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        let mut dataframe = handle.value.clone();
+        dataframe.align_chunks();
+        *out = dataframe_into_raw(dataframe);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_should_rechunk(
+    dataframe: *const phs_dataframe,
+    out: *mut bool,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        *out = handle.value.should_rechunk();
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_dataframe_shape(
     dataframe: *const phs_dataframe,
     height_out: *mut u64,
@@ -1704,6 +1771,100 @@ mod tests {
 
         unsafe {
             crate::handles::phs_dataframe_free(cleared);
+            crate::handles::phs_dataframe_free(df);
+        }
+    }
+
+    #[test]
+    fn dataframe_rechunk_align_and_new_from_index_work() {
+        let df = read_values_dataframe();
+        let mut out = ptr::null_mut();
+        let mut word_out = 0_u64;
+        let mut bool_out = false;
+        let mut err = ptr::null_mut();
+
+        let mut chunked = Series::new("value".into(), [1_i64, 2, 3]);
+        let right = Series::new("value".into(), [4_i64, 5, 6]);
+        chunked.append(&right).unwrap();
+        let other = Series::new("other".into(), [10_i64, 11, 12, 13, 14, 15]);
+        let misaligned = dataframe_into_raw(DataFrame::new_infer_height(vec![chunked.into(), other.into()]).unwrap());
+
+        let status = unsafe { phs_dataframe_should_rechunk(misaligned, &mut bool_out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert!(bool_out);
+
+        let status = unsafe { phs_dataframe_max_n_chunks(misaligned, &mut word_out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(word_out, 2);
+
+        let mut aligned_left = Series::new("value".into(), [1_i64, 2, 3]);
+        aligned_left.append(&Series::new("value".into(), [4_i64, 5])).unwrap();
+        let mut aligned_right = Series::new("other".into(), [10_i64, 11, 12]);
+        aligned_right.append(&Series::new("other".into(), [13_i64, 14])).unwrap();
+        let aligned_multichunk = dataframe_into_raw(DataFrame::new_infer_height(vec![aligned_left.into(), aligned_right.into()]).unwrap());
+        let status = unsafe { phs_dataframe_should_rechunk(aligned_multichunk, &mut bool_out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert!(!bool_out);
+        let status = unsafe { phs_dataframe_max_n_chunks(aligned_multichunk, &mut word_out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(word_out, 2);
+
+        let mut mismatch_left = Series::new("value".into(), [1_i64, 2, 3]);
+        mismatch_left.append(&Series::new("value".into(), [4_i64, 5])).unwrap();
+        let mut mismatch_right = Series::new("other".into(), [10_i64, 11]);
+        mismatch_right.append(&Series::new("other".into(), [12_i64, 13, 14])).unwrap();
+        let length_mismatch = dataframe_into_raw(DataFrame::new_infer_height(vec![mismatch_left.into(), mismatch_right.into()]).unwrap());
+        let status = unsafe { phs_dataframe_should_rechunk(length_mismatch, &mut bool_out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert!(bool_out);
+
+        let status = unsafe { phs_dataframe_align_chunks(misaligned, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let aligned = out;
+        let status = unsafe { phs_dataframe_should_rechunk(aligned, &mut bool_out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert!(!bool_out);
+        let status = unsafe { phs_dataframe_max_n_chunks(aligned, &mut word_out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(word_out, 1);
+
+        let status = unsafe { phs_dataframe_rechunk(misaligned, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let rechunked = out;
+        let rechunked_ref = unsafe { dataframe_ref(rechunked) }.unwrap();
+        assert_eq!(rechunked_ref.value.shape(), (6, 2));
+        let values: Vec<Option<i64>> = rechunked_ref.value.column("value").unwrap().as_materialized_series().i64().unwrap().into_iter().collect();
+        assert_eq!(values, vec![Some(1), Some(2), Some(3), Some(4), Some(5), Some(6)]);
+
+        let status = unsafe { phs_dataframe_new_from_index(df, 1, 4, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let repeated = out;
+        let repeated_ref = unsafe { dataframe_ref(repeated) }.unwrap();
+        assert_eq!(repeated_ref.value.shape(), (4, 4));
+        let names: Vec<Option<&str>> = repeated_ref.value.column("name").unwrap().as_materialized_series().str().unwrap().into_iter().collect();
+        assert_eq!(names, vec![Some("Bob"), Some("Bob"), Some("Bob"), Some("Bob")]);
+
+        let status = unsafe { phs_dataframe_new_from_index(df, 99, 2, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let null_repeated = out;
+        let null_repeated_ref = unsafe { dataframe_ref(null_repeated) }.unwrap();
+        assert_eq!(null_repeated_ref.value.shape(), (2, 4));
+        let active: Vec<Option<bool>> = null_repeated_ref.value.column("active").unwrap().as_materialized_series().bool().unwrap().into_iter().collect();
+        assert_eq!(active, vec![None, None]);
+
+        let status = unsafe { phs_dataframe_new_from_index(df, 0, 1, ptr::null_mut(), &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "out pointer was null");
+
+        unsafe {
+            crate::handles::phs_dataframe_free(null_repeated);
+            crate::handles::phs_dataframe_free(repeated);
+            crate::handles::phs_dataframe_free(rechunked);
+            crate::handles::phs_dataframe_free(aligned);
+            crate::handles::phs_dataframe_free(length_mismatch);
+            crate::handles::phs_dataframe_free(aligned_multichunk);
+            crate::handles::phs_dataframe_free(misaligned);
             crate::handles::phs_dataframe_free(df);
         }
     }

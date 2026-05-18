@@ -547,6 +547,61 @@ main = hspec $ do
                         (_, _, _, _, _, _, _, _, _, Left err, _) -> expectationFailure (show err)
                         (_, _, _, _, _, _, _, _, _, _, Left err) -> expectationFailure (show err)
 
+        it "rechunks aligns and expands eager DataFrame rows" $ do
+            leftResult <- Pl.series @Int64 "value" (V.fromList [Just 1, Just 2, Just 3])
+            rightResult <- Pl.series @Int64 "value" (V.fromList [Just 4, Just 5, Just 6])
+            otherResult <- Pl.series @Int64 "other" (V.fromList [Just 10, Just 11, Just 12, Just 13, Just 14, Just 15])
+            valuesResult <- Pl.readCsv valuesCsv
+            case (leftResult, rightResult, otherResult, valuesResult) of
+                (Right left, Right right, Right other, Right valuesDf) -> do
+                    appended <- Pl.seriesAppend left right
+                    case appended of
+                        Left err -> expectationFailure (show err)
+                        Right chunked -> do
+                            dfResult <- Pl.dataFrame [chunked, other]
+                            repeated <- Pl.dataFrameNewFromIndex 1 4 valuesDf
+                            nullRepeated <- Pl.dataFrameNewFromIndex 99 2 valuesDf
+                            emptyRepeated <- Pl.dataFrameNewFromIndex 1 0 valuesDf
+                            negativeIndex <- Pl.dataFrameNewFromIndex (-1) 1 valuesDf
+                            negativeLen <- Pl.dataFrameNewFromIndex 1 (-1) valuesDf
+                            case (dfResult, repeated, nullRepeated, emptyRepeated, negativeIndex, negativeLen) of
+                                (Right misalignedDf, Right repeatedDf, Right nullRepeatedDf, Right emptyRepeatedDf, Left indexErr, Left lenErr) -> do
+                                    Pl.dataFrameShouldRechunk misalignedDf `shouldReturn` Right True
+                                    Pl.dataFrameMaxNChunks misalignedDf `shouldReturn` Right 2
+                                    aligned <- Pl.dataFrameAlignChunks misalignedDf
+                                    rechunked <- Pl.dataFrameRechunk misalignedDf
+                                    case (aligned, rechunked) of
+                                        (Right alignedDf, Right rechunkedDf) -> do
+                                            Pl.dataFrameShouldRechunk alignedDf `shouldReturn` Right False
+                                            Pl.dataFrameShouldRechunk rechunkedDf `shouldReturn` Right False
+                                            Pl.dataFrameMaxNChunks alignedDf `shouldReturn` Right 1
+                                            Pl.dataFrameMaxNChunks rechunkedDf `shouldReturn` Right 1
+                                            Pl.column @Int64 rechunkedDf "value" `shouldReturn` Right (V.fromList [Just 1, Just 2, Just 3, Just 4, Just 5, Just 6])
+                                            Pl.column @Int64 alignedDf "other" `shouldReturn` Right (V.fromList [Just 10, Just 11, Just 12, Just 13, Just 14, Just 15])
+                                        (Left err, _) -> expectationFailure (show err)
+                                        (_, Left err) -> expectationFailure (show err)
+                                    Pl.shape repeatedDf `shouldReturn` Right (4, 4)
+                                    Pl.column @T.Text repeatedDf "name" `shouldReturn` Right (V.replicate 4 (Just "Bob"))
+                                    Pl.column @Int64 repeatedDf "age" `shouldReturn` Right (V.replicate 4 Nothing)
+                                    Pl.column @Double repeatedDf "score" `shouldReturn` Right (V.replicate 4 (Just 8.25))
+                                    Pl.column @Bool repeatedDf "active" `shouldReturn` Right (V.replicate 4 (Just False))
+                                    Pl.shape nullRepeatedDf `shouldReturn` Right (2, 4)
+                                    Pl.column @T.Text nullRepeatedDf "name" `shouldReturn` Right (V.replicate 2 Nothing)
+                                    Pl.column @Bool nullRepeatedDf "active" `shouldReturn` Right (V.replicate 2 Nothing)
+                                    Pl.shape emptyRepeatedDf `shouldReturn` Right (0, 4)
+                                    Pl.polarsErrorCode indexErr `shouldBe` Pl.InvalidArgument
+                                    Pl.polarsErrorCode lenErr `shouldBe` Pl.InvalidArgument
+                                (Left err, _, _, _, _, _) -> expectationFailure (show err)
+                                (_, Left err, _, _, _, _) -> expectationFailure (show err)
+                                (_, _, Left err, _, _, _) -> expectationFailure (show err)
+                                (_, _, _, Left err, _, _) -> expectationFailure (show err)
+                                (_, _, _, _, Right _, _) -> expectationFailure "expected negative index to fail"
+                                (_, _, _, _, _, Right _) -> expectationFailure "expected negative length to fail"
+                (Left err, _, _, _) -> expectationFailure (show err)
+                (_, Left err, _, _) -> expectationFailure (show err)
+                (_, _, Left err, _) -> expectationFailure (show err)
+                (_, _, _, Left err) -> expectationFailure (show err)
+
         it "takes eager DataFrame rows by explicit indices" $ do
             result <- Pl.readCsv valuesCsv
             case result of
