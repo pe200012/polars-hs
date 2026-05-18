@@ -1804,6 +1804,7 @@ name = "polars-hs-ffi"
 version = "0.1.0"
 dependencies = [
  "cbindgen",
+ "either",
  "libc",
  "polars",
  "polars-arrow",

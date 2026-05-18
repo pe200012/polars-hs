@@ -89,6 +89,7 @@ module Polars.Internal.Raw
     , phs_dataframe_take
     , phs_dataframe_to_ipc_bytes
     , phs_dataframe_to_text
+    , phs_dataframe_transpose
     , phs_dataframe_unique
     , phs_dataframe_vstack
     , phs_dataframe_with_columns
@@ -413,6 +414,19 @@ foreign import ccall safe "phs_dataframe_explode"
 
 foreign import ccall safe "phs_dataframe_gather_every"
     phs_dataframe_gather_every :: Ptr RawDataFrame -> Word64 -> Word64 -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_dataframe_transpose"
+    phs_dataframe_transpose ::
+        Ptr RawDataFrame ->
+        CBool ->
+        CString ->
+        CInt ->
+        CString ->
+        Ptr CString ->
+        CSize ->
+        Ptr (Ptr RawDataFrame) ->
+        Ptr (Ptr RawError) ->
+        IO CInt
 
 foreign import ccall unsafe "phs_dataframe_rename"
     phs_dataframe_rename :: Ptr RawDataFrame -> Ptr CString -> Ptr CString -> CSize -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt

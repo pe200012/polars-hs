@@ -3,6 +3,7 @@ use std::os::raw::{c_char, c_int, c_uchar};
 use std::path::PathBuf;
 use std::ptr;
 
+use either::Either;
 use polars::prelude::*;
 
 use crate::bytes::{bytes_into_raw, phs_bytes};
@@ -948,6 +949,48 @@ pub unsafe extern "C" fn phs_dataframe_gather_every(
             .collect::<PhsResult<Vec<_>>>()?;
         let indexes = IdxCa::from_vec(PlSmallStr::EMPTY, indexes);
         *out = dataframe_into_raw(handle.value.take(&indexes)?);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_transpose(
+    dataframe: *const phs_dataframe,
+    has_keep_names_as: bool,
+    keep_names_as: *const c_char,
+    new_col_names_kind: c_int,
+    new_col_names_column: *const c_char,
+    new_col_names: *const *const c_char,
+    new_col_names_len: usize,
+    out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        let keep_names_as = if has_keep_names_as {
+            Some(unsafe { c_str_to_str(keep_names_as, "keep_names_as") }?)
+        } else {
+            None
+        };
+        let new_col_names = match new_col_names_kind {
+            0 => None,
+            1 => Some(Either::Left(
+                unsafe { c_str_to_str(new_col_names_column, "new_col_names_column") }?
+                    .to_owned(),
+            )),
+            2 => Some(Either::Right(unsafe {
+                name_vec(new_col_names, new_col_names_len, "new_col_names")?
+            })),
+            other => {
+                return Err(PhsError::invalid_argument(format!(
+                    "unknown dataframe transpose column-name mode {other}"
+                )));
+            },
+        };
+        let mut value = handle.value.clone();
+        *out = dataframe_into_raw(value.transpose(keep_names_as, new_col_names)?);
         Ok(())
     })
 }
@@ -2904,6 +2947,158 @@ mod tests {
             crate::handles::phs_dataframe_free(offset_rows);
             crate::handles::phs_dataframe_free(every_two);
             crate::handles::phs_dataframe_free(df);
+        }
+    }
+
+    #[test]
+    fn dataframe_transpose_supports_name_modes() {
+        let numeric = dataframe_into_raw(
+            DataFrame::new_infer_height(vec![
+                Series::new("x".into(), [1_i64, 2, 3]).into(),
+                Series::new("y".into(), [4_i64, 5, 6]).into(),
+            ])
+            .unwrap(),
+        );
+        let named = dataframe_into_raw(
+            DataFrame::new_infer_height(vec![
+                Series::new("row_name".into(), ["r1", "r2", "r3"]).into(),
+                Series::new("x".into(), [1_i64, 2, 3]).into(),
+                Series::new("y".into(), [4_i64, 5, 6]).into(),
+            ])
+            .unwrap(),
+        );
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe {
+            phs_dataframe_transpose(
+                numeric,
+                false,
+                ptr::null(),
+                0,
+                ptr::null(),
+                ptr::null(),
+                0,
+                &mut out,
+                &mut err,
+            )
+        };
+        assert_eq!(status, PHS_OK);
+        let default_out = out;
+        assert_eq!(unsafe { dataframe_ref(default_out) }.unwrap().value.shape(), (2, 3));
+        let values: Vec<Option<i64>> = unsafe { dataframe_ref(default_out) }
+            .unwrap()
+            .value
+            .column("column_2")
+            .unwrap()
+            .as_materialized_series()
+            .i64()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(values, vec![Some(3), Some(6)]);
+
+        let keep = std::ffi::CString::new("metric").unwrap();
+        let r1 = std::ffi::CString::new("r1").unwrap();
+        let r2 = std::ffi::CString::new("r2").unwrap();
+        let r3 = std::ffi::CString::new("r3").unwrap();
+        let names = [r1.as_ptr(), r2.as_ptr(), r3.as_ptr()];
+        let status = unsafe {
+            phs_dataframe_transpose(
+                numeric,
+                true,
+                keep.as_ptr(),
+                2,
+                ptr::null(),
+                names.as_ptr(),
+                names.len(),
+                &mut out,
+                &mut err,
+            )
+        };
+        assert_eq!(status, PHS_OK);
+        let explicit_out = out;
+        let metric: Vec<Option<&str>> = unsafe { dataframe_ref(explicit_out) }
+            .unwrap()
+            .value
+            .column("metric")
+            .unwrap()
+            .as_materialized_series()
+            .str()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(metric, vec![Some("x"), Some("y")]);
+
+        let source = std::ffi::CString::new("row_name").unwrap();
+        let status = unsafe {
+            phs_dataframe_transpose(
+                named,
+                true,
+                keep.as_ptr(),
+                1,
+                source.as_ptr(),
+                ptr::null(),
+                0,
+                &mut out,
+                &mut err,
+            )
+        };
+        assert_eq!(status, PHS_OK);
+        let source_out = out;
+        let values: Vec<Option<i64>> = unsafe { dataframe_ref(source_out) }
+            .unwrap()
+            .value
+            .column("r2")
+            .unwrap()
+            .as_materialized_series()
+            .i64()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(values, vec![Some(2), Some(5)]);
+        assert!(unsafe { dataframe_ref(named) }.unwrap().value.column("row_name").is_ok());
+
+        let status = unsafe {
+            phs_dataframe_transpose(
+                numeric,
+                false,
+                ptr::null(),
+                99,
+                ptr::null(),
+                ptr::null(),
+                0,
+                &mut out,
+                &mut err,
+            )
+        };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "unknown dataframe transpose column-name mode 99");
+
+        let status = unsafe {
+            phs_dataframe_transpose(
+                numeric,
+                false,
+                ptr::null(),
+                0,
+                ptr::null(),
+                ptr::null(),
+                0,
+                ptr::null_mut(),
+                &mut err,
+            )
+        };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "out pointer was null");
+
+        unsafe {
+            crate::handles::phs_dataframe_free(source_out);
+            crate::handles::phs_dataframe_free(explicit_out);
+            crate::handles::phs_dataframe_free(default_out);
+            crate::handles::phs_dataframe_free(named);
+            crate::handles::phs_dataframe_free(numeric);
         }
     }
 

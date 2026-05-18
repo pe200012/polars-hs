@@ -256,6 +256,16 @@ int phs_dataframe_gather_every(const struct phs_dataframe *dataframe,
                                struct phs_dataframe **out,
                                struct phs_error **err);
 
+int phs_dataframe_transpose(const struct phs_dataframe *dataframe,
+                            bool has_keep_names_as,
+                            const char *keep_names_as,
+                            int new_col_names_kind,
+                            const char *new_col_names_column,
+                            const char *const *new_col_names,
+                            uintptr_t new_col_names_len,
+                            struct phs_dataframe **out,
+                            struct phs_error **err);
+
 uintptr_t phs_dataframe_array_len(const struct phs_dataframe_array *array);
 
 int phs_dataframe_array_get(const struct phs_dataframe_array *array,

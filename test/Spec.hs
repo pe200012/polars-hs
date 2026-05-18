@@ -1460,6 +1460,65 @@ main = hspec $ do
                     expectInvalidArgumentMessage "dataFrameGatherEvery step must be non-negative" negativeStep
                     expectInvalidArgumentMessage "dataFrameGatherEvery offset must be non-negative" negativeOffset
 
+        it "transposes eager DataFrames with configurable output names" $ do
+            rowNameResult <- Pl.series @T.Text "row_name" (V.fromList [Just "r1", Just "r2", Just "r3"])
+            xResult <- Pl.series @Int64 "x" (V.fromList [Just 1, Just 2, Just 3])
+            yResult <- Pl.series @Int64 "y" (V.fromList [Just 4, Just 5, Just 6])
+            case (rowNameResult, xResult, yResult) of
+                (Right rowName, Right x, Right y) -> do
+                    numericResult <- Pl.dataFrame [x, y]
+                    namedResult <- Pl.dataFrame [rowName, x, y]
+                    case (numericResult, namedResult) of
+                        (Right numericDf, Right namedDf) -> do
+                            defaultOut <- Pl.dataFrameTranspose Pl.defaultDataFrameTransposeOptions numericDf
+                            explicitOut <-
+                                Pl.dataFrameTranspose
+                                    Pl.defaultDataFrameTransposeOptions
+                                        { Pl.dataFrameTransposeKeepNamesAs = Just "metric"
+                                        , Pl.dataFrameTransposeColumnNames = Pl.TransposeColumnNames ["r1", "r2", "r3"]
+                                        }
+                                    numericDf
+                            sourceOut <-
+                                Pl.dataFrameTranspose
+                                    Pl.defaultDataFrameTransposeOptions
+                                        { Pl.dataFrameTransposeKeepNamesAs = Just "metric"
+                                        , Pl.dataFrameTransposeColumnNames = Pl.TransposeColumnNamesFrom "row_name"
+                                        }
+                                    namedDf
+                            mismatchedNames <-
+                                Pl.dataFrameTranspose
+                                    Pl.defaultDataFrameTransposeOptions
+                                        { Pl.dataFrameTransposeColumnNames = Pl.TransposeColumnNames ["only_one"]
+                                        }
+                                    numericDf
+                            case (defaultOut, explicitOut, sourceOut) of
+                                (Right defaultDf, Right explicitDf, Right sourceDf) -> do
+                                    Pl.shape defaultDf `shouldReturn` Right (2, 3)
+                                    defaultSchema <- Pl.schema defaultDf
+                                    fmap (map Pl.fieldName) defaultSchema `shouldBe` Right ["column_0", "column_1", "column_2"]
+                                    Pl.column @Int64 defaultDf "column_0" `shouldReturn` Right (V.fromList [Just 1, Just 4])
+                                    Pl.column @Int64 defaultDf "column_1" `shouldReturn` Right (V.fromList [Just 2, Just 5])
+                                    Pl.column @Int64 defaultDf "column_2" `shouldReturn` Right (V.fromList [Just 3, Just 6])
+                                    Pl.shape explicitDf `shouldReturn` Right (2, 4)
+                                    explicitSchema <- Pl.schema explicitDf
+                                    fmap (map Pl.fieldName) explicitSchema `shouldBe` Right ["metric", "r1", "r2", "r3"]
+                                    Pl.column @T.Text explicitDf "metric" `shouldReturn` Right (V.fromList [Just "x", Just "y"])
+                                    Pl.column @Int64 explicitDf "r3" `shouldReturn` Right (V.fromList [Just 3, Just 6])
+                                    sourceSchema <- Pl.schema sourceDf
+                                    fmap (map Pl.fieldName) sourceSchema `shouldBe` Right ["metric", "r1", "r2", "r3"]
+                                    Pl.column @T.Text sourceDf "metric" `shouldReturn` Right (V.fromList [Just "x", Just "y"])
+                                    Pl.column @Int64 sourceDf "r2" `shouldReturn` Right (V.fromList [Just 2, Just 5])
+                                    Pl.column @Int64 numericDf "x" `shouldReturn` Right (V.fromList [Just 1, Just 2, Just 3])
+                                (Left err, _, _) -> expectationFailure (show err)
+                                (_, Left err, _) -> expectationFailure (show err)
+                                (_, _, Left err) -> expectationFailure (show err)
+                            expectPolarsFailure mismatchedNames
+                        (Left err, _) -> expectationFailure (show err)
+                        (_, Left err) -> expectationFailure (show err)
+                (Left err, _, _) -> expectationFailure (show err)
+                (_, Left err, _) -> expectationFailure (show err)
+                (_, _, Left err) -> expectationFailure (show err)
+
         it "broadcasts unit-length eager DataFrame columns" $ do
             dfResult <- Pl.readCsv valuesCsv
             scoreResult <- Pl.series @Double "score" (V.fromList [Just 10.0])

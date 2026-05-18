@@ -18,6 +18,8 @@ module Polars.DataFrame
     , DataFramePartitionOptions (..)
     , DataFrameSampleOptions (..)
     , DataFrameSortOptions (..)
+    , DataFrameTransposeColumnNames (..)
+    , DataFrameTransposeOptions (..)
     , DataFrameUniqueKeepStrategy (..)
     , DataFrameUniqueOptions (..)
     , FillNullStrategy (..)
@@ -62,6 +64,7 @@ module Polars.DataFrame
     , dataFrameSplitAt
     , dataFrameSort
     , dataFrameTake
+    , dataFrameTranspose
     , dataFrameUnique
     , dataFrameVStack
     , dataFrameWithColumns
@@ -75,6 +78,7 @@ module Polars.DataFrame
     , defaultDataFramePartitionOptions
     , defaultDataFrameSampleOptions
     , defaultDataFrameSortOptions
+    , defaultDataFrameTransposeOptions
     , defaultDataFrameUniqueOptions
     , defaultParquetReadOptions
     , defaultParquetStatisticsOptions
@@ -166,6 +170,7 @@ import Polars.Internal.Raw
     , phs_dataframe_sort
     , phs_dataframe_tail
     , phs_dataframe_take
+    , phs_dataframe_transpose
     , phs_dataframe_to_text
     , phs_dataframe_unique
     , phs_dataframe_vstack
@@ -308,6 +313,25 @@ defaultDataFrameExplodeOptions =
         { dataFrameExplodeColumns = []
         , dataFrameExplodeEmptyAsNull = True
         , dataFrameExplodeKeepNulls = True
+        }
+
+data DataFrameTransposeColumnNames
+    = TransposeDefaultColumnNames
+    | TransposeColumnNamesFrom !Text
+    | TransposeColumnNames ![Text]
+    deriving (Eq, Show)
+
+data DataFrameTransposeOptions = DataFrameTransposeOptions
+    { dataFrameTransposeKeepNamesAs :: !(Maybe Text)
+    , dataFrameTransposeColumnNames :: !DataFrameTransposeColumnNames
+    }
+    deriving (Eq, Show)
+
+defaultDataFrameTransposeOptions :: DataFrameTransposeOptions
+defaultDataFrameTransposeOptions =
+    DataFrameTransposeOptions
+        { dataFrameTransposeKeepNamesAs = Nothing
+        , dataFrameTransposeColumnNames = TransposeDefaultColumnNames
         }
 
 data FillNullStrategy
@@ -538,6 +562,47 @@ dataFrameGatherEvery step offset df
             (Right stepValue, Right offsetValue) ->
                 withDataFrame df $ \ptr ->
                     dataframeOut (phs_dataframe_gather_every ptr stepValue offsetValue)
+
+dataFrameTranspose :: DataFrameTransposeOptions -> DataFrame -> IO (Either PolarsError DataFrame)
+dataFrameTranspose options df =
+    withDataFrame df $ \dfPtr ->
+        withMaybeTextCString (dataFrameTransposeKeepNamesAs options) $ \keepPtr hasKeep ->
+            case dataFrameTransposeColumnNames options of
+                TransposeDefaultColumnNames ->
+                    dataframeOut
+                        ( phs_dataframe_transpose
+                            dfPtr
+                            (toCBool hasKeep)
+                            keepPtr
+                            0
+                            nullPtr
+                            nullPtr
+                            0
+                        )
+                TransposeColumnNamesFrom columnName ->
+                    withTextCString columnName $ \columnPtr ->
+                        dataframeOut
+                            ( phs_dataframe_transpose
+                                dfPtr
+                                (toCBool hasKeep)
+                                keepPtr
+                                1
+                                columnPtr
+                                nullPtr
+                                0
+                            )
+                TransposeColumnNames names ->
+                    withCStringList names $ \nameArray nameLen ->
+                        dataframeOut
+                            ( phs_dataframe_transpose
+                                dfPtr
+                                (toCBool hasKeep)
+                                keepPtr
+                                2
+                                nullPtr
+                                nameArray
+                                nameLen
+                            )
 
 dataFrameRename :: [(Text, Text)] -> DataFrame -> IO (Either PolarsError DataFrame)
 dataFrameRename [] _ = pure (Left (invalidArgument "dataFrameRename requires at least one column pair"))
