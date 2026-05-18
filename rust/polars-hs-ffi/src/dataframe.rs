@@ -12,13 +12,12 @@ use crate::error::{PhsError, PhsResult, c_str_to_str, ffi_boundary, phs_error, r
 use crate::handles::{
     dataframe_into_raw, dataframe_ref, phs_dataframe, phs_series, series_into_raw, series_ref,
 };
+use crate::schema::encode_schema;
 use crate::series::{
     encode_bool_series, encode_f32_series, encode_f64_series, encode_i8_series, encode_i16_series,
     encode_i32_series, encode_i64_series, encode_text_series, encode_u8_series, encode_u16_series,
     encode_u32_series, encode_u64_series,
 };
-
-const SCHEMA_MAGIC: &[u8; 8] = b"PHS1SCH\0";
 
 #[repr(C)]
 pub struct phs_dataframe_array {
@@ -255,57 +254,6 @@ fn parquet_parallel_from_code(code: c_int) -> PhsResult<ParallelStrategy> {
             "unknown parquet parallel strategy code {code}"
         ))),
     }
-}
-
-fn push_u64_le(bytes: &mut Vec<u8>, value: u64) {
-    bytes.extend_from_slice(&value.to_le_bytes());
-}
-
-fn push_u16_le(bytes: &mut Vec<u8>, value: u16) {
-    bytes.extend_from_slice(&value.to_le_bytes());
-}
-
-fn schema_dtype_tag(dtype: &DataType) -> u16 {
-    match dtype {
-        DataType::Boolean => 0,
-        DataType::Int8 => 1,
-        DataType::Int16 => 2,
-        DataType::Int32 => 3,
-        DataType::Int64 => 4,
-        DataType::UInt8 => 5,
-        DataType::UInt16 => 6,
-        DataType::UInt32 => 7,
-        DataType::UInt64 => 8,
-        DataType::Float32 => 9,
-        DataType::Float64 => 10,
-        DataType::String => 11,
-        DataType::Date => 12,
-        DataType::Datetime(_, _) => 13,
-        DataType::Duration(_) => 14,
-        DataType::Time => 15,
-        DataType::Binary | DataType::BinaryOffset => 16,
-        DataType::Null => 17,
-        dtype if dtype.is_categorical() || dtype.is_enum() => 18,
-        _ => 255,
-    }
-}
-
-fn encode_schema_bytes(dataframe: &DataFrame) -> Vec<u8> {
-    let schema = dataframe.schema();
-    let mut bytes = Vec::new();
-    bytes.extend_from_slice(SCHEMA_MAGIC);
-    push_u64_le(&mut bytes, schema.len() as u64);
-    for field in schema.iter_fields() {
-        let name = field.name().as_str().as_bytes();
-        let dtype = field.dtype();
-        let detail = format!("{dtype:?}");
-        push_u64_le(&mut bytes, name.len() as u64);
-        bytes.extend_from_slice(name);
-        push_u16_le(&mut bytes, schema_dtype_tag(dtype));
-        push_u64_le(&mut bytes, detail.len() as u64);
-        bytes.extend_from_slice(detail.as_bytes());
-    }
-    bytes
 }
 
 #[unsafe(no_mangle)]
@@ -1668,7 +1616,7 @@ pub unsafe extern "C" fn phs_dataframe_schema(
         let out = unsafe { required_mut(out, "out") }?;
         *out = ptr::null_mut();
         let handle = unsafe { dataframe_ref(dataframe) }?;
-        *out = bytes_into_raw(encode_schema_bytes(&handle.value));
+        *out = bytes_into_raw(encode_schema(handle.value.schema()));
         Ok(())
     })
 }

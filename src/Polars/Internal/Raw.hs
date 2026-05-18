@@ -138,6 +138,7 @@ module Polars.Internal.Raw
     , phs_expr_unary
     , phs_expr_unary_i64
     , phs_lazyframe_collect
+    , phs_lazyframe_collect_schema
     , phs_lazyframe_drop
     , phs_lazyframe_drop_nulls
     , phs_lazyframe_explode
@@ -740,6 +741,9 @@ foreign import ccall safe "phs_scan_parquet_options"
 
 foreign import ccall safe "phs_lazyframe_collect"
     phs_lazyframe_collect :: Ptr RawLazyFrame -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_lazyframe_collect_schema"
+    phs_lazyframe_collect_schema :: Ptr RawLazyFrame -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall safe "phs_lazyframe_explain"
     phs_lazyframe_explain :: Ptr RawLazyFrame -> CBool -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt

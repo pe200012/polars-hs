@@ -34,6 +34,7 @@ extra-source-files:
     rust/polars-hs-ffi/src/ipc.rs
     rust/polars-hs-ffi/src/lazyframe.rs
     rust/polars-hs-ffi/src/lib.rs
+    rust/polars-hs-ffi/src/schema.rs
     rust/polars-hs-ffi/src/series.rs
     rust/polars-hs-ffi/src/bin/polars_hs_oracle.rs
     test/data/concat.csv

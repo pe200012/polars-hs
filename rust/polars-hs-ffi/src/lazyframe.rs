@@ -6,6 +6,7 @@ use polars::prelude::*;
 use crate::bytes::{bytes_into_raw, phs_bytes};
 use crate::error::{PhsError, PhsResult, c_str_to_str, ffi_boundary, phs_error, required_mut};
 use crate::handles::{dataframe_into_raw, expr_ref, lazyframe_into_raw, lazyframe_ref, phs_dataframe, phs_expr, phs_lazyframe};
+use crate::schema::encode_schema;
 
 unsafe fn path_string(path: *const c_char) -> PhsResult<String> {
     Ok(unsafe { c_str_to_str(path, "path") }?.to_owned())
@@ -312,6 +313,22 @@ pub unsafe extern "C" fn phs_lazyframe_collect(
         let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
         let df = lf.collect()?;
         *out = dataframe_into_raw(df);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_collect_schema(
+    lazyframe: *const phs_lazyframe,
+    out: *mut *mut phs_bytes,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let mut lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        let schema = lf.collect_schema()?;
+        *out = bytes_into_raw(encode_schema(schema.as_ref()));
         Ok(())
     })
 }
@@ -953,6 +970,16 @@ mod tests {
     use crate::error::PHS_OK;
     use std::ffi::CStr;
 
+    unsafe fn take_raw_bytes(raw: *mut phs_bytes) -> Vec<u8> {
+        assert!(!raw.is_null());
+        let len = unsafe { crate::bytes::phs_bytes_len(raw) };
+        let data = unsafe { crate::bytes::phs_bytes_data(raw) };
+        assert!(!data.is_null());
+        let bytes = unsafe { std::slice::from_raw_parts(data, len) }.to_vec();
+        unsafe { crate::bytes::phs_bytes_free(raw) };
+        bytes
+    }
+
     unsafe fn take_error_message(raw: *mut phs_error) -> String {
         assert!(!raw.is_null());
         let message = unsafe { CStr::from_ptr(crate::error::phs_error_message(raw)) }
@@ -1011,6 +1038,81 @@ mod tests {
         let parts = Column::new(PlSmallStr::from_static("parts"), [part0, part1, part2, part3]);
         let id = Column::new(PlSmallStr::from_static("id"), [1i32, 2, 3, 4]);
         lazyframe_into_raw(DataFrame::new_infer_height(vec![id, parts]).unwrap().lazy())
+    }
+
+    fn push_schema_field(bytes: &mut Vec<u8>, name: &[u8], dtype_tag: u16, dtype_detail: &[u8]) {
+        bytes.extend_from_slice(&(name.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(name);
+        bytes.extend_from_slice(&dtype_tag.to_le_bytes());
+        bytes.extend_from_slice(&(dtype_detail.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(dtype_detail);
+    }
+
+    #[test]
+    fn lazy_collect_schema_reports_current_plan_fields() {
+        let path = employees_fixture_path();
+        let mut lf0 = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(unsafe { phs_scan_csv(path.as_ptr(), &mut lf0, &mut err) }, PHS_OK);
+
+        let mut out = ptr::null_mut();
+        let status = unsafe { phs_lazyframe_collect_schema(lf0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert!(err.is_null());
+        let bytes = unsafe { take_raw_bytes(out) };
+        let mut expected = b"PHS1SCH\0".to_vec();
+        expected.extend_from_slice(&4_u64.to_le_bytes());
+        push_schema_field(&mut expected, b"id", 4, b"Int64");
+        push_schema_field(&mut expected, b"name", 11, b"String");
+        push_schema_field(&mut expected, b"department", 11, b"String");
+        push_schema_field(&mut expected, b"salary", 4, b"Int64");
+        assert_eq!(bytes, expected);
+
+        let name = std::ffi::CString::new("name").unwrap();
+        let mut name_expr = ptr::null_mut();
+        assert_eq!(unsafe { crate::expr::phs_expr_col(name.as_ptr(), &mut name_expr, &mut err) }, PHS_OK);
+        let exprs = [name_expr as *const phs_expr];
+        let mut selected = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_select(lf0, exprs.as_ptr(), exprs.len(), &mut selected, &mut err) }, PHS_OK);
+        let status = unsafe { phs_lazyframe_collect_schema(selected, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert!(err.is_null());
+        let bytes = unsafe { take_raw_bytes(out) };
+        let mut expected = b"PHS1SCH\0".to_vec();
+        expected.extend_from_slice(&1_u64.to_le_bytes());
+        push_schema_field(&mut expected, b"name", 11, b"String");
+        assert_eq!(bytes, expected);
+
+        let missing = std::ffi::CString::new("missing").unwrap();
+        let mut missing_expr = ptr::null_mut();
+        assert_eq!(unsafe { crate::expr::phs_expr_col(missing.as_ptr(), &mut missing_expr, &mut err) }, PHS_OK);
+        let exprs = [missing_expr as *const phs_expr];
+        let mut missing_lf = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_select(lf0, exprs.as_ptr(), exprs.len(), &mut missing_lf, &mut err) }, PHS_OK);
+        let status = unsafe { phs_lazyframe_collect_schema(missing_lf, &mut out, &mut err) };
+        assert_eq!(status, crate::error::PHS_POLARS_ERROR);
+        assert!(!err.is_null());
+        unsafe { crate::error::phs_error_free(err) };
+        err = ptr::null_mut();
+
+        let status = unsafe { phs_lazyframe_collect_schema(ptr::null(), &mut out, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "lazyframe pointer was null");
+        err = ptr::null_mut();
+
+        let status = unsafe { phs_lazyframe_collect_schema(lf0, ptr::null_mut(), &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "out pointer was null");
+
+        unsafe {
+            crate::handles::phs_expr_free(name_expr);
+            crate::handles::phs_expr_free(missing_expr);
+            crate::handles::phs_lazyframe_free(lf0);
+            crate::handles::phs_lazyframe_free(selected);
+            crate::handles::phs_lazyframe_free(missing_lf);
+        }
     }
 
     #[test]

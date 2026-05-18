@@ -7,6 +7,7 @@ Description : Safe lazy query operations backed by Rust Polars LazyFrame handles
 
 Lazy operations clone Rust logical plans and return new managed LazyFrame values.
 Expression inputs are compiled from pure Haskell AST nodes at each FFI boundary.
+Schema helpers resolve lazy logical-plan metadata without materializing frames.
 -}
 module Polars.LazyFrame
     ( CsvReadOptions (..)
@@ -21,6 +22,7 @@ module Polars.LazyFrame
     , UniqueOptions (..)
     , cache
     , collect
+    , collectSchema
     , defaultCsvReadOptions
     , defaultLazyFrameExplodeOptions
     , defaultLazyFrameTopKOptions
@@ -87,6 +89,7 @@ import Polars.Internal.Raw
     , RawExpr
     , RawLazyFrame
     , phs_lazyframe_collect
+    , phs_lazyframe_collect_schema
     , phs_lazyframe_cache
     , phs_lazyframe_clear
     , phs_lazyframe_drop
@@ -126,6 +129,7 @@ import Polars.IO
     , defaultParquetScanOptions
     )
 import Polars.Internal.Result (consumeError, nullPointerError)
+import Polars.Schema (Field, parseSchemaBytes)
 
 newtype RenameOptions = RenameOptions
     { renameStrict :: Bool
@@ -259,6 +263,10 @@ scanParquetWith options path =
 
 collect :: LazyFrame -> IO (Either PolarsError DataFrame)
 collect lf = withLazyFrame lf $ \ptr -> dataframeOut (phs_lazyframe_collect ptr)
+
+-- | Resolve the schema of the current lazy logical plan.
+collectSchema :: LazyFrame -> IO (Either PolarsError [Field])
+collectSchema lf = withLazyFrame lf $ \ptr -> schemaOut (phs_lazyframe_collect_schema ptr)
 
 explain :: Bool -> LazyFrame -> IO (Either PolarsError Text)
 explain optimized lf = withLazyFrame lf $ \ptr ->
@@ -465,6 +473,21 @@ bytesOut action =
                     if ptr == nullPtr
                         then pure (Left (nullPointerError "lazyframe bytes output"))
                         else Right . TE.decodeUtf8 <$> copyAndFreeBytes ptr
+                else Left <$> (consumeError (fromIntegralStatus status) =<< peek errPtr)
+
+schemaOut :: (Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt) -> IO (Either PolarsError [Field])
+schemaOut action =
+    alloca $ \outPtr ->
+        alloca $ \errPtr -> do
+            poke outPtr nullPtr
+            poke errPtr nullPtr
+            status <- action outPtr errPtr
+            if fromIntegralStatus status == 0
+                then do
+                    ptr <- peek outPtr
+                    if ptr == nullPtr
+                        then pure (Left (nullPointerError "lazyframe schema output"))
+                        else parseSchemaBytes <$> copyAndFreeBytes ptr
                 else Left <$> (consumeError (fromIntegralStatus status) =<< peek errPtr)
 
 dataframeOut :: (Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt) -> IO (Either PolarsError DataFrame)

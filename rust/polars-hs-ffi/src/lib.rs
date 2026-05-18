@@ -9,6 +9,7 @@ pub mod expr;
 pub mod handles;
 pub mod ipc;
 pub mod lazyframe;
+pub mod schema;
 pub mod series;
 
 #[unsafe(no_mangle)]

@@ -2176,6 +2176,28 @@ main = hspec $ do
                         (_, _, Left err, _) -> expectationFailure (show err)
                         (_, _, _, Left err) -> expectationFailure (show err)
 
+        it "collects lazy schemas without materializing DataFrames" $ do
+            scanResult <- Pl.scanCsv valuesCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    schemaResult <- Pl.collectSchema lf0
+                    fmap (map Pl.fieldName) schemaResult `shouldBe` Right ["name", "age", "score", "active"]
+                    fmap (map Pl.fieldType) schemaResult `shouldBe` Right [Pl.Utf8, Pl.Int64, Pl.Float64, Pl.Boolean]
+                    selected <- Pl.select [Pl.col "name", Pl.col "active"] lf0
+                    case selected of
+                        Left err -> expectationFailure (show err)
+                        Right selectedLf -> do
+                            selectedSchema <- Pl.collectSchema selectedLf
+                            fmap (map Pl.fieldName) selectedSchema `shouldBe` Right ["name", "active"]
+                            fmap (map Pl.fieldType) selectedSchema `shouldBe` Right [Pl.Utf8, Pl.Boolean]
+                    missing <- Pl.select [Pl.col "missing"] lf0
+                    case missing of
+                        Left err -> expectationFailure (show err)
+                        Right missingLf -> do
+                            missingSchema <- Pl.collectSchema missingLf
+                            expectPolarsFailure missingSchema
+
         it "gathers every nth lazy row" $ do
             scanResult <- Pl.scanCsv valuesCsv
             case scanResult of
