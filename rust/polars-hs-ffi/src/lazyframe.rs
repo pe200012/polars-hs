@@ -493,6 +493,28 @@ pub unsafe extern "C" fn phs_lazyframe_bottom_k(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_explode(
+    lazyframe: *const phs_lazyframe,
+    names: *const *const c_char,
+    names_len: usize,
+    empty_as_null: bool,
+    keep_nulls: bool,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        let names = unsafe { name_vec(names, names_len) }?;
+        let selector = selector_from_names(names, "explode")?;
+        let options = ExplodeOptions { empty_as_null, keep_nulls };
+        *out = lazyframe_into_raw(lf.explode(selector, options));
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_lazyframe_drop(
     lazyframe: *const phs_lazyframe,
     names: *const *const c_char,
@@ -756,6 +778,17 @@ pub unsafe extern "C" fn phs_lazyframe_join(
 mod tests {
     use super::*;
     use crate::error::PHS_OK;
+    use std::ffi::CStr;
+
+    unsafe fn take_error_message(raw: *mut phs_error) -> String {
+        assert!(!raw.is_null());
+        let message = unsafe { CStr::from_ptr(crate::error::phs_error_message(raw)) }
+            .to_str()
+            .unwrap()
+            .to_owned();
+        unsafe { crate::error::phs_error_free(raw) };
+        message
+    }
 
     fn fixture_path() -> std::ffi::CString {
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -795,6 +828,16 @@ mod tests {
             .join("data")
             .join("departments.csv");
         std::ffi::CString::new(path.to_string_lossy().as_bytes()).unwrap()
+    }
+
+    fn list_lazyframe() -> *mut phs_lazyframe {
+        let part0 = Series::new(PlSmallStr::from_static(""), ["red", "green", "blue"]);
+        let part1 = Series::new(PlSmallStr::from_static(""), ["red", "red"]);
+        let part2 = Series::new(PlSmallStr::from_static(""), ["日本", "語"]);
+        let part3 = Series::new(PlSmallStr::from_static(""), ["solo"]);
+        let parts = Column::new(PlSmallStr::from_static("parts"), [part0, part1, part2, part3]);
+        let id = Column::new(PlSmallStr::from_static("id"), [1i32, 2, 3, 4]);
+        lazyframe_into_raw(DataFrame::new_infer_height(vec![id, parts]).unwrap().lazy())
     }
 
     #[test]
@@ -1173,6 +1216,104 @@ mod tests {
             crate::handles::phs_dataframe_free(top_df);
             crate::handles::phs_dataframe_free(bottom_df);
             crate::handles::phs_dataframe_free(reversed_top_df);
+        }
+    }
+
+    #[test]
+    fn lazy_explode_list_columns_work() {
+        let lf0 = list_lazyframe();
+        let parts_name = std::ffi::CString::new("parts").unwrap();
+        let id_name = std::ffi::CString::new("id").unwrap();
+        let missing_name = std::ffi::CString::new("missing").unwrap();
+        let names = [parts_name.as_ptr()];
+        let id_names = [id_name.as_ptr()];
+        let missing_names = [missing_name.as_ptr()];
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_lazyframe_explode(lf0, names.as_ptr(), names.len(), true, true, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let exploded_lf = out;
+        let mut exploded_df = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_collect(exploded_lf, &mut exploded_df, &mut err) }, PHS_OK);
+        let exploded_ref = unsafe { crate::handles::dataframe_ref(exploded_df) }.unwrap();
+        assert_eq!(exploded_ref.value.shape(), (8, 2));
+        let ids: Vec<Option<i32>> = exploded_ref
+            .value
+            .column("id")
+            .unwrap()
+            .as_materialized_series()
+            .i32()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(ids, vec![Some(1), Some(1), Some(1), Some(2), Some(2), Some(3), Some(3), Some(4)]);
+        let values: Vec<Option<&str>> = exploded_ref
+            .value
+            .column("parts")
+            .unwrap()
+            .as_materialized_series()
+            .str()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(
+            values,
+            vec![Some("red"), Some("green"), Some("blue"), Some("red"), Some("red"), Some("日本"), Some("語"), Some("solo")]
+        );
+
+        let status = unsafe { phs_lazyframe_explode(lf0, ptr::null(), 0, true, true, &mut out, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "explode requires at least one column name");
+        err = ptr::null_mut();
+
+        let status = unsafe { phs_lazyframe_explode(lf0, ptr::null(), 1, true, true, &mut out, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "names pointer was null");
+        err = ptr::null_mut();
+
+        let null_name = [ptr::null()];
+        let status = unsafe { phs_lazyframe_explode(lf0, null_name.as_ptr(), null_name.len(), true, true, &mut out, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        unsafe { take_error_message(err) };
+        err = ptr::null_mut();
+
+        let status = unsafe { phs_lazyframe_explode(lf0, missing_names.as_ptr(), missing_names.len(), true, true, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let missing_lf = out;
+        let mut missing_df = ptr::null_mut();
+        let collect_status = unsafe { phs_lazyframe_collect(missing_lf, &mut missing_df, &mut err) };
+        assert_ne!(collect_status, PHS_OK);
+        unsafe { take_error_message(err) };
+        err = ptr::null_mut();
+
+        let status = unsafe { phs_lazyframe_explode(lf0, id_names.as_ptr(), id_names.len(), true, true, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let scalar_lf = out;
+        let mut scalar_df = ptr::null_mut();
+        let collect_status = unsafe { phs_lazyframe_collect(scalar_lf, &mut scalar_df, &mut err) };
+        assert_ne!(collect_status, PHS_OK);
+        unsafe { take_error_message(err) };
+        err = ptr::null_mut();
+
+        let status = unsafe { phs_lazyframe_explode(lf0, names.as_ptr(), names.len(), true, true, ptr::null_mut(), &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "out pointer was null");
+
+        let status = unsafe { phs_lazyframe_explode(ptr::null(), names.as_ptr(), names.len(), true, true, &mut out, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "lazyframe pointer was null");
+
+        unsafe {
+            crate::handles::phs_lazyframe_free(lf0);
+            crate::handles::phs_lazyframe_free(exploded_lf);
+            crate::handles::phs_lazyframe_free(missing_lf);
+            crate::handles::phs_lazyframe_free(scalar_lf);
+            crate::handles::phs_dataframe_free(exploded_df);
         }
     }
 

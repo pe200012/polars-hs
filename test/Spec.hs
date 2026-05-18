@@ -83,6 +83,14 @@ expectPolarsFailure result =
         Left err -> Pl.polarsErrorCode err `shouldBe` Pl.PolarsFailure
         Right _ -> expectationFailure "expected PolarsFailure"
 
+expectLazyCollectPolarsFailure :: Either Pl.PolarsError Pl.LazyFrame -> IO ()
+expectLazyCollectPolarsFailure result =
+    case result of
+        Left err -> Pl.polarsErrorCode err `shouldBe` Pl.PolarsFailure
+        Right lf -> do
+            collected <- Pl.collect lf
+            expectPolarsFailure collected
+
 expectInvalidArgumentMessage :: T.Text -> Either Pl.PolarsError a -> IO ()
 expectInvalidArgumentMessage expected result =
     case result of
@@ -2031,6 +2039,66 @@ main = hspec $ do
                         (_, _, Left err, _, _) -> expectationFailure (show err)
                         (_, _, _, Left err, _) -> expectationFailure (show err)
                         (_, _, _, _, Left err) -> expectationFailure (show err)
+
+        it "explodes lazy list columns" $ do
+            scanResult <- Pl.scanCsv phrasesCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    withParts <- Pl.withColumns [Pl.alias "parts" (Pl.strSplit (Pl.col "phrase") (Pl.litText " "))] lf0
+                    case withParts of
+                        Left err -> expectationFailure (show err)
+                        Right lf1 -> do
+                            exploded <-
+                                Pl.explode
+                                    Pl.defaultLazyFrameExplodeOptions {Pl.lazyFrameExplodeColumns = ["parts"]}
+                                    lf1
+                            emptyColumns <- Pl.explode Pl.defaultLazyFrameExplodeOptions lf1
+                            missingColumn <-
+                                Pl.explode
+                                    Pl.defaultLazyFrameExplodeOptions {Pl.lazyFrameExplodeColumns = ["missing"]}
+                                    lf1
+                            scalarColumn <-
+                                Pl.explode
+                                    Pl.defaultLazyFrameExplodeOptions {Pl.lazyFrameExplodeColumns = ["phrase"]}
+                                    lf1
+                            case exploded of
+                                Left err -> expectationFailure (show err)
+                                Right explodedLf -> do
+                                    collected <- Pl.collect explodedLf
+                                    case collected of
+                                        Left err -> expectationFailure (show err)
+                                        Right df -> do
+                                            Pl.shape df `shouldReturn` Right (8, 2)
+                                            Pl.column @T.Text df "phrase"
+                                                `shouldReturn` Right
+                                                    ( V.fromList
+                                                        [ Just "red green blue"
+                                                        , Just "red green blue"
+                                                        , Just "red green blue"
+                                                        , Just "red red"
+                                                        , Just "red red"
+                                                        , Just "日本 語"
+                                                        , Just "日本 語"
+                                                        , Just "solo"
+                                                        ]
+                                                    )
+                                            Pl.column @T.Text df "parts"
+                                                `shouldReturn` Right
+                                                    ( V.fromList
+                                                        [ Just "red"
+                                                        , Just "green"
+                                                        , Just "blue"
+                                                        , Just "red"
+                                                        , Just "red"
+                                                        , Just "日本"
+                                                        , Just "語"
+                                                        , Just "solo"
+                                                        ]
+                                                    )
+                            expectInvalidArgumentMessage "explode requires at least one column name" emptyColumns
+                            expectLazyCollectPolarsFailure missingColumn
+                            expectLazyCollectPolarsFailure scalarColumn
 
         it "validates lazy top and bottom row arguments" $ do
             scanResult <- Pl.scanCsv employeesCsv

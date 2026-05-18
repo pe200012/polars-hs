@@ -842,6 +842,14 @@ int phs_lazyframe_bottom_k(const struct phs_lazyframe *lazyframe,
                            struct phs_lazyframe **out,
                            struct phs_error **err);
 
+int phs_lazyframe_explode(const struct phs_lazyframe *lazyframe,
+                          const char *const *names,
+                          uintptr_t names_len,
+                          bool empty_as_null,
+                          bool keep_nulls,
+                          struct phs_lazyframe **out,
+                          struct phs_error **err);
+
 int phs_lazyframe_drop(const struct phs_lazyframe *lazyframe,
                        const char *const *names,
                        uintptr_t len,

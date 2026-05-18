@@ -11,6 +11,7 @@ Expression inputs are compiled from pure Haskell AST nodes at each FFI boundary.
 module Polars.LazyFrame
     ( CsvReadOptions (..)
     , LazyFrame
+    , LazyFrameExplodeOptions (..)
     , LazyFrameTopKOptions (..)
     , ParquetParallelStrategy (..)
     , ParquetScanOptions (..)
@@ -19,12 +20,14 @@ module Polars.LazyFrame
     , UniqueOptions (..)
     , collect
     , defaultCsvReadOptions
+    , defaultLazyFrameExplodeOptions
     , defaultLazyFrameTopKOptions
     , defaultParquetScanOptions
     , defaultRenameOptions
     , defaultUniqueOptions
     , dropColumns
     , dropNulls
+    , explode
     , explain
     , fillNans
     , fillNulls
@@ -75,6 +78,7 @@ import Polars.Internal.Raw
     , phs_lazyframe_collect
     , phs_lazyframe_drop
     , phs_lazyframe_drop_nulls
+    , phs_lazyframe_explode
     , phs_lazyframe_explain
     , phs_lazyframe_fill_nan
     , phs_lazyframe_fill_null
@@ -147,6 +151,22 @@ defaultLazyFrameTopKOptions =
         { lazyFrameTopKBy = []
         , lazyFrameTopKReverse = [False]
         , lazyFrameTopKMaintainOrder = False
+        }
+
+-- | Options for exploding lazy List columns into long format.
+data LazyFrameExplodeOptions = LazyFrameExplodeOptions
+    { lazyFrameExplodeColumns :: ![Text]
+    , lazyFrameExplodeEmptyAsNull :: !Bool
+    , lazyFrameExplodeKeepNulls :: !Bool
+    }
+    deriving stock (Eq, Show)
+
+defaultLazyFrameExplodeOptions :: LazyFrameExplodeOptions
+defaultLazyFrameExplodeOptions =
+    LazyFrameExplodeOptions
+        { lazyFrameExplodeColumns = []
+        , lazyFrameExplodeEmptyAsNull = True
+        , lazyFrameExplodeKeepNulls = True
         }
 
 scanCsv :: FilePath -> IO (Either PolarsError LazyFrame)
@@ -248,6 +268,22 @@ topK = topBottomK "topK" phs_lazyframe_top_k
 
 bottomK :: LazyFrameTopKOptions -> Int -> LazyFrame -> IO (Either PolarsError LazyFrame)
 bottomK = topBottomK "bottomK" phs_lazyframe_bottom_k
+
+explode :: LazyFrameExplodeOptions -> LazyFrame -> IO (Either PolarsError LazyFrame)
+explode options lf
+    | null (lazyFrameExplodeColumns options) =
+        pure (Left (invalidArgument "explode requires at least one column name"))
+    | otherwise =
+        withLazyFrame lf $ \lfPtr ->
+            withCStringList (lazyFrameExplodeColumns options) $ \nameArray nameLen ->
+                lazyFrameOut
+                    ( phs_lazyframe_explode
+                        lfPtr
+                        nameArray
+                        nameLen
+                        (toCBool (lazyFrameExplodeEmptyAsNull options))
+                        (toCBool (lazyFrameExplodeKeepNulls options))
+                    )
 
 slice :: Int -> Int -> LazyFrame -> IO (Either PolarsError LazyFrame)
 slice offset len lf = case nonNegativeWord64 "slice length" len of

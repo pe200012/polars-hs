@@ -138,6 +138,7 @@ module Polars.Internal.Raw
     , phs_lazyframe_collect
     , phs_lazyframe_drop
     , phs_lazyframe_drop_nulls
+    , phs_lazyframe_explode
     , phs_lazyframe_explain
     , phs_lazyframe_fill_nan
     , phs_lazyframe_fill_null
@@ -774,6 +775,17 @@ foreign import ccall safe "phs_lazyframe_bottom_k"
         CSize ->
         Ptr Word8 ->
         CSize ->
+        CBool ->
+        Ptr (Ptr RawLazyFrame) ->
+        Ptr (Ptr RawError) ->
+        IO CInt
+
+foreign import ccall safe "phs_lazyframe_explode"
+    phs_lazyframe_explode ::
+        Ptr RawLazyFrame ->
+        Ptr CString ->
+        CSize ->
+        CBool ->
         CBool ->
         Ptr (Ptr RawLazyFrame) ->
         Ptr (Ptr RawError) ->
