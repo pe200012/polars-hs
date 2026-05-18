@@ -65,6 +65,8 @@ module Polars.Internal.Raw
     , phs_dataframe_rechunk
     , phs_dataframe_rename
     , phs_dataframe_reverse
+    , phs_dataframe_sample_frac
+    , phs_dataframe_sample_n
     , phs_dataframe_schema
     , phs_dataframe_select
     , phs_dataframe_shape
@@ -445,6 +447,12 @@ foreign import ccall safe "phs_dataframe_is_unique"
 
 foreign import ccall safe "phs_dataframe_is_duplicated"
     phs_dataframe_is_duplicated :: Ptr RawDataFrame -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_dataframe_sample_n"
+    phs_dataframe_sample_n :: Ptr RawDataFrame -> Word64 -> CBool -> CBool -> CBool -> Word64 -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_dataframe_sample_frac"
+    phs_dataframe_sample_frac :: Ptr RawDataFrame -> CDouble -> CBool -> CBool -> CBool -> Word64 -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_dataframe_reverse"
     phs_dataframe_reverse :: Ptr RawDataFrame -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt

@@ -628,6 +628,64 @@ main = hspec $ do
                 (Left err, _) -> expectationFailure (show err)
                 (_, Left err) -> expectationFailure (show err)
 
+        it "samples eager DataFrame rows with seeded options" $ do
+            valueResult <- Pl.series @Int64 "value" (V.fromList (Just <$> [10, 20, 30, 40, 50]))
+            labelResult <- Pl.series @T.Text "label" (V.fromList [Just "a", Nothing, Just "c", Just "d", Just "e"])
+            case (valueResult, labelResult) of
+                (Right value, Right label) -> do
+                    dfResult <- Pl.dataFrame [value, label]
+                    case dfResult of
+                        Left err -> expectationFailure (show err)
+                        Right df -> do
+                            let seeded = Pl.defaultDataFrameSampleOptions {Pl.dataFrameSampleSeed = Just 0}
+                                replacement = seeded {Pl.dataFrameSampleWithReplacement = True}
+                                shuffled = seeded {Pl.dataFrameSampleShuffle = True}
+                            sampled <- Pl.dataFrameSampleN seeded 2 df
+                            fracSampled <- Pl.dataFrameSampleFrac seeded 0.4 df
+                            sampledWithReplacement <- Pl.dataFrameSampleN replacement 7 df
+                            fracSampledWithReplacement <- Pl.dataFrameSampleFrac replacement 1.4 df
+                            shuffledSample <- Pl.dataFrameSampleN shuffled 5 df
+                            sampledEmpty <- Pl.dataFrameSampleN seeded 0 df
+                            tooLarge <- Pl.dataFrameSampleN seeded 6 df
+                            negative <- Pl.dataFrameSampleN seeded (-1) df
+                            negativeFrac <- Pl.dataFrameSampleFrac seeded (-0.1) df
+                            nanFrac <- Pl.dataFrameSampleFrac seeded (0 / 0) df
+                            infiniteFrac <- Pl.dataFrameSampleFrac seeded (1 / 0) df
+                            tooLargeFrac <- Pl.dataFrameSampleFrac seeded 1.1 df
+                            case sampled of
+                                Left err -> expectationFailure (show err)
+                                Right sampledDf -> do
+                                    Pl.column @Int64 sampledDf "value" `shouldReturn` Right (V.fromList [Just 50, Just 20])
+                                    Pl.column @T.Text sampledDf "label" `shouldReturn` Right (V.fromList [Just "e", Nothing])
+                            case fracSampled of
+                                Left err -> expectationFailure (show err)
+                                Right fracDf ->
+                                    Pl.column @Int64 fracDf "value" `shouldReturn` Right (V.fromList [Just 50, Just 20])
+                            case sampledWithReplacement of
+                                Left err -> expectationFailure (show err)
+                                Right replacementDf ->
+                                    Pl.column @Int64 replacementDf "value" `shouldReturn` Right (V.fromList [Just 20, Just 20, Just 20, Just 10, Just 30, Just 10, Just 50])
+                            case fracSampledWithReplacement of
+                                Left err -> expectationFailure (show err)
+                                Right replacementFracDf ->
+                                    Pl.column @Int64 replacementFracDf "value" `shouldReturn` Right (V.fromList [Just 20, Just 20, Just 20, Just 10, Just 30, Just 10, Just 50])
+                            case shuffledSample of
+                                Left err -> expectationFailure (show err)
+                                Right shuffledDf -> do
+                                    Pl.column @Int64 shuffledDf "value" `shouldReturn` Right (V.fromList [Just 40, Just 10, Just 20, Just 50, Just 30])
+                                    Pl.column @T.Text shuffledDf "label" `shouldReturn` Right (V.fromList [Just "d", Just "a", Nothing, Just "e", Just "c"])
+                            case sampledEmpty of
+                                Left err -> expectationFailure (show err)
+                                Right emptyDf -> Pl.shape emptyDf `shouldReturn` Right (0, 2)
+                            expectPolarsFailure tooLarge
+                            expectInvalidArgumentMessage "dataFrameSampleN size must be non-negative" negative
+                            expectInvalidArgumentMessage "dataFrameSampleFrac fraction must be non-negative" negativeFrac
+                            expectInvalidArgumentMessage "dataFrameSampleFrac fraction must be finite" nanFrac
+                            expectInvalidArgumentMessage "dataFrameSampleFrac fraction must be finite" infiniteFrac
+                            expectInvalidArgumentMessage "dataFrameSampleFrac fraction must be at most 1.0 without replacement" tooLargeFrac
+                (Left err, _) -> expectationFailure (show err)
+                (_, Left err) -> expectationFailure (show err)
+
         it "takes eager DataFrame rows by explicit indices" $ do
             result <- Pl.readCsv valuesCsv
             case result of

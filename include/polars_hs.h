@@ -256,6 +256,24 @@ int phs_dataframe_is_duplicated(const struct phs_dataframe *dataframe,
                                 struct phs_series **out,
                                 struct phs_error **err);
 
+int phs_dataframe_sample_n(const struct phs_dataframe *dataframe,
+                           uint64_t n,
+                           bool with_replacement,
+                           bool shuffle,
+                           bool has_seed,
+                           uint64_t seed,
+                           struct phs_dataframe **out,
+                           struct phs_error **err);
+
+int phs_dataframe_sample_frac(const struct phs_dataframe *dataframe,
+                              double frac,
+                              bool with_replacement,
+                              bool shuffle,
+                              bool has_seed,
+                              uint64_t seed,
+                              struct phs_dataframe **out,
+                              struct phs_error **err);
+
 int phs_dataframe_reverse(const struct phs_dataframe *dataframe,
                           struct phs_dataframe **out,
                           struct phs_error **err);

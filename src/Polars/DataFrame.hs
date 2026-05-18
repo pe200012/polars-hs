@@ -14,6 +14,7 @@ module Polars.DataFrame
     , DataFrame
     , DataFrameJoinOptions (..)
     , DataFrameJoinType (..)
+    , DataFrameSampleOptions (..)
     , DataFrameSortOptions (..)
     , DataFrameUniqueKeepStrategy (..)
     , DataFrameUniqueOptions (..)
@@ -43,6 +44,8 @@ module Polars.DataFrame
     , dataFrameRechunk
     , dataFrameRename
     , dataFrameReverse
+    , dataFrameSampleFrac
+    , dataFrameSampleN
     , dataFrameSelect
     , dataFrameShouldRechunk
     , dataFrameSlice
@@ -57,6 +60,7 @@ module Polars.DataFrame
     , defaultCsvReadOptions
     , defaultCsvWriteOptions
     , defaultDataFrameJoinOptions
+    , defaultDataFrameSampleOptions
     , defaultDataFrameSortOptions
     , defaultDataFrameUniqueOptions
     , defaultParquetReadOptions
@@ -88,7 +92,7 @@ import Data.Vector (Vector)
 import qualified Data.Vector as V
 import Foreign.C.String (CString)
 import Data.Word (Word8, Word64)
-import Foreign.C.Types (CBool (..), CInt, CSize, CUChar (..))
+import Foreign.C.Types (CBool (..), CDouble (..), CInt, CSize, CUChar (..))
 import Foreign.Marshal.Alloc (alloca)
 import Foreign.Marshal.Array (withArray)
 import Foreign.Ptr (Ptr, nullPtr)
@@ -126,6 +130,8 @@ import Polars.Internal.Raw
     , phs_dataframe_rechunk
     , phs_dataframe_rename
     , phs_dataframe_reverse
+    , phs_dataframe_sample_frac
+    , phs_dataframe_sample_n
     , phs_dataframe_schema
     , phs_dataframe_select
     , phs_dataframe_shape
@@ -231,6 +237,21 @@ defaultDataFrameUniqueOptions =
         { dataFrameUniqueSubset = Nothing
         , dataFrameUniqueKeepStrategy = DataFrameKeepAny
         , dataFrameUniqueMaintainOrder = False
+        }
+
+data DataFrameSampleOptions = DataFrameSampleOptions
+    { dataFrameSampleWithReplacement :: !Bool
+    , dataFrameSampleShuffle :: !Bool
+    , dataFrameSampleSeed :: !(Maybe Word64)
+    }
+    deriving (Eq, Show)
+
+defaultDataFrameSampleOptions :: DataFrameSampleOptions
+defaultDataFrameSampleOptions =
+    DataFrameSampleOptions
+        { dataFrameSampleWithReplacement = False
+        , dataFrameSampleShuffle = False
+        , dataFrameSampleSeed = Nothing
         }
 
 data FillNullStrategy
@@ -458,6 +479,40 @@ dataFrameIsUnique df = withDataFrame df $ \ptr -> seriesOut (phs_dataframe_is_un
 
 dataFrameIsDuplicated :: DataFrame -> IO (Either PolarsError Series)
 dataFrameIsDuplicated df = withDataFrame df $ \ptr -> seriesOut (phs_dataframe_is_duplicated ptr)
+
+dataFrameSampleN :: DataFrameSampleOptions -> Int -> DataFrame -> IO (Either PolarsError DataFrame)
+dataFrameSampleN options n df = case nonNegativeWord64 "dataFrameSampleN size" n of
+    Left err -> pure (Left err)
+    Right sampleSize ->
+        withDataFrame df $ \ptr ->
+            dataframeOut
+                ( phs_dataframe_sample_n
+                    ptr
+                    sampleSize
+                    (toCBool (dataFrameSampleWithReplacement options))
+                    (toCBool (dataFrameSampleShuffle options))
+                    (toCBool hasSeed)
+                    seed
+                )
+  where
+    (hasSeed, seed) = seedWord64 (dataFrameSampleSeed options)
+
+dataFrameSampleFrac :: DataFrameSampleOptions -> Double -> DataFrame -> IO (Either PolarsError DataFrame)
+dataFrameSampleFrac options frac df = case validDataFrameSampleFraction options frac of
+    Left err -> pure (Left err)
+    Right () ->
+        withDataFrame df $ \ptr ->
+            dataframeOut
+                ( phs_dataframe_sample_frac
+                    ptr
+                    (CDouble frac)
+                    (toCBool (dataFrameSampleWithReplacement options))
+                    (toCBool (dataFrameSampleShuffle options))
+                    (toCBool hasSeed)
+                    seed
+                )
+  where
+    (hasSeed, seed) = seedWord64 (dataFrameSampleSeed options)
 
 dataFrameFillNull :: FillNullStrategy -> DataFrame -> IO (Either PolarsError DataFrame)
 dataFrameFillNull strategy df = case fillNullStrategyCode strategy of
@@ -769,6 +824,20 @@ optionalNonNegativeWord64 _ Nothing = Right (False, 0)
 optionalNonNegativeWord64 label (Just value) = do
     word <- nonNegativeWord64 label value
     Right (True, word)
+
+validDataFrameSampleFraction :: DataFrameSampleOptions -> Double -> Either PolarsError ()
+validDataFrameSampleFraction options frac
+    | isNaN frac || isInfinite frac =
+        Left (invalidArgument "dataFrameSampleFrac fraction must be finite")
+    | frac < 0 =
+        Left (invalidArgument "dataFrameSampleFrac fraction must be non-negative")
+    | not (dataFrameSampleWithReplacement options) && frac > 1.0 =
+        Left (invalidArgument "dataFrameSampleFrac fraction must be at most 1.0 without replacement")
+    | otherwise = Right ()
+
+seedWord64 :: Maybe Word64 -> (Bool, Word64)
+seedWord64 Nothing = (False, 0)
+seedWord64 (Just seed) = (True, seed)
 
 csvReadWordOptions :: CsvReadOptions -> Either PolarsError (Bool, Word64, Word64, Word64, Bool, Word64)
 csvReadWordOptions options = do

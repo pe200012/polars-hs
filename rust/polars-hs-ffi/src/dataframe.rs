@@ -907,6 +907,59 @@ pub unsafe extern "C" fn phs_dataframe_is_duplicated(
     })
 }
 
+fn sample_seed(has_seed: bool, seed: u64) -> Option<u64> {
+    has_seed.then_some(seed)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_sample_n(
+    dataframe: *const phs_dataframe,
+    n: u64,
+    with_replacement: bool,
+    shuffle: bool,
+    has_seed: bool,
+    seed: u64,
+    out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        let n = usize_from_u64(n, "dataframe sample size")?;
+        let sampled =
+            handle
+                .value
+                .sample_n_literal(n, with_replacement, shuffle, sample_seed(has_seed, seed))?;
+        *out = dataframe_into_raw(sampled);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_sample_frac(
+    dataframe: *const phs_dataframe,
+    frac: f64,
+    with_replacement: bool,
+    shuffle: bool,
+    has_seed: bool,
+    seed: u64,
+    out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        let frac = Series::new(PlSmallStr::from_static("frac"), [frac]);
+        let sampled = handle
+            .value
+            .sample_frac(&frac, with_replacement, shuffle, sample_seed(has_seed, seed))?;
+        *out = dataframe_into_raw(sampled);
+        Ok(())
+    })
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_dataframe_reverse(
     dataframe: *const phs_dataframe,
@@ -1943,6 +1996,73 @@ mod tests {
         unsafe {
             crate::handles::phs_series_free(unique);
             crate::handles::phs_series_free(duplicated);
+            crate::handles::phs_dataframe_free(df);
+        }
+    }
+
+    #[test]
+    fn dataframe_sampling_uses_seeded_options() {
+        let df = dataframe_into_raw(
+            DataFrame::new_infer_height(vec![
+                Series::new("value".into(), [10_i64, 20, 30, 40, 50]).into(),
+                Series::new("label".into(), [Some("a"), None, Some("c"), Some("d"), Some("e")]).into(),
+            ])
+            .unwrap(),
+        );
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_dataframe_sample_n(df, 2, false, false, true, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let sampled = out;
+        let sampled_ref = unsafe { dataframe_ref(sampled) }.unwrap();
+        let values: Vec<Option<i64>> = sampled_ref.value.column("value").unwrap().as_materialized_series().i64().unwrap().into_iter().collect();
+        assert_eq!(values, vec![Some(50), Some(20)]);
+
+        let status = unsafe { phs_dataframe_sample_frac(df, 0.4, false, false, true, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let frac_sampled = out;
+        let values: Vec<Option<i64>> = unsafe { dataframe_ref(frac_sampled) }.unwrap().value.column("value").unwrap().as_materialized_series().i64().unwrap().into_iter().collect();
+        assert_eq!(values, vec![Some(50), Some(20)]);
+
+        let status = unsafe { phs_dataframe_sample_n(df, 7, true, false, true, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let replacement = out;
+        let values: Vec<Option<i64>> = unsafe { dataframe_ref(replacement) }.unwrap().value.column("value").unwrap().as_materialized_series().i64().unwrap().into_iter().collect();
+        assert_eq!(values, vec![Some(20), Some(20), Some(20), Some(10), Some(30), Some(10), Some(50)]);
+
+        let status = unsafe { phs_dataframe_sample_frac(df, 1.4, true, false, true, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let frac_replacement = out;
+        let values: Vec<Option<i64>> = unsafe { dataframe_ref(frac_replacement) }.unwrap().value.column("value").unwrap().as_materialized_series().i64().unwrap().into_iter().collect();
+        assert_eq!(values, vec![Some(20), Some(20), Some(20), Some(10), Some(30), Some(10), Some(50)]);
+
+        out = ptr::null_mut();
+        let status = unsafe { phs_dataframe_sample_n(df, 6, false, false, true, 0, &mut out, &mut err) };
+        assert_ne!(status, PHS_OK);
+        assert!(out.is_null());
+        unsafe { take_error_message(err) };
+
+        let status = unsafe { phs_dataframe_sample_frac(df, 1.2, false, false, true, 0, &mut out, &mut err) };
+        assert_ne!(status, PHS_OK);
+        assert!(out.is_null());
+        unsafe { take_error_message(err) };
+
+        let status = unsafe { phs_dataframe_sample_n(df, 0, false, false, true, 0, ptr::null_mut(), &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "out pointer was null");
+
+        let status = unsafe { phs_dataframe_sample_frac(df, 0.0, false, false, true, 0, ptr::null_mut(), &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "out pointer was null");
+
+        unsafe {
+            crate::handles::phs_dataframe_free(frac_replacement);
+            crate::handles::phs_dataframe_free(replacement);
+            crate::handles::phs_dataframe_free(frac_sampled);
+            crate::handles::phs_dataframe_free(sampled);
             crate::handles::phs_dataframe_free(df);
         }
     }
