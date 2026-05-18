@@ -70,6 +70,7 @@ module Polars.LazyFrame
     , scanParquet
     , scanParquetWith
     , select
+    , selectSeq
     , slice
     , sort
     , toDot
@@ -79,7 +80,9 @@ module Polars.LazyFrame
     , unpivot
     , withCheckOrder
     , withClusterWithColumns
+    , withColumn
     , withColumns
+    , withColumnsSeq
     , withPredicatePushdown
     , withProjectionPushdown
     , withRowEstimate
@@ -152,6 +155,7 @@ import Polars.Internal.Raw
     , phs_lazyframe_remove
     , phs_lazyframe_reverse
     , phs_lazyframe_select
+    , phs_lazyframe_select_seq
     , phs_lazyframe_shift
     , phs_lazyframe_shift_and_fill
     , phs_lazyframe_slice
@@ -162,7 +166,9 @@ import Polars.Internal.Raw
     , phs_lazyframe_unique
     , phs_lazyframe_unpivot
     , phs_lazyframe_with_optimization
+    , phs_lazyframe_with_column
     , phs_lazyframe_with_columns
+    , phs_lazyframe_with_columns_seq
     , phs_lazyframe_with_row_index
     , phs_lazyframe_without_optimizations
     , phs_scan_csv_options
@@ -453,9 +459,23 @@ select :: [Expr] -> LazyFrame -> IO (Either PolarsError LazyFrame)
 select exprs lf = withLazyFrame lf $ \lfPtr ->
     withCompiledExprs exprs $ \exprArray len -> lazyFrameOut (phs_lazyframe_select lfPtr exprArray len)
 
+-- | Select expressions using Polars' sequential projection path.
+selectSeq :: [Expr] -> LazyFrame -> IO (Either PolarsError LazyFrame)
+selectSeq exprs lf = withLazyFrame lf $ \lfPtr ->
+    withCompiledExprs exprs $ \exprArray len -> lazyFrameOut (phs_lazyframe_select_seq lfPtr exprArray len)
+
+-- | Add or replace a single column expression.
+withColumn :: Expr -> LazyFrame -> IO (Either PolarsError LazyFrame)
+withColumn expr lf = lazyFrameExprOut expr lf phs_lazyframe_with_column
+
 withColumns :: [Expr] -> LazyFrame -> IO (Either PolarsError LazyFrame)
 withColumns exprs lf = withLazyFrame lf $ \lfPtr ->
     withCompiledExprs exprs $ \exprArray len -> lazyFrameOut (phs_lazyframe_with_columns lfPtr exprArray len)
+
+-- | Add or replace column expressions using Polars' sequential projection path.
+withColumnsSeq :: [Expr] -> LazyFrame -> IO (Either PolarsError LazyFrame)
+withColumnsSeq exprs lf = withLazyFrame lf $ \lfPtr ->
+    withCompiledExprs exprs $ \exprArray len -> lazyFrameOut (phs_lazyframe_with_columns_seq lfPtr exprArray len)
 
 withRowIndex :: Text -> Maybe Int -> LazyFrame -> IO (Either PolarsError LazyFrame)
 withRowIndex name offset lf = case optionalNonNegativeWord64 "withRowIndex offset" offset of

@@ -865,11 +865,28 @@ int phs_lazyframe_select(const struct phs_lazyframe *lazyframe,
                          struct phs_lazyframe **out,
                          struct phs_error **err);
 
+int phs_lazyframe_select_seq(const struct phs_lazyframe *lazyframe,
+                             const struct phs_expr *const *exprs,
+                             uintptr_t len,
+                             struct phs_lazyframe **out,
+                             struct phs_error **err);
+
 int phs_lazyframe_with_columns(const struct phs_lazyframe *lazyframe,
                                const struct phs_expr *const *exprs,
                                uintptr_t len,
                                struct phs_lazyframe **out,
                                struct phs_error **err);
+
+int phs_lazyframe_with_column(const struct phs_lazyframe *lazyframe,
+                              const struct phs_expr *expr,
+                              struct phs_lazyframe **out,
+                              struct phs_error **err);
+
+int phs_lazyframe_with_columns_seq(const struct phs_lazyframe *lazyframe,
+                                   const struct phs_expr *const *exprs,
+                                   uintptr_t len,
+                                   struct phs_lazyframe **out,
+                                   struct phs_error **err);
 
 int phs_lazyframe_with_row_index(const struct phs_lazyframe *lazyframe,
                                  const char *name,

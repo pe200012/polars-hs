@@ -684,6 +684,24 @@ pub unsafe extern "C" fn phs_lazyframe_select(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_select_seq(
+    lazyframe: *const phs_lazyframe,
+    exprs: *const *const phs_expr,
+    len: usize,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        let exprs = unsafe { expr_vec(exprs, len) }?;
+        *out = lazyframe_into_raw(lf.select_seq(exprs));
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_lazyframe_with_columns(
     lazyframe: *const phs_lazyframe,
     exprs: *const *const phs_expr,
@@ -697,6 +715,41 @@ pub unsafe extern "C" fn phs_lazyframe_with_columns(
         let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
         let exprs = unsafe { expr_vec(exprs, len) }?;
         *out = lazyframe_into_raw(lf.with_columns(exprs));
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_with_column(
+    lazyframe: *const phs_lazyframe,
+    expr: *const phs_expr,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        let expr = unsafe { expr_ref(expr) }?.value.clone();
+        *out = lazyframe_into_raw(lf.with_column(expr));
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_with_columns_seq(
+    lazyframe: *const phs_lazyframe,
+    exprs: *const *const phs_expr,
+    len: usize,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        let exprs = unsafe { expr_vec(exprs, len) }?;
+        *out = lazyframe_into_raw(lf.with_columns_seq(exprs));
         Ok(())
     })
 }
@@ -1429,6 +1482,22 @@ mod tests {
         lazyframe_into_raw(DataFrame::new_infer_height(vec![name, age]).unwrap().lazy())
     }
 
+    fn projection_lazyframe() -> *mut phs_lazyframe {
+        let name = Column::new(
+            PlSmallStr::from_static("name"),
+            [Some("Alice"), Some("Bob"), Some("Carol")],
+        );
+        let age = Column::new(
+            PlSmallStr::from_static("age"),
+            [Some(34_i64), None, Some(29_i64)],
+        );
+        let score = Column::new(
+            PlSmallStr::from_static("score"),
+            [Some(9.5_f64), Some(8.25_f64), None],
+        );
+        lazyframe_into_raw(DataFrame::new_infer_height(vec![name, age, score]).unwrap().lazy())
+    }
+
     fn shift_lazyframe() -> *mut phs_lazyframe {
         let value = Column::new(
             PlSmallStr::from_static("value"),
@@ -1956,6 +2025,107 @@ mod tests {
             crate::handles::phs_lazyframe_free(lf1);
             crate::handles::phs_lazyframe_free(lf2);
             crate::handles::phs_dataframe_free(df);
+        }
+    }
+
+    #[test]
+    fn lazy_sequential_projection_and_single_column_helpers_work() {
+        let lf0 = projection_lazyframe();
+        let mut err = ptr::null_mut();
+
+        let name = std::ffi::CString::new("name").unwrap();
+        let age = std::ffi::CString::new("age").unwrap();
+        let age_plus = std::ffi::CString::new("age_plus").unwrap();
+        let score = std::ffi::CString::new("score").unwrap();
+        let score_plus = std::ffi::CString::new("score_plus").unwrap();
+        let mut name_expr = ptr::null_mut();
+        let mut age_expr = ptr::null_mut();
+        let mut one_expr = ptr::null_mut();
+        let mut age_sum = ptr::null_mut();
+        let mut age_alias = ptr::null_mut();
+        assert_eq!(unsafe { crate::expr::phs_expr_col(name.as_ptr(), &mut name_expr, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::expr::phs_expr_col(age.as_ptr(), &mut age_expr, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::expr::phs_expr_lit_int(1, &mut one_expr, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::expr::phs_expr_binary(8, age_expr, one_expr, &mut age_sum, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::expr::phs_expr_alias(age_sum, age_plus.as_ptr(), &mut age_alias, &mut err) }, PHS_OK);
+
+        let exprs = [name_expr as *const phs_expr, age_alias as *const phs_expr];
+        let mut selected = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_lazyframe_select_seq(lf0, exprs.as_ptr(), exprs.len(), &mut selected, &mut err) },
+            PHS_OK
+        );
+        let mut df = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_collect(selected, &mut df, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::handles::dataframe_ref(df) }.unwrap().value.shape(), (3, 2));
+        let age_values: Vec<Option<i64>> = unsafe { crate::handles::dataframe_ref(df) }
+            .unwrap()
+            .value
+            .column("age_plus")
+            .unwrap()
+            .as_materialized_series()
+            .i64()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(age_values, vec![Some(35), None, Some(30)]);
+        unsafe { crate::handles::phs_dataframe_free(df) };
+
+        let mut with_one = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_with_column(lf0, age_alias, &mut with_one, &mut err) }, PHS_OK);
+        df = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_collect(with_one, &mut df, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::handles::dataframe_ref(df) }.unwrap().value.shape(), (3, 4));
+        unsafe { crate::handles::phs_dataframe_free(df) };
+
+        let mut score_expr = ptr::null_mut();
+        let mut score_sum = ptr::null_mut();
+        let mut score_alias = ptr::null_mut();
+        assert_eq!(unsafe { crate::expr::phs_expr_col(score.as_ptr(), &mut score_expr, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::expr::phs_expr_binary(8, score_expr, one_expr, &mut score_sum, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::expr::phs_expr_alias(score_sum, score_plus.as_ptr(), &mut score_alias, &mut err) }, PHS_OK);
+        let additions = [age_alias as *const phs_expr, score_alias as *const phs_expr];
+        let mut with_many = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_lazyframe_with_columns_seq(lf0, additions.as_ptr(), additions.len(), &mut with_many, &mut err) },
+            PHS_OK
+        );
+        df = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_collect(with_many, &mut df, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::handles::dataframe_ref(df) }.unwrap().value.shape(), (3, 5));
+        unsafe { crate::handles::phs_dataframe_free(df) };
+
+        let mut invalid = ptr::null_mut();
+        let status = unsafe { phs_lazyframe_select_seq(lf0, ptr::null(), 1, &mut invalid, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "exprs pointer was null");
+        err = ptr::null_mut();
+
+        let status = unsafe { phs_lazyframe_with_column(lf0, ptr::null(), &mut invalid, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "expr pointer was null");
+        err = ptr::null_mut();
+
+        let status = unsafe { phs_lazyframe_with_columns_seq(lf0, additions.as_ptr(), additions.len(), ptr::null_mut(), &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "out pointer was null");
+
+        unsafe {
+            crate::handles::phs_expr_free(name_expr);
+            crate::handles::phs_expr_free(age_expr);
+            crate::handles::phs_expr_free(one_expr);
+            crate::handles::phs_expr_free(age_sum);
+            crate::handles::phs_expr_free(age_alias);
+            crate::handles::phs_expr_free(score_expr);
+            crate::handles::phs_expr_free(score_sum);
+            crate::handles::phs_expr_free(score_alias);
+            crate::handles::phs_lazyframe_free(lf0);
+            crate::handles::phs_lazyframe_free(selected);
+            crate::handles::phs_lazyframe_free(with_one);
+            crate::handles::phs_lazyframe_free(with_many);
         }
     }
 

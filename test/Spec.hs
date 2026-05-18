@@ -2150,6 +2150,40 @@ main = hspec $ do
                                             fmap (map Pl.fieldName) fields `shouldBe` Right ["name", "years", "active"]
                                             Pl.column @Int64 df "years" `shouldReturn` Right (V.fromList [Just 34, Nothing, Just 29])
 
+        it "selects and adds lazy columns with sequential helpers" $ do
+            scanResult <- Pl.scanCsv valuesCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf -> do
+                    let agePlus = Pl.alias "age_plus" (Pl.col "age" Pl..+ Pl.litInt 1)
+                        scorePlus = Pl.alias "score_plus" (Pl.col "score" Pl..+ Pl.litDouble 1.0)
+                    selected <- Pl.selectSeq [Pl.col "name", agePlus] lf
+                    withOne <- Pl.withColumn agePlus lf
+                    withMany <- Pl.withColumnsSeq [agePlus, scorePlus] lf
+                    case (selected, withOne, withMany) of
+                        (Right selectedLf, Right withOneLf, Right withManyLf) -> do
+                            selectedDf <- Pl.collect selectedLf
+                            withOneDf <- Pl.collect withOneLf
+                            withManyDf <- Pl.collect withManyLf
+                            case (selectedDf, withOneDf, withManyDf) of
+                                (Right sDf, Right oDf, Right mDf) -> do
+                                    Pl.shape sDf `shouldReturn` Right (3, 2)
+                                    Pl.column @Int64 sDf "age_plus" `shouldReturn` Right (V.fromList [Just 35, Nothing, Just 30])
+                                    Pl.shape oDf `shouldReturn` Right (3, 5)
+                                    Pl.column @Int64 oDf "age_plus" `shouldReturn` Right (V.fromList [Just 35, Nothing, Just 30])
+                                    Pl.shape mDf `shouldReturn` Right (3, 6)
+                                    Pl.column @Int64 mDf "age_plus" `shouldReturn` Right (V.fromList [Just 35, Nothing, Just 30])
+                                    scoreValues <- Pl.column @Double mDf "score_plus"
+                                    case scoreValues of
+                                        Left err -> expectationFailure (show err)
+                                        Right actual -> shouldApproximate 1.0e-12 (V.fromList [Just 10.5, Just 9.25, Nothing]) actual
+                                (Left err, _, _) -> expectationFailure (show err)
+                                (_, Left err, _) -> expectationFailure (show err)
+                                (_, _, Left err) -> expectationFailure (show err)
+                        (Left err, _, _) -> expectationFailure (show err)
+                        (_, Left err, _) -> expectationFailure (show err)
+                        (_, _, Left err) -> expectationFailure (show err)
+
         it "slices lazy rows and takes lazy head and tail" $ do
             scanResult <- Pl.scanCsv valuesCsv
             case scanResult of
