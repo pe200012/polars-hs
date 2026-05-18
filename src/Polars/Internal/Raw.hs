@@ -158,6 +158,8 @@ module Polars.Internal.Raw
     , phs_lazyframe_free_finalizer
     , phs_lazyframe_gather_every
     , phs_lazyframe_group_by_agg
+    , phs_lazyframe_group_by_dynamic_agg
+    , phs_lazyframe_group_by_rolling_agg
     , phs_lazyframe_head
     , phs_lazyframe_join
     , phs_lazyframe_join_asof
@@ -945,6 +947,40 @@ foreign import ccall unsafe "phs_lazyframe_unique"
 
 foreign import ccall unsafe "phs_lazyframe_group_by_agg"
     phs_lazyframe_group_by_agg :: Ptr RawLazyFrame -> Ptr (Ptr RawExpr) -> CSize -> Ptr (Ptr RawExpr) -> CSize -> CBool -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_lazyframe_group_by_dynamic_agg"
+    phs_lazyframe_group_by_dynamic_agg ::
+        Ptr RawLazyFrame ->
+        Ptr RawExpr ->
+        Ptr (Ptr RawExpr) ->
+        CSize ->
+        Ptr (Ptr RawExpr) ->
+        CSize ->
+        CString ->
+        CString ->
+        CString ->
+        CInt ->
+        CBool ->
+        CInt ->
+        CInt ->
+        Ptr (Ptr RawLazyFrame) ->
+        Ptr (Ptr RawError) ->
+        IO CInt
+
+foreign import ccall unsafe "phs_lazyframe_group_by_rolling_agg"
+    phs_lazyframe_group_by_rolling_agg ::
+        Ptr RawLazyFrame ->
+        Ptr RawExpr ->
+        Ptr (Ptr RawExpr) ->
+        CSize ->
+        Ptr (Ptr RawExpr) ->
+        CSize ->
+        CString ->
+        CString ->
+        CInt ->
+        Ptr (Ptr RawLazyFrame) ->
+        Ptr (Ptr RawError) ->
+        IO CInt
 
 foreign import ccall unsafe "phs_lazyframe_join"
     phs_lazyframe_join :: Ptr RawLazyFrame -> Ptr RawLazyFrame -> Ptr (Ptr RawExpr) -> CSize -> Ptr (Ptr RawExpr) -> CSize -> CInt -> CString -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt

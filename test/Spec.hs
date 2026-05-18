@@ -2825,6 +2825,56 @@ main = hspec $ do
                                 Right _ -> expectationFailure "expected a Polars failure for missing column"
                                 Left err -> Pl.polarsErrorCode err `shouldBe` Pl.PolarsFailure
 
+        it "groups lazy rows by dynamic Int64 windows" $ do
+            withTempFileContent "dynamic-groupby.csv" "t,value\n0,1\n1,2\n2,3\n3,4\n4,5\n" $ \path -> do
+                scanResult <- Pl.scanCsv path
+                case scanResult of
+                    Left err -> expectationFailure (show err)
+                    Right lf0 -> do
+                        let options =
+                                (Pl.defaultDynamicGroupByOptions (Pl.DurationSpec "2i"))
+                                    { Pl.dynamicOffset = Pl.DurationSpec "0i"
+                                    , Pl.dynamicClosedWindow = Pl.ClosedLeft
+                                    }
+                        groupedResult <-
+                            Pl.agg
+                                [Pl.alias "value_sum" (Pl.sum_ (Pl.col "value"))]
+                                (Pl.groupByDynamic options (Pl.col "t") [] lf0)
+                        case groupedResult of
+                            Left err -> expectationFailure (show err)
+                            Right lf1 -> do
+                                collected <- Pl.collect lf1
+                                case collected of
+                                    Left err -> expectationFailure (show err)
+                                    Right df -> do
+                                        Pl.column @Int64 df "t" `shouldReturn` Right (V.fromList [Just 0, Just 2, Just 4])
+                                        Pl.column @Int64 df "value_sum" `shouldReturn` Right (V.fromList [Just 3, Just 7, Just 5])
+
+        it "groups lazy rows by rolling Int64 windows" $ do
+            withTempFileContent "rolling-groupby.csv" "t,value\n0,1\n1,2\n2,3\n3,4\n4,5\n" $ \path -> do
+                scanResult <- Pl.scanCsv path
+                case scanResult of
+                    Left err -> expectationFailure (show err)
+                    Right lf0 -> do
+                        let options =
+                                (Pl.defaultRollingGroupByOptions (Pl.DurationSpec "3i"))
+                                    { Pl.rollingOffset = Pl.DurationSpec "-3i"
+                                    , Pl.rollingClosedWindow = Pl.ClosedRight
+                                    }
+                        groupedResult <-
+                            Pl.agg
+                                [Pl.alias "trailing_sum" (Pl.sum_ (Pl.col "value"))]
+                                (Pl.groupByRolling options (Pl.col "t") [] lf0)
+                        case groupedResult of
+                            Left err -> expectationFailure (show err)
+                            Right lf1 -> do
+                                collected <- Pl.collect lf1
+                                case collected of
+                                    Left err -> expectationFailure (show err)
+                                    Right df -> do
+                                        Pl.column @Int64 df "t" `shouldReturn` Right (V.fromList [Just 0, Just 1, Just 2, Just 3, Just 4])
+                                        Pl.column @Int64 df "trailing_sum" `shouldReturn` Right (V.fromList [Just 1, Just 3, Just 6, Just 9, Just 12])
+
     describe "Polars.Column" $ do
         it "extracts text columns with null preservation" $ do
             result <- Pl.readCsv valuesCsv

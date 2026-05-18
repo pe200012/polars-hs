@@ -249,6 +249,51 @@ fn keep_strategy_from_code(code: c_int) -> PhsResult<UniqueKeepStrategy> {
     }
 }
 
+fn closed_window_from_code(code: c_int) -> PhsResult<ClosedWindow> {
+    match code {
+        0 => Ok(ClosedWindow::Left),
+        1 => Ok(ClosedWindow::Right),
+        2 => Ok(ClosedWindow::Both),
+        3 => Ok(ClosedWindow::None),
+        _ => Err(PhsError::invalid_argument(format!(
+            "unknown closed window code {code}"
+        ))),
+    }
+}
+
+fn dynamic_label_from_code(code: c_int) -> PhsResult<Label> {
+    match code {
+        0 => Ok(Label::Left),
+        1 => Ok(Label::Right),
+        2 => Ok(Label::DataPoint),
+        _ => Err(PhsError::invalid_argument(format!(
+            "unknown dynamic label code {code}"
+        ))),
+    }
+}
+
+fn start_by_from_code(code: c_int) -> PhsResult<StartBy> {
+    match code {
+        0 => Ok(StartBy::WindowBound),
+        1 => Ok(StartBy::DataPoint),
+        2 => Ok(StartBy::Monday),
+        3 => Ok(StartBy::Tuesday),
+        4 => Ok(StartBy::Wednesday),
+        5 => Ok(StartBy::Thursday),
+        6 => Ok(StartBy::Friday),
+        7 => Ok(StartBy::Saturday),
+        8 => Ok(StartBy::Sunday),
+        _ => Err(PhsError::invalid_argument(format!(
+            "unknown dynamic start-by code {code}"
+        ))),
+    }
+}
+
+unsafe fn duration_from_c(value: *const c_char, label: &str) -> PhsResult<Duration> {
+    let text = unsafe { c_str_to_str(value, label) }?;
+    Duration::try_parse(text).map_err(PhsError::from)
+}
+
 unsafe fn optional_suffix(suffix: *const c_char) -> PhsResult<Option<PlSmallStr>> {
     if suffix.is_null() {
         Ok(None)
@@ -1458,6 +1503,78 @@ pub unsafe extern "C" fn phs_lazyframe_group_by_agg(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_group_by_dynamic_agg(
+    lazyframe: *const phs_lazyframe,
+    index_column: *const phs_expr,
+    keys: *const *const phs_expr,
+    key_len: usize,
+    aggs: *const *const phs_expr,
+    agg_len: usize,
+    every: *const c_char,
+    period: *const c_char,
+    offset: *const c_char,
+    label: c_int,
+    include_boundaries: bool,
+    closed_window: c_int,
+    start_by: c_int,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        let index_column = unsafe { expr_ref(index_column) }?.value.clone();
+        let keys = unsafe { expr_vec(keys, key_len) }?;
+        let aggs = unsafe { expr_vec(aggs, agg_len) }?;
+        let options = DynamicGroupOptions {
+            index_column: PlSmallStr::EMPTY,
+            every: unsafe { duration_from_c(every, "every") }?,
+            period: unsafe { duration_from_c(period, "period") }?,
+            offset: unsafe { duration_from_c(offset, "offset") }?,
+            label: dynamic_label_from_code(label)?,
+            include_boundaries,
+            closed_window: closed_window_from_code(closed_window)?,
+            start_by: start_by_from_code(start_by)?,
+        };
+        *out = lazyframe_into_raw(lf.group_by_dynamic(index_column, keys, options).agg(aggs));
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_group_by_rolling_agg(
+    lazyframe: *const phs_lazyframe,
+    index_column: *const phs_expr,
+    keys: *const *const phs_expr,
+    key_len: usize,
+    aggs: *const *const phs_expr,
+    agg_len: usize,
+    period: *const c_char,
+    offset: *const c_char,
+    closed_window: c_int,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        let index_column = unsafe { expr_ref(index_column) }?.value.clone();
+        let keys = unsafe { expr_vec(keys, key_len) }?;
+        let aggs = unsafe { expr_vec(aggs, agg_len) }?;
+        let options = RollingGroupOptions {
+            index_column: PlSmallStr::EMPTY,
+            period: unsafe { duration_from_c(period, "period") }?,
+            offset: unsafe { duration_from_c(offset, "offset") }?,
+            closed_window: closed_window_from_code(closed_window)?,
+        };
+        *out = lazyframe_into_raw(lf.rolling(index_column, keys, options).agg(aggs));
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_lazyframe_join(
     left: *const phs_lazyframe,
     right: *const phs_lazyframe,
@@ -1873,6 +1990,12 @@ mod tests {
             [Some(10_i64), None, Some(30_i64), Some(40_i64)],
         );
         lazyframe_into_raw(DataFrame::new_infer_height(vec![value]).unwrap().lazy())
+    }
+
+    fn window_lazyframe() -> *mut phs_lazyframe {
+        let t = Column::new(PlSmallStr::from_static("t"), [0_i64, 1, 2, 3, 4]);
+        let value = Column::new(PlSmallStr::from_static("value"), [1_i64, 2, 3, 4, 5]);
+        lazyframe_into_raw(DataFrame::new_infer_height(vec![t, value]).unwrap().lazy())
     }
 
     fn push_schema_field(bytes: &mut Vec<u8>, name: &[u8], dtype_tag: u16, dtype_detail: &[u8]) {
@@ -2973,6 +3096,158 @@ mod tests {
             crate::handles::phs_expr_free(salary_expr);
             crate::handles::phs_expr_free(salary_sum_expr);
             crate::handles::phs_lazyframe_free(lf0);
+        }
+    }
+
+    #[test]
+    fn lazy_dynamic_and_rolling_group_by_windows_match_polars() {
+        let lf0 = window_lazyframe();
+        let mut err = ptr::null_mut();
+
+        let t = std::ffi::CString::new("t").unwrap();
+        let value = std::ffi::CString::new("value").unwrap();
+        let every = std::ffi::CString::new("2i").unwrap();
+        let dynamic_offset = std::ffi::CString::new("0i").unwrap();
+        let rolling_period = std::ffi::CString::new("3i").unwrap();
+        let rolling_offset = std::ffi::CString::new("-3i").unwrap();
+        let mut t_expr = ptr::null_mut();
+        let mut value_expr = ptr::null_mut();
+        let mut sum_expr = ptr::null_mut();
+        assert_eq!(unsafe { crate::expr::phs_expr_col(t.as_ptr(), &mut t_expr, &mut err) }, PHS_OK);
+        assert_eq!(
+            unsafe { crate::expr::phs_expr_col(value.as_ptr(), &mut value_expr, &mut err) },
+            PHS_OK
+        );
+        assert_eq!(
+            unsafe { crate::expr::phs_expr_agg(0, value_expr, &mut sum_expr, &mut err) },
+            PHS_OK
+        );
+        let aggs = [sum_expr as *const phs_expr];
+
+        let mut dynamic = ptr::null_mut();
+        assert_eq!(
+            unsafe {
+                phs_lazyframe_group_by_dynamic_agg(
+                    lf0,
+                    t_expr,
+                    ptr::null(),
+                    0,
+                    aggs.as_ptr(),
+                    aggs.len(),
+                    every.as_ptr(),
+                    every.as_ptr(),
+                    dynamic_offset.as_ptr(),
+                    0,
+                    false,
+                    0,
+                    0,
+                    &mut dynamic,
+                    &mut err,
+                )
+            },
+            PHS_OK
+        );
+        let mut df = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_collect(dynamic, &mut df, &mut err) }, PHS_OK);
+        let dynamic_t: Vec<Option<i64>> = unsafe { crate::handles::dataframe_ref(df) }
+            .unwrap()
+            .value
+            .column("t")
+            .unwrap()
+            .as_materialized_series()
+            .i64()
+            .unwrap()
+            .into_iter()
+            .collect();
+        let dynamic_sum: Vec<Option<i64>> = unsafe { crate::handles::dataframe_ref(df) }
+            .unwrap()
+            .value
+            .column("value")
+            .unwrap()
+            .as_materialized_series()
+            .i64()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(dynamic_t, vec![Some(0), Some(2), Some(4)]);
+        assert_eq!(dynamic_sum, vec![Some(3), Some(7), Some(5)]);
+        unsafe { crate::handles::phs_dataframe_free(df) };
+
+        let mut rolling = ptr::null_mut();
+        assert_eq!(
+            unsafe {
+                phs_lazyframe_group_by_rolling_agg(
+                    lf0,
+                    t_expr,
+                    ptr::null(),
+                    0,
+                    aggs.as_ptr(),
+                    aggs.len(),
+                    rolling_period.as_ptr(),
+                    rolling_offset.as_ptr(),
+                    1,
+                    &mut rolling,
+                    &mut err,
+                )
+            },
+            PHS_OK
+        );
+        df = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_collect(rolling, &mut df, &mut err) }, PHS_OK);
+        let rolling_t: Vec<Option<i64>> = unsafe { crate::handles::dataframe_ref(df) }
+            .unwrap()
+            .value
+            .column("t")
+            .unwrap()
+            .as_materialized_series()
+            .i64()
+            .unwrap()
+            .into_iter()
+            .collect();
+        let rolling_sum: Vec<Option<i64>> = unsafe { crate::handles::dataframe_ref(df) }
+            .unwrap()
+            .value
+            .column("value")
+            .unwrap()
+            .as_materialized_series()
+            .i64()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(rolling_t, vec![Some(0), Some(1), Some(2), Some(3), Some(4)]);
+        assert_eq!(
+            rolling_sum,
+            vec![Some(1), Some(3), Some(6), Some(9), Some(12)]
+        );
+        unsafe { crate::handles::phs_dataframe_free(df) };
+
+        let mut invalid = ptr::null_mut();
+        let status = unsafe {
+            phs_lazyframe_group_by_rolling_agg(
+                lf0,
+                t_expr,
+                ptr::null(),
+                0,
+                aggs.as_ptr(),
+                aggs.len(),
+                rolling_period.as_ptr(),
+                rolling_offset.as_ptr(),
+                99,
+                &mut invalid,
+                &mut err,
+            )
+        };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "unknown closed window code 99");
+
+        unsafe {
+            crate::handles::phs_expr_free(t_expr);
+            crate::handles::phs_expr_free(value_expr);
+            crate::handles::phs_expr_free(sum_expr);
+            crate::handles::phs_lazyframe_free(lf0);
+            crate::handles::phs_lazyframe_free(dynamic);
+            crate::handles::phs_lazyframe_free(rolling);
         }
     }
 
