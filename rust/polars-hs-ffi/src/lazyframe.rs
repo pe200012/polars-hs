@@ -192,6 +192,42 @@ fn join_type_from_code(code: c_int) -> PhsResult<JoinType> {
     }
 }
 
+fn join_validation_from_code(code: c_int) -> PhsResult<JoinValidation> {
+    match code {
+        0 => Ok(JoinValidation::ManyToMany),
+        1 => Ok(JoinValidation::ManyToOne),
+        2 => Ok(JoinValidation::OneToMany),
+        3 => Ok(JoinValidation::OneToOne),
+        _ => Err(PhsError::invalid_argument(format!(
+            "unknown join validation code {code}"
+        ))),
+    }
+}
+
+fn join_coalesce_from_code(code: c_int) -> PhsResult<JoinCoalesce> {
+    match code {
+        0 => Ok(JoinCoalesce::JoinSpecific),
+        1 => Ok(JoinCoalesce::CoalesceColumns),
+        2 => Ok(JoinCoalesce::KeepColumns),
+        _ => Err(PhsError::invalid_argument(format!(
+            "unknown join coalesce code {code}"
+        ))),
+    }
+}
+
+fn join_maintain_order_from_code(code: c_int) -> PhsResult<MaintainOrderJoin> {
+    match code {
+        0 => Ok(MaintainOrderJoin::None),
+        1 => Ok(MaintainOrderJoin::Left),
+        2 => Ok(MaintainOrderJoin::Right),
+        3 => Ok(MaintainOrderJoin::LeftRight),
+        4 => Ok(MaintainOrderJoin::RightLeft),
+        _ => Err(PhsError::invalid_argument(format!(
+            "unknown join maintain order code {code}"
+        ))),
+    }
+}
+
 fn keep_strategy_from_code(code: c_int) -> PhsResult<UniqueKeepStrategy> {
     match code {
         0 => Ok(UniqueKeepStrategy::First),
@@ -209,6 +245,58 @@ unsafe fn optional_suffix(suffix: *const c_char) -> PhsResult<Option<PlSmallStr>
         let suffix = unsafe { c_str_to_str(suffix, "suffix") }?;
         Ok(Some(PlSmallStr::from_str(suffix)))
     }
+}
+
+struct LazyJoinControls {
+    validation: JoinValidation,
+    nulls_equal: bool,
+    coalesce: JoinCoalesce,
+    maintain_order: MaintainOrderJoin,
+    allow_parallel: bool,
+    force_parallel: bool,
+}
+
+fn build_lazy_join(
+    left_frame: LazyFrame,
+    right_frame: LazyFrame,
+    left_on: Vec<Expr>,
+    right_on: Vec<Expr>,
+    join_type: JoinType,
+    suffix: Option<PlSmallStr>,
+    controls: LazyJoinControls,
+) -> PhsResult<LazyFrame> {
+    if matches!(join_type, JoinType::Cross) {
+        if !left_on.is_empty() || !right_on.is_empty() {
+            return Err(PhsError::invalid_argument("cross join requires empty join key lists"));
+        }
+    } else {
+        if left_on.is_empty() {
+            return Err(PhsError::invalid_argument("left join keys must contain at least one expression"));
+        }
+        if right_on.is_empty() {
+            return Err(PhsError::invalid_argument("right join keys must contain at least one expression"));
+        }
+        if left_on.len() != right_on.len() {
+            return Err(PhsError::invalid_argument("left and right join key counts must match"));
+        }
+    }
+
+    let mut builder = left_frame
+        .join_builder()
+        .with(right_frame)
+        .how(join_type)
+        .left_on(left_on)
+        .right_on(right_on)
+        .validate(controls.validation)
+        .join_nulls(controls.nulls_equal)
+        .coalesce(controls.coalesce)
+        .maintain_order(controls.maintain_order)
+        .allow_parallel(controls.allow_parallel)
+        .force_parallel(controls.force_parallel);
+    if let Some(suffix) = suffix {
+        builder = builder.suffix(suffix);
+    }
+    Ok(builder.finish())
 }
 
 fn selector_from_names(names: Vec<PlSmallStr>, label: &str) -> PhsResult<Selector> {
@@ -1368,29 +1456,72 @@ pub unsafe extern "C" fn phs_lazyframe_join(
         let left_frame = unsafe { lazyframe_ref(left) }?.value.clone();
         let right_frame = unsafe { lazyframe_ref(right) }?.value.clone();
         let suffix = unsafe { optional_suffix(suffix) }?;
-        if matches!(join_type, JoinType::Cross) {
-            if left_len != 0 || right_len != 0 {
-                return Err(PhsError::invalid_argument("cross join requires empty join key lists"));
-            }
-            *out = lazyframe_into_raw(left_frame.cross_join(right_frame, suffix));
-            return Ok(());
-        }
-        if left_len == 0 {
-            return Err(PhsError::invalid_argument("left join keys must contain at least one expression"));
-        }
-        if right_len == 0 {
-            return Err(PhsError::invalid_argument("right join keys must contain at least one expression"));
-        }
-        if left_len != right_len {
-            return Err(PhsError::invalid_argument("left and right join key counts must match"));
-        }
         let left_on = unsafe { expr_vec(left_on, left_len) }?;
         let right_on = unsafe { expr_vec(right_on, right_len) }?;
-        let mut args = JoinArgs::new(join_type);
-        if let Some(suffix) = suffix {
-            args = args.with_suffix(Some(suffix));
-        }
-        *out = lazyframe_into_raw(left_frame.join(right_frame, left_on, right_on, args));
+        *out = lazyframe_into_raw(build_lazy_join(
+            left_frame,
+            right_frame,
+            left_on,
+            right_on,
+            join_type,
+            suffix,
+            LazyJoinControls {
+                validation: JoinValidation::ManyToMany,
+                nulls_equal: false,
+                coalesce: JoinCoalesce::JoinSpecific,
+                maintain_order: MaintainOrderJoin::None,
+                allow_parallel: true,
+                force_parallel: false,
+            },
+        )?);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_join_ex(
+    left: *const phs_lazyframe,
+    right: *const phs_lazyframe,
+    left_on: *const *const phs_expr,
+    left_len: usize,
+    right_on: *const *const phs_expr,
+    right_len: usize,
+    join_type: c_int,
+    suffix: *const c_char,
+    validation: c_int,
+    nulls_equal: bool,
+    coalesce: c_int,
+    maintain_order: c_int,
+    allow_parallel: bool,
+    force_parallel: bool,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let join_type = join_type_from_code(join_type)?;
+        let left_frame = unsafe { lazyframe_ref(left) }?.value.clone();
+        let right_frame = unsafe { lazyframe_ref(right) }?.value.clone();
+        let suffix = unsafe { optional_suffix(suffix) }?;
+        let left_on = unsafe { expr_vec(left_on, left_len) }?;
+        let right_on = unsafe { expr_vec(right_on, right_len) }?;
+        *out = lazyframe_into_raw(build_lazy_join(
+            left_frame,
+            right_frame,
+            left_on,
+            right_on,
+            join_type,
+            suffix,
+            LazyJoinControls {
+                validation: join_validation_from_code(validation)?,
+                nulls_equal,
+                coalesce: join_coalesce_from_code(coalesce)?,
+                maintain_order: join_maintain_order_from_code(maintain_order)?,
+                allow_parallel,
+                force_parallel,
+            },
+        )?);
         Ok(())
     })
 }
@@ -1529,6 +1660,39 @@ mod tests {
             [Some(9.5_f64), Some(8.25_f64), None],
         );
         lazyframe_into_raw(DataFrame::new_infer_height(vec![name, age, score]).unwrap().lazy())
+    }
+
+    fn nullable_join_left_lazyframe() -> *mut phs_lazyframe {
+        let key = Column::new(
+            PlSmallStr::from_static("key"),
+            [Some("a"), None, Some("b")],
+        );
+        let value = Column::new(PlSmallStr::from_static("value"), [1_i64, 2, 3]);
+        lazyframe_into_raw(DataFrame::new_infer_height(vec![key, value]).unwrap().lazy())
+    }
+
+    fn nullable_join_right_lazyframe() -> *mut phs_lazyframe {
+        let key = Column::new(
+            PlSmallStr::from_static("key"),
+            [None, Some("b"), Some("c")],
+        );
+        let label = Column::new(
+            PlSmallStr::from_static("label"),
+            [Some("missing"), Some("bee"), Some("cee")],
+        );
+        lazyframe_into_raw(DataFrame::new_infer_height(vec![key, label]).unwrap().lazy())
+    }
+
+    fn duplicate_join_left_lazyframe() -> *mut phs_lazyframe {
+        let key = Column::new(PlSmallStr::from_static("key"), ["a", "a"]);
+        let value = Column::new(PlSmallStr::from_static("value"), [1_i64, 2]);
+        lazyframe_into_raw(DataFrame::new_infer_height(vec![key, value]).unwrap().lazy())
+    }
+
+    fn unique_join_right_lazyframe() -> *mut phs_lazyframe {
+        let key = Column::new(PlSmallStr::from_static("key"), ["a"]);
+        let label = Column::new(PlSmallStr::from_static("label"), ["only"]);
+        lazyframe_into_raw(DataFrame::new_infer_height(vec![key, label]).unwrap().lazy())
     }
 
     fn shift_lazyframe() -> *mut phs_lazyframe {
@@ -2691,6 +2855,141 @@ mod tests {
             crate::handles::phs_lazyframe_free(right);
             crate::handles::phs_lazyframe_free(joined);
             crate::handles::phs_dataframe_free(df);
+        }
+    }
+
+    #[test]
+    fn lazy_join_extended_options_control_nulls_coalescing_order_and_validation() {
+        let left = nullable_join_left_lazyframe();
+        let right = nullable_join_right_lazyframe();
+        let mut err = ptr::null_mut();
+
+        let key = std::ffi::CString::new("key").unwrap();
+        let mut left_key = ptr::null_mut();
+        let mut right_key = ptr::null_mut();
+        assert_eq!(unsafe { crate::expr::phs_expr_col(key.as_ptr(), &mut left_key, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::expr::phs_expr_col(key.as_ptr(), &mut right_key, &mut err) }, PHS_OK);
+        let left_keys = [left_key as *const phs_expr];
+        let right_keys = [right_key as *const phs_expr];
+
+        let mut joined: *mut phs_lazyframe = ptr::null_mut();
+        assert_eq!(
+            unsafe {
+                phs_lazyframe_join_ex(
+                    left,
+                    right,
+                    left_keys.as_ptr(),
+                    left_keys.len(),
+                    right_keys.as_ptr(),
+                    right_keys.len(),
+                    0,
+                    ptr::null(),
+                    0,
+                    true,
+                    2,
+                    1,
+                    true,
+                    false,
+                    &mut joined,
+                    &mut err,
+                )
+            },
+            PHS_OK
+        );
+
+        let mut df = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_collect(joined, &mut df, &mut err) }, PHS_OK);
+        let df_ref = unsafe { crate::handles::dataframe_ref(df) }.unwrap();
+        let names: Vec<&str> = df_ref.value.get_column_names().into_iter().map(|name| name.as_str()).collect();
+        assert_eq!(names, vec!["key", "value", "key_right", "label"]);
+        let values: Vec<Option<i64>> = df_ref
+            .value
+            .column("value")
+            .unwrap()
+            .as_materialized_series()
+            .i64()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(values, vec![Some(2), Some(3)]);
+        let labels: Vec<Option<&str>> = df_ref
+            .value
+            .column("label")
+            .unwrap()
+            .as_materialized_series()
+            .str()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(labels, vec![Some("missing"), Some("bee")]);
+        unsafe { crate::handles::phs_dataframe_free(df) };
+
+        let dup_left = duplicate_join_left_lazyframe();
+        let unique_right = unique_join_right_lazyframe();
+        let mut invalid_join = ptr::null_mut();
+        assert_eq!(
+            unsafe {
+                phs_lazyframe_join_ex(
+                    dup_left,
+                    unique_right,
+                    left_keys.as_ptr(),
+                    left_keys.len(),
+                    right_keys.as_ptr(),
+                    right_keys.len(),
+                    0,
+                    ptr::null(),
+                    3,
+                    false,
+                    0,
+                    0,
+                    true,
+                    false,
+                    &mut invalid_join,
+                    &mut err,
+                )
+            },
+            PHS_OK
+        );
+        df = ptr::null_mut();
+        let status = unsafe { phs_lazyframe_collect(invalid_join, &mut df, &mut err) };
+        assert_ne!(status, PHS_OK);
+        unsafe { crate::error::phs_error_free(err) };
+        err = ptr::null_mut();
+
+        let mut invalid = ptr::null_mut();
+        let status = unsafe {
+            phs_lazyframe_join_ex(
+                left,
+                right,
+                left_keys.as_ptr(),
+                left_keys.len(),
+                right_keys.as_ptr(),
+                right_keys.len(),
+                0,
+                ptr::null(),
+                99,
+                false,
+                0,
+                0,
+                true,
+                false,
+                &mut invalid,
+                &mut err,
+            )
+        };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "unknown join validation code 99");
+
+        unsafe {
+            crate::handles::phs_expr_free(left_key);
+            crate::handles::phs_expr_free(right_key);
+            crate::handles::phs_lazyframe_free(left);
+            crate::handles::phs_lazyframe_free(right);
+            crate::handles::phs_lazyframe_free(joined);
+            crate::handles::phs_lazyframe_free(dup_left);
+            crate::handles::phs_lazyframe_free(unique_right);
+            crate::handles::phs_lazyframe_free(invalid_join);
         }
     }
 

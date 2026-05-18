@@ -4896,6 +4896,62 @@ main = hspec $ do
                 (Left err, _) -> expectationFailure (show err)
                 (_, Left err) -> expectationFailure (show err)
 
+        it "uses extended join controls for nulls coalescing order and validation" $
+            withTempFileContent "polars-hs-join-left.csv" "key,value\na,1\n,2\nb,3\n" $ \leftPath ->
+                withTempFileContent "polars-hs-join-right.csv" "key,label\n,missing\nb,bee\nc,cee\n" $ \rightPath ->
+                    withTempFileContent "polars-hs-join-duplicate-left.csv" "key,value\na,1\na,2\n" $ \duplicateLeftPath ->
+                        withTempFileContent "polars-hs-join-unique-right.csv" "key,label\na,only\n" $ \uniqueRightPath -> do
+                            leftResult <- Pl.scanCsv leftPath
+                            rightResult <- Pl.scanCsv rightPath
+                            duplicateLeftResult <- Pl.scanCsv duplicateLeftPath
+                            uniqueRightResult <- Pl.scanCsv uniqueRightPath
+                            case (leftResult, rightResult, duplicateLeftResult, uniqueRightResult) of
+                                (Right left, Right right, Right duplicateLeft, Right uniqueRight) -> do
+                                    let base =
+                                            Pl.defaultJoinOptions
+                                                { Pl.joinType = Pl.JoinInner
+                                                , Pl.leftOn = [Pl.col "key"]
+                                                , Pl.rightOn = [Pl.col "key"]
+                                                }
+                                        extended =
+                                            Pl.defaultExtendedJoinOptions
+                                                { Pl.extendedJoinBase = base
+                                                , Pl.extendedJoinNullsEqual = True
+                                                , Pl.extendedJoinCoalesce = Pl.JoinKeepColumns
+                                                , Pl.extendedJoinMaintainOrder = Pl.JoinMaintainOrderLeft
+                                                }
+                                        validation =
+                                            Pl.defaultExtendedJoinOptions
+                                                { Pl.extendedJoinBase =
+                                                    base
+                                                        { Pl.leftOn = [Pl.col "key"]
+                                                        , Pl.rightOn = [Pl.col "key"]
+                                                        }
+                                                , Pl.extendedJoinValidation = Pl.JoinOneToOne
+                                                }
+                                    joined <- Pl.joinWithExtended extended left right
+                                    invalidJoin <- Pl.joinWithExtended validation duplicateLeft uniqueRight
+                                    case (joined, invalidJoin) of
+                                        (Right lf, Right invalidLf) -> do
+                                            collected <- Pl.collect lf
+                                            invalidCollected <- Pl.collect invalidLf
+                                            case (collected, invalidCollected) of
+                                                (Right df, Left invalidErr) -> do
+                                                    schemaResult <- Pl.schema df
+                                                    fmap (map Pl.fieldName) schemaResult
+                                                        `shouldBe` Right ["key", "value", "key_right", "label"]
+                                                    Pl.column @Int64 df "value" `shouldReturn` Right (V.fromList [Just 2, Just 3])
+                                                    Pl.column @T.Text df "label" `shouldReturn` Right (V.fromList [Just "missing", Just "bee"])
+                                                    Pl.polarsErrorCode invalidErr `shouldBe` Pl.PolarsFailure
+                                                (Left err, _) -> expectationFailure (show err)
+                                                (_, Right _) -> expectationFailure "expected a Polars failure for one-to-one validation"
+                                        (Left err, _) -> expectationFailure (show err)
+                                        (_, Left err) -> expectationFailure (show err)
+                                (Left err, _, _, _) -> expectationFailure (show err)
+                                (_, Left err, _, _) -> expectationFailure (show err)
+                                (_, _, Left err, _) -> expectationFailure (show err)
+                                (_, _, _, Left err) -> expectationFailure (show err)
+
         it "rejects empty left join keys" $ do
             employeesResult <- Pl.scanCsv employeesCsv
             departmentsResult <- Pl.scanCsv departmentsCsv
