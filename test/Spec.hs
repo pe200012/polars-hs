@@ -2031,6 +2031,41 @@ main = hspec $ do
                                 (_, _, Left err, _) -> expectationFailure (show err)
                                 (_, _, _, Left err) -> expectationFailure (show err)
 
+        it "collects multiple lazy frames together" $ do
+            scanResult <- Pl.scanCsv fixtureCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    filtered <- Pl.filter (Pl.col "age" Pl..> Pl.litInt 30) lf0
+                    case filtered of
+                        Left err -> expectationFailure (show err)
+                        Right lf1 -> do
+                            selected <- Pl.select [Pl.col "name"] lf1
+                            case selected of
+                                Left err -> expectationFailure (show err)
+                                Right lf2 -> do
+                                    collected <- Pl.collectAll [lf1, lf2]
+                                    streamed <- Pl.collectAllWithEngine Pl.LazyStreaming [lf1, lf2]
+                                    inMemory <- Pl.collectAllWithEngine Pl.LazyInMemory [lf1, lf2]
+                                    empty <- Pl.collectAll []
+                                    plan <- Pl.explainAll [lf1, lf2]
+                                    case (collected, streamed, inMemory, empty, plan) of
+                                        (Right dfs, Right streamedDfs, Right inMemoryDfs, Right emptyDfs, Right planText) -> do
+                                            length emptyDfs `shouldBe` 0
+                                            T.isInfixOf "SCAN" planText `shouldBe` True
+                                            case (dfs, streamedDfs, inMemoryDfs) of
+                                                ([df0, df1], [streamedDf0, _], [inMemoryDf0, _]) -> do
+                                                    Pl.shape df0 `shouldReturn` Right (2, 2)
+                                                    Pl.shape df1 `shouldReturn` Right (2, 1)
+                                                    Pl.shape streamedDf0 `shouldReturn` Right (2, 2)
+                                                    Pl.shape inMemoryDf0 `shouldReturn` Right (2, 2)
+                                                _ -> expectationFailure "collectAll returned unexpected list lengths"
+                                        (Left err, _, _, _, _) -> expectationFailure (show err)
+                                        (_, Left err, _, _, _) -> expectationFailure (show err)
+                                        (_, _, Left err, _, _) -> expectationFailure (show err)
+                                        (_, _, _, Left err, _) -> expectationFailure (show err)
+                                        (_, _, _, _, Left err) -> expectationFailure (show err)
+
         it "profiles lazy execution and returns result and timing frames" $ do
             scanResult <- Pl.scanCsv salesCsv
             case scanResult of

@@ -138,6 +138,7 @@ module Polars.Internal.Raw
     , phs_expr_unary
     , phs_expr_unary_i64
     , phs_lazyframe_collect
+    , phs_lazyframe_collect_all_with_engine
     , phs_lazyframe_collect_schema
     , phs_lazyframe_collect_with_engine
     , phs_lazyframe_describe_plan
@@ -145,6 +146,7 @@ module Polars.Internal.Raw
     , phs_lazyframe_drop_nulls
     , phs_lazyframe_explode
     , phs_lazyframe_explain
+    , phs_lazyframe_explain_all
     , phs_lazyframe_fill_nan
     , phs_lazyframe_fill_null
     , phs_lazyframe_filter
@@ -750,8 +752,14 @@ foreign import ccall safe "phs_lazyframe_collect"
 foreign import ccall safe "phs_lazyframe_collect_with_engine"
     phs_lazyframe_collect_with_engine :: Ptr RawLazyFrame -> CInt -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
 
+foreign import ccall safe "phs_lazyframe_collect_all_with_engine"
+    phs_lazyframe_collect_all_with_engine :: Ptr (Ptr RawLazyFrame) -> CSize -> CInt -> Ptr (Ptr RawDataFrameArray) -> Ptr (Ptr RawError) -> IO CInt
+
 foreign import ccall safe "phs_lazyframe_collect_schema"
     phs_lazyframe_collect_schema :: Ptr RawLazyFrame -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_lazyframe_explain_all"
+    phs_lazyframe_explain_all :: Ptr (Ptr RawLazyFrame) -> CSize -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall safe "phs_lazyframe_explain"
     phs_lazyframe_explain :: Ptr RawLazyFrame -> CBool -> Ptr (Ptr RawBytes) -> Ptr (Ptr RawError) -> IO CInt

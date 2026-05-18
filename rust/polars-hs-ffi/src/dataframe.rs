@@ -28,7 +28,7 @@ struct DataFrameArrayHandle {
     values: Vec<DataFrame>,
 }
 
-fn dataframe_array_into_raw(values: Vec<DataFrame>) -> *mut phs_dataframe_array {
+pub(crate) fn dataframe_array_into_raw(values: Vec<DataFrame>) -> *mut phs_dataframe_array {
     Box::into_raw(Box::new(DataFrameArrayHandle { values })) as *mut phs_dataframe_array
 }
 

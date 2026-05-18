@@ -789,6 +789,17 @@ int phs_lazyframe_collect_with_engine(const struct phs_lazyframe *lazyframe,
                                       struct phs_dataframe **out,
                                       struct phs_error **err);
 
+int phs_lazyframe_collect_all_with_engine(const struct phs_lazyframe *const *lazyframes,
+                                          uintptr_t len,
+                                          int engine,
+                                          struct phs_dataframe_array **out,
+                                          struct phs_error **err);
+
+int phs_lazyframe_explain_all(const struct phs_lazyframe *const *lazyframes,
+                              uintptr_t len,
+                              struct phs_bytes **out,
+                              struct phs_error **err);
+
 int phs_lazyframe_collect_schema(const struct phs_lazyframe *lazyframe,
                                  struct phs_bytes **out,
                                  struct phs_error **err);

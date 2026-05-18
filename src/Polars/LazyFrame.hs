@@ -23,6 +23,8 @@ module Polars.LazyFrame
     , UniqueOptions (..)
     , cache
     , collect
+    , collectAll
+    , collectAllWithEngine
     , collectStreaming
     , collectSchema
     , collectWithEngine
@@ -41,6 +43,7 @@ module Polars.LazyFrame
     , dropNulls
     , explode
     , explain
+    , explainAll
     , fillNans
     , fillNulls
     , filter
@@ -83,6 +86,7 @@ module Polars.LazyFrame
 
 import Prelude hiding (filter, reverse)
 
+import Control.Exception (bracket)
 import Data.Text (Text)
 import qualified Data.Text.Encoding as TE
 import Data.Word (Word8, Word64)
@@ -103,10 +107,15 @@ import Polars.Internal.Managed (DataFrame, LazyFrame, mkDataFrame, mkLazyFrame, 
 import Polars.Internal.Raw
     ( RawBytes
     , RawDataFrame
+    , RawDataFrameArray
     , RawError
     , RawExpr
     , RawLazyFrame
+    , phs_dataframe_array_free
+    , phs_dataframe_array_get
+    , phs_dataframe_array_len
     , phs_lazyframe_collect
+    , phs_lazyframe_collect_all_with_engine
     , phs_lazyframe_collect_schema
     , phs_lazyframe_collect_with_engine
     , phs_lazyframe_cache
@@ -116,6 +125,7 @@ import Polars.Internal.Raw
     , phs_lazyframe_drop_nulls
     , phs_lazyframe_explode
     , phs_lazyframe_explain
+    , phs_lazyframe_explain_all
     , phs_lazyframe_fill_nan
     , phs_lazyframe_fill_null
     , phs_lazyframe_filter
@@ -300,6 +310,15 @@ collectWithEngine :: LazyExecutionEngine -> LazyFrame -> IO (Either PolarsError 
 collectWithEngine engine lf = withLazyFrame lf $ \ptr ->
     dataframeOut (phs_lazyframe_collect_with_engine ptr (lazyExecutionEngineCode engine))
 
+-- | Collect multiple lazy queries with the in-memory Polars execution engine.
+collectAll :: [LazyFrame] -> IO (Either PolarsError [DataFrame])
+collectAll = collectAllWithEngine LazyInMemory
+
+-- | Collect multiple lazy queries together with a specific Polars execution engine.
+collectAllWithEngine :: LazyExecutionEngine -> [LazyFrame] -> IO (Either PolarsError [DataFrame])
+collectAllWithEngine engine lfs = withLazyFrameList lfs $ \ptr len ->
+    dataframeArrayOut (phs_lazyframe_collect_all_with_engine ptr len (lazyExecutionEngineCode engine))
+
 -- | Collect a lazy query with the Polars streaming engine.
 collectStreaming :: LazyFrame -> IO (Either PolarsError DataFrame)
 collectStreaming = collectWithEngine LazyStreaming
@@ -311,6 +330,11 @@ collectSchema lf = withLazyFrame lf $ \ptr -> schemaOut (phs_lazyframe_collect_s
 explain :: Bool -> LazyFrame -> IO (Either PolarsError Text)
 explain optimized lf = withLazyFrame lf $ \ptr ->
     bytesOut (phs_lazyframe_explain ptr (toCBool optimized))
+
+-- | Explain the optimized plan for multiple lazy queries collected together.
+explainAll :: [LazyFrame] -> IO (Either PolarsError Text)
+explainAll lfs = withLazyFrameList lfs $ \ptr len ->
+    bytesOut (phs_lazyframe_explain_all ptr len)
 
 -- | Describe the naive logical plan as flat text.
 describePlan :: LazyFrame -> IO (Either PolarsError Text)
@@ -615,6 +639,43 @@ dataframeOut action =
                         else Right <$> mkDataFrame ptr
                 else Left <$> (consumeError (fromIntegralStatus status) =<< peek errPtr)
 
+dataframeArrayOut :: (Ptr (Ptr RawDataFrameArray) -> Ptr (Ptr RawError) -> IO CInt) -> IO (Either PolarsError [DataFrame])
+dataframeArrayOut action =
+    alloca $ \outPtr ->
+        alloca $ \errPtr -> do
+            poke outPtr nullPtr
+            poke errPtr nullPtr
+            status <- action outPtr errPtr
+            if fromIntegralStatus status == 0
+                then do
+                    array <- peek outPtr
+                    if array == nullPtr
+                        then pure (Left (nullPointerError "dataframe array output"))
+                        else bracket (pure array) phs_dataframe_array_free dataframeArrayToList
+                else Left <$> (consumeError (fromIntegralStatus status) =<< peek errPtr)
+
+dataframeArrayToList :: Ptr RawDataFrameArray -> IO (Either PolarsError [DataFrame])
+dataframeArrayToList array = do
+    len <- phs_dataframe_array_len array
+    let go index acc
+            | index >= len = pure (Right (P.reverse acc))
+            | otherwise =
+                alloca $ \outPtr ->
+                    alloca $ \errPtr -> do
+                        poke outPtr nullPtr
+                        poke errPtr nullPtr
+                        status <- phs_dataframe_array_get array index outPtr errPtr
+                        if fromIntegralStatus status == 0
+                            then do
+                                ptr <- peek outPtr
+                                if ptr == nullPtr
+                                    then pure (Left (nullPointerError "dataframe array item output"))
+                                    else do
+                                        df <- mkDataFrame ptr
+                                        go (index + 1) (df : acc)
+                            else Left <$> (consumeError (fromIntegralStatus status) =<< peek errPtr)
+    go 0 []
+
 profileOut :: (Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt) -> IO (Either PolarsError (DataFrame, DataFrame))
 profileOut action =
     alloca $ \resultPtr ->
@@ -651,6 +712,12 @@ withWord8List values action = withArray values $ \ptr -> action ptr (fromIntegra
 withMaybeCStringList :: Maybe [Text] -> (Ptr CString -> CSize -> Bool -> IO a) -> IO a
 withMaybeCStringList Nothing action = action nullPtr 0 False
 withMaybeCStringList (Just values) action = withCStringList values $ \ptr len -> action ptr len True
+
+withLazyFrameList :: [LazyFrame] -> (Ptr (Ptr RawLazyFrame) -> CSize -> IO a) -> IO a
+withLazyFrameList lfs action = go lfs []
+  where
+    go [] acc = withArray (P.reverse acc) $ \ptr -> action ptr (fromIntegral (length acc))
+    go (lf : rest) acc = withLazyFrame lf $ \ptr -> go rest (ptr : acc)
 
 withRenamePairs :: [(Text, Text)] -> (Ptr CString -> Ptr CString -> CSize -> IO a) -> IO a
 withRenamePairs values action = go values [] []
