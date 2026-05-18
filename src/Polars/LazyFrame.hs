@@ -56,6 +56,8 @@ module Polars.LazyFrame
     , lazyFirst
     , lazyHead
     , lazyLast
+    , lazyShift
+    , lazyShiftAndFill
     , lazyTail
     , limit
     , nullCount
@@ -148,6 +150,8 @@ import Polars.Internal.Raw
     , phs_lazyframe_rename
     , phs_lazyframe_reverse
     , phs_lazyframe_select
+    , phs_lazyframe_shift
+    , phs_lazyframe_shift_and_fill
     , phs_lazyframe_slice
     , phs_lazyframe_sort
     , phs_lazyframe_tail
@@ -565,6 +569,24 @@ lazyTail :: Int -> LazyFrame -> IO (Either PolarsError LazyFrame)
 lazyTail n lf = case nonNegativeWord64 "lazyTail count" n of
     Left err -> pure (Left err)
     Right nWord -> withLazyFrame lf $ \lfPtr -> lazyFrameOut (phs_lazyframe_tail lfPtr nWord)
+
+-- | Shift all LazyFrame columns by an expression period.
+lazyShift :: Expr -> LazyFrame -> IO (Either PolarsError LazyFrame)
+lazyShift n lf = lazyFrameExprOut n lf phs_lazyframe_shift
+
+-- | Shift all LazyFrame columns and fill the holes created by the shift.
+lazyShiftAndFill :: Expr -> Expr -> LazyFrame -> IO (Either PolarsError LazyFrame)
+lazyShiftAndFill n fillValue lf = do
+    compiledN <- compileExpr n
+    compiledFill <- compileExpr fillValue
+    case (compiledN, compiledFill) of
+        (Right nManaged, Right fillManaged) ->
+            withLazyFrame lf $ \lfPtr ->
+                withManagedExpr nManaged $ \nPtr ->
+                    withManagedExpr fillManaged $ \fillPtr ->
+                        lazyFrameOut (phs_lazyframe_shift_and_fill lfPtr nPtr fillPtr)
+        (Left err, _) -> pure (Left err)
+        (_, Left err) -> pure (Left err)
 
 dropNulls :: Maybe [Text] -> LazyFrame -> IO (Either PolarsError LazyFrame)
 dropNulls (Just []) _ = pure (Left (invalidArgument "dropNulls subset requires at least one column name"))

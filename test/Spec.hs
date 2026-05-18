@@ -2155,6 +2155,30 @@ main = hspec $ do
                         (_, Left err, _) -> expectationFailure (show err)
                         (_, _, Left err) -> expectationFailure (show err)
 
+        it "shifts lazy frame values with optional fill expressions" $ do
+            scanResult <- Pl.scanCsv valuesCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf -> do
+                    shifted <- Pl.lazyShift (Pl.litInt 1) lf
+                    ageOnly <- Pl.select [Pl.col "age"] lf
+                    filled <- case ageOnly of
+                        Left err -> pure (Left err)
+                        Right ageLf -> Pl.lazyShiftAndFill (Pl.litInt 1) (Pl.litInt 0) ageLf
+                    case (shifted, filled) of
+                        (Right shiftedLf, Right filledLf) -> do
+                            shiftedDf <- Pl.collect shiftedLf
+                            filledDf <- Pl.collect filledLf
+                            case (shiftedDf, filledDf) of
+                                (Right sDf, Right fDf) -> do
+                                    Pl.column @T.Text sDf "name" `shouldReturn` Right (V.fromList [Nothing, Just "Alice", Just "Bob"])
+                                    Pl.column @Int64 sDf "age" `shouldReturn` Right (V.fromList [Nothing, Just 34, Nothing])
+                                    Pl.column @Int64 fDf "age" `shouldReturn` Right (V.fromList [Just 0, Just 34, Nothing])
+                                (Left err, _) -> expectationFailure (show err)
+                                (_, Left err) -> expectationFailure (show err)
+                        (Left err, _) -> expectationFailure (show err)
+                        (_, Left err) -> expectationFailure (show err)
+
         it "selects lazy top and bottom rows by expressions" $ do
             scanResult <- Pl.scanCsv employeesCsv
             case scanResult of

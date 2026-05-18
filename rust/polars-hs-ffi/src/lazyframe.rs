@@ -1058,6 +1058,42 @@ pub unsafe extern "C" fn phs_lazyframe_tail(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_shift(
+    lazyframe: *const phs_lazyframe,
+    n: *const phs_expr,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        let n = unsafe { expr_ref(n) }?.value.clone();
+        *out = lazyframe_into_raw(lf.shift(n));
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_shift_and_fill(
+    lazyframe: *const phs_lazyframe,
+    n: *const phs_expr,
+    fill_value: *const phs_expr,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        let n = unsafe { expr_ref(n) }?.value.clone();
+        let fill_value = unsafe { expr_ref(fill_value) }?.value.clone();
+        *out = lazyframe_into_raw(lf.shift_and_fill(n, fill_value));
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_lazyframe_drop_nulls(
     lazyframe: *const phs_lazyframe,
     names: *const *const c_char,
@@ -1362,6 +1398,14 @@ mod tests {
             [Some(9.5_f64), Some(8.25_f64), None],
         );
         lazyframe_into_raw(DataFrame::new_infer_height(vec![name, age, score]).unwrap().lazy())
+    }
+
+    fn shift_lazyframe() -> *mut phs_lazyframe {
+        let value = Column::new(
+            PlSmallStr::from_static("value"),
+            [Some(10_i64), None, Some(30_i64), Some(40_i64)],
+        );
+        lazyframe_into_raw(DataFrame::new_infer_height(vec![value]).unwrap().lazy())
     }
 
     fn push_schema_field(bytes: &mut Vec<u8>, name: &[u8], dtype_tag: u16, dtype_detail: &[u8]) {
@@ -2015,6 +2059,88 @@ mod tests {
         unsafe {
             crate::handles::phs_lazyframe_free(lf0);
             crate::handles::phs_lazyframe_free(counted);
+        }
+    }
+
+    #[test]
+    fn lazy_shift_moves_values_and_fills_shift_holes() {
+        let lf0 = shift_lazyframe();
+        let mut err = ptr::null_mut();
+
+        let mut one = ptr::null_mut();
+        assert_eq!(unsafe { crate::expr::phs_expr_lit_int(1, &mut one, &mut err) }, PHS_OK);
+        let mut shifted = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_shift(lf0, one, &mut shifted, &mut err) }, PHS_OK);
+        let mut df = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_collect(shifted, &mut df, &mut err) }, PHS_OK);
+        let values: Vec<Option<i64>> = unsafe { crate::handles::dataframe_ref(df) }
+            .unwrap()
+            .value
+            .column("value")
+            .unwrap()
+            .as_materialized_series()
+            .i64()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(values, vec![None, Some(10), None, Some(30)]);
+        unsafe { crate::handles::phs_dataframe_free(df) };
+
+        let mut negative_one = ptr::null_mut();
+        let mut zero = ptr::null_mut();
+        assert_eq!(unsafe { crate::expr::phs_expr_lit_int(-1, &mut negative_one, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::expr::phs_expr_lit_int(0, &mut zero, &mut err) }, PHS_OK);
+        let mut filled = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_lazyframe_shift_and_fill(lf0, negative_one, zero, &mut filled, &mut err) },
+            PHS_OK
+        );
+        df = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_collect(filled, &mut df, &mut err) }, PHS_OK);
+        let values: Vec<Option<i64>> = unsafe { crate::handles::dataframe_ref(df) }
+            .unwrap()
+            .value
+            .column("value")
+            .unwrap()
+            .as_materialized_series()
+            .i64()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(values, vec![None, Some(30), Some(40), Some(0)]);
+        unsafe { crate::handles::phs_dataframe_free(df) };
+
+        let mut invalid = ptr::null_mut();
+        let status = unsafe { phs_lazyframe_shift(ptr::null(), one, &mut invalid, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "lazyframe pointer was null");
+        err = ptr::null_mut();
+
+        let status = unsafe { phs_lazyframe_shift(lf0, ptr::null(), &mut invalid, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "expr pointer was null");
+        err = ptr::null_mut();
+
+        let status = unsafe { phs_lazyframe_shift(lf0, one, ptr::null_mut(), &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "out pointer was null");
+        err = ptr::null_mut();
+
+        let status = unsafe { phs_lazyframe_shift_and_fill(lf0, one, ptr::null(), &mut invalid, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "expr pointer was null");
+
+        unsafe {
+            crate::handles::phs_expr_free(one);
+            crate::handles::phs_expr_free(negative_one);
+            crate::handles::phs_expr_free(zero);
+            crate::handles::phs_lazyframe_free(lf0);
+            crate::handles::phs_lazyframe_free(shifted);
+            crate::handles::phs_lazyframe_free(filled);
         }
     }
 

@@ -168,6 +168,8 @@ module Polars.Internal.Raw
     , phs_lazyframe_rename
     , phs_lazyframe_reverse
     , phs_lazyframe_select
+    , phs_lazyframe_shift
+    , phs_lazyframe_shift_and_fill
     , phs_lazyframe_slice
     , phs_lazyframe_sort
     , phs_lazyframe_tail
@@ -890,6 +892,12 @@ foreign import ccall unsafe "phs_lazyframe_head"
 
 foreign import ccall unsafe "phs_lazyframe_tail"
     phs_lazyframe_tail :: Ptr RawLazyFrame -> Word64 -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_lazyframe_shift"
+    phs_lazyframe_shift :: Ptr RawLazyFrame -> Ptr RawExpr -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_lazyframe_shift_and_fill"
+    phs_lazyframe_shift_and_fill :: Ptr RawLazyFrame -> Ptr RawExpr -> Ptr RawExpr -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_lazyframe_drop_nulls"
     phs_lazyframe_drop_nulls :: Ptr RawLazyFrame -> Ptr CString -> CSize -> CBool -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt

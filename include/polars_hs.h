@@ -979,6 +979,17 @@ int phs_lazyframe_tail(const struct phs_lazyframe *lazyframe,
                        struct phs_lazyframe **out,
                        struct phs_error **err);
 
+int phs_lazyframe_shift(const struct phs_lazyframe *lazyframe,
+                        const struct phs_expr *n,
+                        struct phs_lazyframe **out,
+                        struct phs_error **err);
+
+int phs_lazyframe_shift_and_fill(const struct phs_lazyframe *lazyframe,
+                                 const struct phs_expr *n,
+                                 const struct phs_expr *fill_value,
+                                 struct phs_lazyframe **out,
+                                 struct phs_error **err);
+
 int phs_lazyframe_drop_nulls(const struct phs_lazyframe *lazyframe,
                              const char *const *names,
                              uintptr_t len,
