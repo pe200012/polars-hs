@@ -17,12 +17,15 @@ module Polars.Join
     , JoinMaintainOrder (..)
     , JoinType (..)
     , JoinValidation (..)
+    , JoinWhereOptions (..)
     , defaultExtendedJoinOptions
     , defaultJoinOptions
+    , defaultJoinWhereOptions
     , fullJoin
     , innerJoin
     , joinWith
     , joinWithExtended
+    , joinWhere
     , leftJoin
     , rightJoin
     , semiJoin
@@ -40,7 +43,7 @@ import Polars.Expr (Expr)
 import Polars.Internal.CString (withTextCString)
 import Polars.Internal.Expr (withCompiledExprs)
 import Polars.Internal.Managed (LazyFrame, mkLazyFrame, withLazyFrame)
-import Polars.Internal.Raw (RawError, RawLazyFrame, phs_lazyframe_join, phs_lazyframe_join_ex)
+import Polars.Internal.Raw (RawError, RawLazyFrame, phs_lazyframe_join, phs_lazyframe_join_ex, phs_lazyframe_join_where)
 import Polars.Internal.Result (consumeError, nullPointerError)
 
 -- | Join variants supported by the core join MVP.
@@ -120,6 +123,22 @@ defaultExtendedJoinOptions =
         , extendedJoinForceParallel = False
         }
 
+-- | Options for non-equi lazy joins.
+data JoinWhereOptions = JoinWhereOptions
+    { joinWhereSuffix :: !(Maybe Text)
+    , joinWhereAllowParallel :: !Bool
+    , joinWhereForceParallel :: !Bool
+    }
+    deriving stock (Eq, Show)
+
+defaultJoinWhereOptions :: JoinWhereOptions
+defaultJoinWhereOptions =
+    JoinWhereOptions
+        { joinWhereSuffix = Nothing
+        , joinWhereAllowParallel = True
+        , joinWhereForceParallel = False
+        }
+
 joinWith :: JoinOptions -> LazyFrame -> LazyFrame -> IO (Either PolarsError LazyFrame)
 joinWith options leftFrame rightFrame =
     case validateJoinOptions options of
@@ -172,6 +191,25 @@ joinWithExtended options leftFrame rightFrame =
                                     )
   where
     baseOptions = extendedJoinBase options
+
+-- | Join two lazy frames with non-equi predicates.
+joinWhere :: JoinWhereOptions -> [Expr] -> LazyFrame -> LazyFrame -> IO (Either PolarsError LazyFrame)
+joinWhere _ [] _ _ = pure (Left (invalidArgument "joinWhere predicates require at least one expression"))
+joinWhere options predicates leftFrame rightFrame =
+    withLazyFrame leftFrame $ \leftPtr ->
+        withLazyFrame rightFrame $ \rightPtr ->
+            withCompiledExprs predicates $ \predicateArray predicateLen ->
+                withOptionalTextCString (joinWhereSuffix options) $ \suffixPtr ->
+                    lazyFrameOut
+                        ( phs_lazyframe_join_where
+                            leftPtr
+                            rightPtr
+                            predicateArray
+                            predicateLen
+                            suffixPtr
+                            (toCBool (joinWhereAllowParallel options))
+                            (toCBool (joinWhereForceParallel options))
+                        )
 
 innerJoin :: [Expr] -> [Expr] -> LazyFrame -> LazyFrame -> IO (Either PolarsError LazyFrame)
 innerJoin = joinUsing JoinInner

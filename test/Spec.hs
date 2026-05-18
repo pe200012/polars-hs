@@ -4952,6 +4952,48 @@ main = hspec $ do
                                 (_, _, Left err, _) -> expectationFailure (show err)
                                 (_, _, _, Left err) -> expectationFailure (show err)
 
+        it "joins lazy frames with non-equi predicates" $
+            withTempFileContent "polars-hs-join-where-left.csv" "customer,cash\nann,100\nbob,40\ncat,70\n" $ \leftPath ->
+                withTempFileContent "polars-hs-join-where-right.csv" "offer,cost,window_start,window_end\nbasic,30,50,120\npro,80,0,50\nenterprise,60,65,80\n" $ \rightPath -> do
+                    leftResult <- Pl.scanCsv leftPath
+                    rightResult <- Pl.scanCsv rightPath
+                    case (leftResult, rightResult) of
+                        (Right left, Right right) -> do
+                            greater <- Pl.joinWhere Pl.defaultJoinWhereOptions [Pl.col "cash" Pl..> Pl.col "cost"] left right
+                            bounded <-
+                                Pl.joinWhere
+                                    Pl.defaultJoinWhereOptions
+                                    [Pl.isBetween Pl.ClosedBoth (Pl.col "cash") (Pl.col "window_start") (Pl.col "window_end")]
+                                    left
+                                    right
+                            empty <- Pl.joinWhere Pl.defaultJoinWhereOptions [] left right
+                            case (greater, bounded, empty) of
+                                (Right greaterLf, Right boundedLf, Left emptyErr) -> do
+                                    sortedGreater <- Pl.sort ["customer", "offer"] greaterLf
+                                    sortedBounded <- Pl.sort ["customer", "offer"] boundedLf
+                                    case (sortedGreater, sortedBounded) of
+                                        (Right greaterSorted, Right boundedSorted) -> do
+                                            greaterDf <- Pl.collect greaterSorted
+                                            boundedDf <- Pl.collect boundedSorted
+                                            case (greaterDf, boundedDf) of
+                                                (Right gDf, Right bDf) -> do
+                                                    Pl.shape gDf `shouldReturn` Right (6, 6)
+                                                    Pl.shape bDf `shouldReturn` Right (4, 6)
+                                                    Pl.column @T.Text bDf "customer"
+                                                        `shouldReturn` Right (V.fromList [Just "ann", Just "bob", Just "cat", Just "cat"])
+                                                    Pl.column @T.Text bDf "offer"
+                                                        `shouldReturn` Right (V.fromList [Just "basic", Just "pro", Just "basic", Just "enterprise"])
+                                                    Pl.polarsErrorCode emptyErr `shouldBe` Pl.InvalidArgument
+                                                (Left err, _) -> expectationFailure (show err)
+                                                (_, Left err) -> expectationFailure (show err)
+                                        (Left err, _) -> expectationFailure (show err)
+                                        (_, Left err) -> expectationFailure (show err)
+                                (Left err, _, _) -> expectationFailure (show err)
+                                (_, Left err, _) -> expectationFailure (show err)
+                                (_, _, Right _) -> expectationFailure "expected InvalidArgument for empty joinWhere predicates"
+                        (Left err, _) -> expectationFailure (show err)
+                        (_, Left err) -> expectationFailure (show err)
+
         it "rejects empty left join keys" $ do
             employeesResult <- Pl.scanCsv employeesCsv
             departmentsResult <- Pl.scanCsv departmentsCsv

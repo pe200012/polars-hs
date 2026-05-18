@@ -1096,6 +1096,16 @@ int phs_lazyframe_join_ex(const struct phs_lazyframe *left,
                           struct phs_lazyframe **out,
                           struct phs_error **err);
 
+int phs_lazyframe_join_where(const struct phs_lazyframe *left,
+                             const struct phs_lazyframe *right,
+                             const struct phs_expr *const *predicates,
+                             uintptr_t predicate_len,
+                             const char *suffix,
+                             bool allow_parallel,
+                             bool force_parallel,
+                             struct phs_lazyframe **out,
+                             struct phs_error **err);
+
 int phs_series_new_bool(const char *name,
                         const uint8_t *data,
                         uintptr_t len,

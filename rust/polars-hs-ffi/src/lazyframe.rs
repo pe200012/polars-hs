@@ -1526,6 +1526,43 @@ pub unsafe extern "C" fn phs_lazyframe_join_ex(
     })
 }
 
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_join_where(
+    left: *const phs_lazyframe,
+    right: *const phs_lazyframe,
+    predicates: *const *const phs_expr,
+    predicate_len: usize,
+    suffix: *const c_char,
+    allow_parallel: bool,
+    force_parallel: bool,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        if predicate_len == 0 {
+            return Err(PhsError::invalid_argument(
+                "joinWhere predicates require at least one expression",
+            ));
+        }
+        let left_frame = unsafe { lazyframe_ref(left) }?.value.clone();
+        let right_frame = unsafe { lazyframe_ref(right) }?.value.clone();
+        let predicates = unsafe { expr_vec(predicates, predicate_len) }?;
+        let suffix = unsafe { optional_suffix(suffix) }?;
+        let mut builder = left_frame
+            .join_builder()
+            .with(right_frame)
+            .allow_parallel(allow_parallel)
+            .force_parallel(force_parallel);
+        if let Some(suffix) = suffix {
+            builder = builder.suffix(suffix);
+        }
+        *out = lazyframe_into_raw(builder.join_where(predicates));
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1693,6 +1730,23 @@ mod tests {
         let key = Column::new(PlSmallStr::from_static("key"), ["a"]);
         let label = Column::new(PlSmallStr::from_static("label"), ["only"]);
         lazyframe_into_raw(DataFrame::new_infer_height(vec![key, label]).unwrap().lazy())
+    }
+
+    fn non_equi_left_lazyframe() -> *mut phs_lazyframe {
+        let customer = Column::new(PlSmallStr::from_static("customer"), ["ann", "bob", "cat"]);
+        let cash = Column::new(PlSmallStr::from_static("cash"), [100_i64, 40, 70]);
+        lazyframe_into_raw(DataFrame::new_infer_height(vec![customer, cash]).unwrap().lazy())
+    }
+
+    fn non_equi_right_lazyframe() -> *mut phs_lazyframe {
+        let offer = Column::new(
+            PlSmallStr::from_static("offer"),
+            ["basic", "pro", "enterprise"],
+        );
+        let cost = Column::new(PlSmallStr::from_static("cost"), [30_i64, 80, 60]);
+        let window_start = Column::new(PlSmallStr::from_static("window_start"), [50_i64, 0, 65]);
+        let window_end = Column::new(PlSmallStr::from_static("window_end"), [120_i64, 50, 80]);
+        lazyframe_into_raw(DataFrame::new_infer_height(vec![offer, cost, window_start, window_end]).unwrap().lazy())
     }
 
     fn shift_lazyframe() -> *mut phs_lazyframe {
@@ -2990,6 +3044,90 @@ mod tests {
             crate::handles::phs_lazyframe_free(dup_left);
             crate::handles::phs_lazyframe_free(unique_right);
             crate::handles::phs_lazyframe_free(invalid_join);
+        }
+    }
+
+    #[test]
+    fn lazy_join_where_filters_by_non_equi_predicates() {
+        let left = non_equi_left_lazyframe();
+        let right = non_equi_right_lazyframe();
+        let mut err = ptr::null_mut();
+
+        let cash = std::ffi::CString::new("cash").unwrap();
+        let cost = std::ffi::CString::new("cost").unwrap();
+        let mut cash_expr = ptr::null_mut();
+        let mut cost_expr = ptr::null_mut();
+        let mut predicate = ptr::null_mut();
+        assert_eq!(unsafe { crate::expr::phs_expr_col(cash.as_ptr(), &mut cash_expr, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::expr::phs_expr_col(cost.as_ptr(), &mut cost_expr, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::expr::phs_expr_binary(2, cash_expr, cost_expr, &mut predicate, &mut err) }, PHS_OK);
+
+        let predicates = [predicate as *const phs_expr];
+        let mut joined = ptr::null_mut();
+        assert_eq!(
+            unsafe {
+                phs_lazyframe_join_where(
+                    left,
+                    right,
+                    predicates.as_ptr(),
+                    predicates.len(),
+                    ptr::null(),
+                    true,
+                    false,
+                    &mut joined,
+                    &mut err,
+                )
+            },
+            PHS_OK
+        );
+        let mut df = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_collect(joined, &mut df, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::handles::dataframe_ref(df) }.unwrap().value.shape(), (6, 6));
+        unsafe { crate::handles::phs_dataframe_free(df) };
+
+        let mut invalid = ptr::null_mut();
+        let status = unsafe {
+            phs_lazyframe_join_where(
+                left,
+                right,
+                ptr::null(),
+                0,
+                ptr::null(),
+                true,
+                false,
+                &mut invalid,
+                &mut err,
+            )
+        };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "joinWhere predicates require at least one expression");
+        err = ptr::null_mut();
+
+        let status = unsafe {
+            phs_lazyframe_join_where(
+                left,
+                right,
+                ptr::null(),
+                1,
+                ptr::null(),
+                true,
+                false,
+                &mut invalid,
+                &mut err,
+            )
+        };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "exprs pointer was null");
+
+        unsafe {
+            crate::handles::phs_expr_free(cash_expr);
+            crate::handles::phs_expr_free(cost_expr);
+            crate::handles::phs_expr_free(predicate);
+            crate::handles::phs_lazyframe_free(left);
+            crate::handles::phs_lazyframe_free(right);
+            crate::handles::phs_lazyframe_free(joined);
         }
     }
 
