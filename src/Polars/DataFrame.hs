@@ -58,6 +58,7 @@ module Polars.DataFrame
     , dataFrameSampleFrac
     , dataFrameSampleN
     , dataFrameSelect
+    , dataFrameSetColumnNames
     , dataFrameShift
     , dataFrameShouldRechunk
     , dataFrameSlice
@@ -162,6 +163,7 @@ import Polars.Internal.Raw
     , phs_dataframe_sample_n
     , phs_dataframe_schema
     , phs_dataframe_select
+    , phs_dataframe_set_column_names
     , phs_dataframe_shape
     , phs_dataframe_should_rechunk
     , phs_dataframe_shift
@@ -450,6 +452,10 @@ dataFrameDropColumns :: [Text] -> DataFrame -> IO (Either PolarsError DataFrame)
 dataFrameDropColumns [] _ = pure (Left (invalidArgument "dataFrameDropColumns requires at least one column name"))
 dataFrameDropColumns names df = withDataFrame df $ \ptr -> withCStringList names $ \nameArray len ->
     dataframeOut (phs_dataframe_drop ptr nameArray len)
+
+dataFrameSetColumnNames :: [Text] -> DataFrame -> IO (Either PolarsError DataFrame)
+dataFrameSetColumnNames names df = withDataFrame df $ \ptr -> withCStringList names $ \nameArray len ->
+    dataframeOut (phs_dataframe_set_column_names ptr nameArray len)
 
 dataFrameFilter :: Series -> DataFrame -> IO (Either PolarsError DataFrame)
 dataFrameFilter mask df =

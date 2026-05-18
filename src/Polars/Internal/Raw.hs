@@ -79,6 +79,7 @@ module Polars.Internal.Raw
     , phs_dataframe_sample_n
     , phs_dataframe_schema
     , phs_dataframe_select
+    , phs_dataframe_set_column_names
     , phs_dataframe_shape
     , phs_dataframe_should_rechunk
     , phs_dataframe_shift
@@ -414,6 +415,9 @@ foreign import ccall safe "phs_dataframe_explode"
 
 foreign import ccall safe "phs_dataframe_gather_every"
     phs_dataframe_gather_every :: Ptr RawDataFrame -> Word64 -> Word64 -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_dataframe_set_column_names"
+    phs_dataframe_set_column_names :: Ptr RawDataFrame -> Ptr CString -> CSize -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall safe "phs_dataframe_transpose"
     phs_dataframe_transpose ::

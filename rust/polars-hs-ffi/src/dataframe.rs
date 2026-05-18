@@ -954,6 +954,26 @@ pub unsafe extern "C" fn phs_dataframe_gather_every(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_set_column_names(
+    dataframe: *const phs_dataframe,
+    names: *const *const c_char,
+    names_len: usize,
+    out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        let names = unsafe { name_vec(names, names_len, "names") }?;
+        let mut value = handle.value.clone();
+        value.set_column_names(&names)?;
+        *out = dataframe_into_raw(value);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_dataframe_transpose(
     dataframe: *const phs_dataframe,
     has_keep_names_as: bool,
@@ -2064,6 +2084,66 @@ mod tests {
             crate::handles::phs_series_free(rank);
             crate::handles::phs_series_free(city);
             crate::handles::phs_dataframe_free(other);
+            crate::handles::phs_dataframe_free(df);
+        }
+    }
+
+    #[test]
+    fn dataframe_set_column_names_replaces_schema_names() {
+        let df = read_values_dataframe();
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        let person = std::ffi::CString::new("person").unwrap();
+        let years = std::ffi::CString::new("years").unwrap();
+        let points = std::ffi::CString::new("points").unwrap();
+        let enabled = std::ffi::CString::new("enabled").unwrap();
+        let names = [person.as_ptr(), years.as_ptr(), points.as_ptr(), enabled.as_ptr()];
+
+        let status = unsafe { phs_dataframe_set_column_names(df, names.as_ptr(), names.len(), &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let renamed = out;
+        let renamed_ref = unsafe { dataframe_ref(renamed) }.unwrap();
+        assert_eq!(renamed_ref.value.get_column_names(), ["person", "years", "points", "enabled"]);
+        let values: Vec<Option<&str>> = renamed_ref
+            .value
+            .column("person")
+            .unwrap()
+            .as_materialized_series()
+            .str()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(values, vec![Some("Alice"), Some("Bob"), Some("Carol")]);
+        assert!(unsafe { dataframe_ref(df) }.unwrap().value.column("name").is_ok());
+
+        let short_names = [person.as_ptr(), years.as_ptr()];
+        let status = unsafe { phs_dataframe_set_column_names(df, short_names.as_ptr(), short_names.len(), &mut out, &mut err) };
+        assert_ne!(status, PHS_OK);
+        unsafe { take_error_message(err) };
+
+        let duplicate_names = [person.as_ptr(), person.as_ptr(), points.as_ptr(), enabled.as_ptr()];
+        let status = unsafe { phs_dataframe_set_column_names(df, duplicate_names.as_ptr(), duplicate_names.len(), &mut out, &mut err) };
+        assert_ne!(status, PHS_OK);
+        unsafe { take_error_message(err) };
+
+        let status = unsafe { phs_dataframe_set_column_names(df, ptr::null(), 1, &mut out, &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "names pointer was null");
+
+        let null_name = [ptr::null()];
+        let status = unsafe { phs_dataframe_set_column_names(df, null_name.as_ptr(), null_name.len(), &mut out, &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "names pointer was null");
+
+        let status = unsafe { phs_dataframe_set_column_names(df, names.as_ptr(), names.len(), ptr::null_mut(), &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "out pointer was null");
+
+        unsafe {
+            crate::handles::phs_dataframe_free(renamed);
             crate::handles::phs_dataframe_free(df);
         }
     }

@@ -452,8 +452,12 @@ main = hspec $ do
                     selected <- Pl.dataFrameSelect ["name", "age"] df
                     dropped <- Pl.dataFrameDropColumns ["score"] df
                     renamed <- Pl.dataFrameRename [("age", "years")] df
-                    case (selected, dropped, renamed) of
-                        (Right selectedDf, Right droppedDf, Right renamedDf) -> do
+                    setNames <- Pl.dataFrameSetColumnNames ["person", "years", "points", "enabled"] df
+                    unicodeNames <- Pl.dataFrameSetColumnNames ["名前", "年齢", "café", "有効"] df
+                    shortNames <- Pl.dataFrameSetColumnNames ["only", "two"] df
+                    duplicateNames <- Pl.dataFrameSetColumnNames ["person", "person", "points", "enabled"] df
+                    case (selected, dropped, renamed, setNames, unicodeNames) of
+                        (Right selectedDf, Right droppedDf, Right renamedDf, Right setNamesDf, Right unicodeDf) -> do
                             Pl.shape selectedDf `shouldReturn` Right (3, 2)
                             selectedSchema <- Pl.schema selectedDf
                             fmap (map Pl.fieldName) selectedSchema `shouldBe` Right ["name", "age"]
@@ -463,9 +467,21 @@ main = hspec $ do
                             renamedSchema <- Pl.schema renamedDf
                             fmap (map Pl.fieldName) renamedSchema `shouldBe` Right ["name", "years", "score", "active"]
                             Pl.column @Int64 renamedDf "years" `shouldReturn` Right (V.fromList [Just 34, Nothing, Just 29])
-                        (Left err, _, _) -> expectationFailure (show err)
-                        (_, Left err, _) -> expectationFailure (show err)
-                        (_, _, Left err) -> expectationFailure (show err)
+                            setSchema <- Pl.schema setNamesDf
+                            fmap (map Pl.fieldName) setSchema `shouldBe` Right ["person", "years", "points", "enabled"]
+                            Pl.column @T.Text setNamesDf "person" `shouldReturn` Right (V.fromList [Just "Alice", Just "Bob", Just "Carol"])
+                            unicodeSchema <- Pl.schema unicodeDf
+                            fmap (map Pl.fieldName) unicodeSchema `shouldBe` Right ["名前", "年齢", "café", "有効"]
+                            Pl.column @T.Text unicodeDf "名前" `shouldReturn` Right (V.fromList [Just "Alice", Just "Bob", Just "Carol"])
+                            originalSchema <- Pl.schema df
+                            fmap (map Pl.fieldName) originalSchema `shouldBe` Right ["name", "age", "score", "active"]
+                        (Left err, _, _, _, _) -> expectationFailure (show err)
+                        (_, Left err, _, _, _) -> expectationFailure (show err)
+                        (_, _, Left err, _, _) -> expectationFailure (show err)
+                        (_, _, _, Left err, _) -> expectationFailure (show err)
+                        (_, _, _, _, Left err) -> expectationFailure (show err)
+                    expectPolarsFailure shortNames
+                    expectPolarsFailure duplicateNames
 
         it "slices, reverses, drops nulls, and counts nulls in eager DataFrames" $ do
             result <- Pl.readCsv valuesCsv
