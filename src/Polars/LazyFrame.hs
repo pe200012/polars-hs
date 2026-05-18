@@ -12,6 +12,7 @@ Schema helpers resolve lazy logical-plan metadata without materializing frames.
 module Polars.LazyFrame
     ( CsvReadOptions (..)
     , LazyFrame
+    , LazyExecutionEngine (..)
     , LazyFrameExplodeOptions (..)
     , LazyFrameTopKOptions (..)
     , LazyFrameUnpivotOptions (..)
@@ -22,7 +23,9 @@ module Polars.LazyFrame
     , UniqueOptions (..)
     , cache
     , collect
+    , collectStreaming
     , collectSchema
+    , collectWithEngine
     , defaultCsvReadOptions
     , defaultLazyFrameExplodeOptions
     , defaultLazyFrameTopKOptions
@@ -105,6 +108,7 @@ import Polars.Internal.Raw
     , RawLazyFrame
     , phs_lazyframe_collect
     , phs_lazyframe_collect_schema
+    , phs_lazyframe_collect_with_engine
     , phs_lazyframe_cache
     , phs_lazyframe_clear
     , phs_lazyframe_describe_plan
@@ -229,6 +233,14 @@ defaultLazyFrameUnpivotOptions =
         , lazyFrameUnpivotValueName = Nothing
         }
 
+-- | Execution engine used to materialize a lazy query.
+data LazyExecutionEngine
+    = LazyAuto
+    | LazyStreaming
+    | LazyInMemory
+    | LazyGpu
+    deriving stock (Eq, Show)
+
 scanCsv :: FilePath -> IO (Either PolarsError LazyFrame)
 scanCsv = scanCsvWith defaultCsvReadOptions
 
@@ -282,6 +294,15 @@ scanParquetWith options path =
 
 collect :: LazyFrame -> IO (Either PolarsError DataFrame)
 collect lf = withLazyFrame lf $ \ptr -> dataframeOut (phs_lazyframe_collect ptr)
+
+-- | Collect a lazy query with a specific Polars execution engine.
+collectWithEngine :: LazyExecutionEngine -> LazyFrame -> IO (Either PolarsError DataFrame)
+collectWithEngine engine lf = withLazyFrame lf $ \ptr ->
+    dataframeOut (phs_lazyframe_collect_with_engine ptr (lazyExecutionEngineCode engine))
+
+-- | Collect a lazy query with the Polars streaming engine.
+collectStreaming :: LazyFrame -> IO (Either PolarsError DataFrame)
+collectStreaming = collectWithEngine LazyStreaming
 
 -- | Resolve the schema of the current lazy logical plan.
 collectSchema :: LazyFrame -> IO (Either PolarsError [Field])
@@ -687,6 +708,12 @@ validateLazyFrameTopKOptions label options count = do
 boolToWord8 :: Bool -> Word8
 boolToWord8 False = 0
 boolToWord8 True = 1
+
+lazyExecutionEngineCode :: LazyExecutionEngine -> CInt
+lazyExecutionEngineCode LazyAuto = 0
+lazyExecutionEngineCode LazyStreaming = 1
+lazyExecutionEngineCode LazyInMemory = 2
+lazyExecutionEngineCode LazyGpu = 3
 
 optionalNonNegativeWord64 :: Text -> Maybe Int -> Either PolarsError (Bool, Word64)
 optionalNonNegativeWord64 _ Nothing = Right (False, 0)

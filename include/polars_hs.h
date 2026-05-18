@@ -784,6 +784,11 @@ int phs_lazyframe_collect(const struct phs_lazyframe *lazyframe,
                           struct phs_dataframe **out,
                           struct phs_error **err);
 
+int phs_lazyframe_collect_with_engine(const struct phs_lazyframe *lazyframe,
+                                      int engine,
+                                      struct phs_dataframe **out,
+                                      struct phs_error **err);
+
 int phs_lazyframe_collect_schema(const struct phs_lazyframe *lazyframe,
                                  struct phs_bytes **out,
                                  struct phs_error **err);

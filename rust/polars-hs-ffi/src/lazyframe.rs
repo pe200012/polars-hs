@@ -91,6 +91,18 @@ fn apply_optimizer_toggle(lf: LazyFrame, optimization: c_int, toggle: bool) -> P
     }
 }
 
+fn engine_from_code(code: c_int) -> PhsResult<Engine> {
+    match code {
+        0 => Ok(Engine::Auto),
+        1 => Ok(Engine::Streaming),
+        2 => Ok(Engine::InMemory),
+        3 => Ok(Engine::Gpu),
+        other => Err(PhsError::invalid_argument(format!(
+            "unknown lazy execution engine code {other}"
+        ))),
+    }
+}
+
 fn join_type_from_code(code: c_int) -> PhsResult<JoinType> {
     match code {
         0 => Ok(JoinType::Inner),
@@ -330,6 +342,23 @@ pub unsafe extern "C" fn phs_lazyframe_collect(
         let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
         let df = lf.collect()?;
         *out = dataframe_into_raw(df);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_collect_with_engine(
+    lazyframe: *const phs_lazyframe,
+    engine: c_int,
+    out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        let engine = engine_from_code(engine)?;
+        *out = dataframe_into_raw(lf.collect_with_engine(engine)?);
         Ok(())
     })
 }
@@ -1364,6 +1393,61 @@ mod tests {
             crate::handles::phs_lazyframe_free(filtered);
             crate::handles::phs_lazyframe_free(no_predicate);
             crate::handles::phs_lazyframe_free(without);
+        }
+    }
+
+    #[test]
+    fn lazy_collect_with_engine_selects_execution_engine() {
+        let path = fixture_path();
+        let mut lf0 = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(unsafe { phs_scan_csv(path.as_ptr(), &mut lf0, &mut err) }, PHS_OK);
+
+        let age = std::ffi::CString::new("age").unwrap();
+        let mut age_expr = ptr::null_mut();
+        let mut lit_expr = ptr::null_mut();
+        let mut pred_expr = ptr::null_mut();
+        assert_eq!(unsafe { crate::expr::phs_expr_col(age.as_ptr(), &mut age_expr, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::expr::phs_expr_lit_int(30, &mut lit_expr, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::expr::phs_expr_binary(2, age_expr, lit_expr, &mut pred_expr, &mut err) }, PHS_OK);
+
+        let mut filtered = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_filter(lf0, pred_expr, &mut filtered, &mut err) }, PHS_OK);
+
+        for code in 0..=3 {
+            let mut df = ptr::null_mut();
+            assert_eq!(
+                unsafe { phs_lazyframe_collect_with_engine(filtered, code, &mut df, &mut err) },
+                PHS_OK
+            );
+            assert_eq!(unsafe { crate::handles::dataframe_ref(df) }.unwrap().value.shape(), (2, 2));
+            unsafe { crate::handles::phs_dataframe_free(df) };
+        }
+
+        let mut df = ptr::null_mut();
+        let status = unsafe { phs_lazyframe_collect_with_engine(filtered, 99, &mut df, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "unknown lazy execution engine code 99");
+        err = ptr::null_mut();
+
+        let status = unsafe { phs_lazyframe_collect_with_engine(ptr::null(), 1, &mut df, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "lazyframe pointer was null");
+        err = ptr::null_mut();
+
+        let status = unsafe { phs_lazyframe_collect_with_engine(filtered, 1, ptr::null_mut(), &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "out pointer was null");
+
+        unsafe {
+            crate::handles::phs_expr_free(age_expr);
+            crate::handles::phs_expr_free(lit_expr);
+            crate::handles::phs_expr_free(pred_expr);
+            crate::handles::phs_lazyframe_free(lf0);
+            crate::handles::phs_lazyframe_free(filtered);
         }
     }
 

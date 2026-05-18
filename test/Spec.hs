@@ -2007,6 +2007,30 @@ main = hspec $ do
                                 Left err -> expectationFailure (show err)
                                 Right df -> Pl.shape df `shouldReturn` Right (3, 2)
 
+        it "collects lazy frames with explicit execution engines" $ do
+            scanResult <- Pl.scanCsv fixtureCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    filtered <- Pl.filter (Pl.col "age" Pl..> Pl.litInt 30) lf0
+                    case filtered of
+                        Left err -> expectationFailure (show err)
+                        Right lf1 -> do
+                            streamed <- Pl.collectWithEngine Pl.LazyStreaming lf1
+                            auto <- Pl.collectWithEngine Pl.LazyAuto lf1
+                            inMemory <- Pl.collectWithEngine Pl.LazyInMemory lf1
+                            convenience <- Pl.collectStreaming lf1
+                            case (streamed, auto, inMemory, convenience) of
+                                (Right streamedDf, Right autoDf, Right inMemoryDf, Right convenienceDf) -> do
+                                    Pl.shape streamedDf `shouldReturn` Right (2, 2)
+                                    Pl.shape autoDf `shouldReturn` Right (2, 2)
+                                    Pl.shape inMemoryDf `shouldReturn` Right (2, 2)
+                                    Pl.shape convenienceDf `shouldReturn` Right (2, 2)
+                                (Left err, _, _, _) -> expectationFailure (show err)
+                                (_, Left err, _, _) -> expectationFailure (show err)
+                                (_, _, Left err, _) -> expectationFailure (show err)
+                                (_, _, _, Left err) -> expectationFailure (show err)
+
         it "profiles lazy execution and returns result and timing frames" $ do
             scanResult <- Pl.scanCsv salesCsv
             case scanResult of
