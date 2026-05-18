@@ -402,6 +402,26 @@ pub unsafe extern "C" fn phs_lazyframe_with_columns(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_with_row_index(
+    lazyframe: *const phs_lazyframe,
+    name: *const c_char,
+    has_offset: bool,
+    offset: u64,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        let name = PlSmallStr::from_str(unsafe { c_str_to_str(name, "name") }?);
+        let offset = if has_offset { Some(idx_size_from_u64(offset, "row index offset")?) } else { None };
+        *out = lazyframe_into_raw(lf.with_row_index(name, offset));
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_lazyframe_sort(
     lazyframe: *const phs_lazyframe,
     names: *const *const c_char,
@@ -1372,6 +1392,83 @@ mod tests {
             crate::handles::phs_lazyframe_free(lf0);
             crate::handles::phs_lazyframe_free(reversed_lf);
             crate::handles::phs_dataframe_free(reversed_df);
+        }
+    }
+
+    #[test]
+    fn lazy_with_row_index_inserts_index_column() {
+        let path = employees_fixture_path();
+        let mut lf0 = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(unsafe { phs_scan_csv(path.as_ptr(), &mut lf0, &mut err) }, PHS_OK);
+
+        let row_nr = std::ffi::CString::new("row_nr").unwrap();
+        let mut out = ptr::null_mut();
+        let status = unsafe { phs_lazyframe_with_row_index(lf0, row_nr.as_ptr(), true, 5, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let indexed_lf = out;
+        let mut indexed_df = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_collect(indexed_lf, &mut indexed_df, &mut err) }, PHS_OK);
+        let indexed_ref = unsafe { crate::handles::dataframe_ref(indexed_df) }.unwrap();
+        let names: Vec<&str> = indexed_ref.value.get_column_names().into_iter().map(|name| name.as_str()).collect();
+        assert_eq!(names, vec!["row_nr", "id", "name", "department", "salary"]);
+        let row_ids: Vec<Option<IdxSize>> = indexed_ref
+            .value
+            .column("row_nr")
+            .unwrap()
+            .as_materialized_series()
+            .idx()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(row_ids, vec![Some(5), Some(6), Some(7), Some(8)]);
+
+        let status = unsafe { phs_lazyframe_with_row_index(lf0, row_nr.as_ptr(), false, 999, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let default_lf = out;
+        let mut default_df = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_collect(default_lf, &mut default_df, &mut err) }, PHS_OK);
+        let default_ids: Vec<Option<IdxSize>> = unsafe { crate::handles::dataframe_ref(default_df) }
+            .unwrap()
+            .value
+            .column("row_nr")
+            .unwrap()
+            .as_materialized_series()
+            .idx()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(default_ids, vec![Some(0), Some(1), Some(2), Some(3)]);
+
+        let status = unsafe { phs_lazyframe_with_row_index(ptr::null(), row_nr.as_ptr(), false, 0, &mut out, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "lazyframe pointer was null");
+        err = ptr::null_mut();
+
+        let status = unsafe { phs_lazyframe_with_row_index(lf0, ptr::null(), false, 0, &mut out, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "name pointer was null");
+        err = ptr::null_mut();
+
+        let status = unsafe { phs_lazyframe_with_row_index(lf0, row_nr.as_ptr(), true, u64::MAX, &mut out, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "row index offset exceeds Polars index size");
+        err = ptr::null_mut();
+
+        let status = unsafe { phs_lazyframe_with_row_index(lf0, row_nr.as_ptr(), false, 0, ptr::null_mut(), &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "out pointer was null");
+
+        unsafe {
+            crate::handles::phs_lazyframe_free(lf0);
+            crate::handles::phs_lazyframe_free(indexed_lf);
+            crate::handles::phs_lazyframe_free(default_lf);
+            crate::handles::phs_dataframe_free(indexed_df);
+            crate::handles::phs_dataframe_free(default_df);
         }
     }
 

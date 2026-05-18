@@ -50,6 +50,7 @@ module Polars.LazyFrame
     , bottomK
     , unique
     , withColumns
+    , withRowIndex
     ) where
 
 import Prelude hiding (filter, reverse)
@@ -99,6 +100,7 @@ import Polars.Internal.Raw
     , phs_lazyframe_top_k
     , phs_lazyframe_unique
     , phs_lazyframe_with_columns
+    , phs_lazyframe_with_row_index
     , phs_scan_csv_options
     , phs_scan_parquet_options
     )
@@ -248,6 +250,14 @@ select exprs lf = withLazyFrame lf $ \lfPtr ->
 withColumns :: [Expr] -> LazyFrame -> IO (Either PolarsError LazyFrame)
 withColumns exprs lf = withLazyFrame lf $ \lfPtr ->
     withCompiledExprs exprs $ \exprArray len -> lazyFrameOut (phs_lazyframe_with_columns lfPtr exprArray len)
+
+withRowIndex :: Text -> Maybe Int -> LazyFrame -> IO (Either PolarsError LazyFrame)
+withRowIndex name offset lf = case optionalNonNegativeWord64 "withRowIndex offset" offset of
+    Left err -> pure (Left err)
+    Right (hasOffset, offsetValue) ->
+        withLazyFrame lf $ \lfPtr ->
+            withTextCString name $ \namePtr ->
+                lazyFrameOut (phs_lazyframe_with_row_index lfPtr namePtr (toCBool hasOffset) offsetValue)
 
 dropColumns :: [Text] -> LazyFrame -> IO (Either PolarsError LazyFrame)
 dropColumns [] _ = pure (Left (invalidArgument "dropColumns requires at least one column name"))

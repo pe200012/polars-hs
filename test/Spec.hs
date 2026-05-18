@@ -2117,6 +2117,32 @@ main = hspec $ do
                                     Pl.column @T.Text df "name" `shouldReturn` Right (V.fromList [Just "Carol", Just "Bob", Just "Alice"])
                                     Pl.column @Int64 df "age" `shouldReturn` Right (V.fromList [Just 29, Nothing, Just 34])
 
+        it "adds lazy row index columns" $ do
+            scanResult <- Pl.scanCsv valuesCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    indexed <- Pl.withRowIndex "row_nr" (Just 10) lf0
+                    defaultIndexed <- Pl.withRowIndex "row_nr" Nothing lf0
+                    duplicate <- Pl.withRowIndex "name" Nothing lf0
+                    negative <- Pl.withRowIndex "row_nr" (Just (-1)) lf0
+                    case (indexed, defaultIndexed) of
+                        (Right indexedLf, Right defaultLf) -> do
+                            indexedDf <- Pl.collect indexedLf
+                            defaultDf <- Pl.collect defaultLf
+                            case (indexedDf, defaultDf) of
+                                (Right indexedDf', Right defaultDf') -> do
+                                    fields <- Pl.schema indexedDf'
+                                    fmap (map Pl.fieldName) fields `shouldBe` Right ["row_nr", "name", "age", "score", "active"]
+                                    Pl.column @Word32 indexedDf' "row_nr" `shouldReturn` Right (V.fromList [Just 10, Just 11, Just 12])
+                                    Pl.column @Word32 defaultDf' "row_nr" `shouldReturn` Right (V.fromList [Just 0, Just 1, Just 2])
+                                (Left err, _) -> expectationFailure (show err)
+                                (_, Left err) -> expectationFailure (show err)
+                        (Left err, _) -> expectationFailure (show err)
+                        (_, Left err) -> expectationFailure (show err)
+                    expectLazyCollectPolarsFailure duplicate
+                    expectInvalidArgumentMessage "withRowIndex offset must be non-negative" negative
+
         it "validates lazy top and bottom row arguments" $ do
             scanResult <- Pl.scanCsv employeesCsv
             case scanResult of

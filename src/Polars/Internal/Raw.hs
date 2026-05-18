@@ -160,6 +160,7 @@ module Polars.Internal.Raw
     , phs_lazyframe_top_k
     , phs_lazyframe_unique
     , phs_lazyframe_with_columns
+    , phs_lazyframe_with_row_index
     , phs_read_csv
     , phs_read_csv_options
     , phs_read_ipc_file
@@ -748,6 +749,9 @@ foreign import ccall unsafe "phs_lazyframe_select"
 
 foreign import ccall unsafe "phs_lazyframe_with_columns"
     phs_lazyframe_with_columns :: Ptr RawLazyFrame -> Ptr (Ptr RawExpr) -> CSize -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_lazyframe_with_row_index"
+    phs_lazyframe_with_row_index :: Ptr RawLazyFrame -> CString -> CBool -> Word64 -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_lazyframe_sort"
     phs_lazyframe_sort :: Ptr RawLazyFrame -> Ptr CString -> CSize -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt

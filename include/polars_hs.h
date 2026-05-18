@@ -811,6 +811,13 @@ int phs_lazyframe_with_columns(const struct phs_lazyframe *lazyframe,
                                struct phs_lazyframe **out,
                                struct phs_error **err);
 
+int phs_lazyframe_with_row_index(const struct phs_lazyframe *lazyframe,
+                                 const char *name,
+                                 bool has_offset,
+                                 uint64_t offset,
+                                 struct phs_lazyframe **out,
+                                 struct phs_error **err);
+
 int phs_lazyframe_sort(const struct phs_lazyframe *lazyframe,
                        const char *const *names,
                        uintptr_t len,
