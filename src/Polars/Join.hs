@@ -10,6 +10,10 @@ call the Rust adapter once, and return a managed LazyFrame.
 -}
 module Polars.Join
     ( antiJoin
+    , AsofJoinOptions (..)
+    , AsofStrategy (..)
+    , AsofTolerance (..)
+    , asofJoin
     , crossJoin
     , ExtendedJoinOptions (..)
     , JoinOptions (..)
@@ -18,6 +22,7 @@ module Polars.Join
     , JoinType (..)
     , JoinValidation (..)
     , JoinWhereOptions (..)
+    , defaultAsofJoinOptions
     , defaultExtendedJoinOptions
     , defaultJoinOptions
     , defaultJoinWhereOptions
@@ -31,19 +36,21 @@ module Polars.Join
     , semiJoin
     ) where
 
+import Data.Int (Int64)
 import Data.Text (Text)
 import Foreign.C.String (CString)
-import Foreign.C.Types (CBool (..), CInt)
+import Foreign.C.Types (CBool (..), CInt, CLLong (..), CSize)
+import Foreign.Marshal.Array (withArray)
 import Foreign.Marshal.Alloc (alloca)
 import Foreign.Ptr (Ptr, nullPtr)
-import Foreign.Storable (peek, poke)
+import Foreign.Storable (peek, peekElemOff, poke)
 
 import Polars.Error (PolarsError (..), PolarsErrorCode (InvalidArgument))
 import Polars.Expr (Expr)
 import Polars.Internal.CString (withTextCString)
 import Polars.Internal.Expr (withCompiledExprs)
 import Polars.Internal.Managed (LazyFrame, mkLazyFrame, withLazyFrame)
-import Polars.Internal.Raw (RawError, RawLazyFrame, phs_lazyframe_join, phs_lazyframe_join_ex, phs_lazyframe_join_where)
+import Polars.Internal.Raw (RawError, RawLazyFrame, phs_lazyframe_join, phs_lazyframe_join_asof, phs_lazyframe_join_ex, phs_lazyframe_join_where)
 import Polars.Internal.Result (consumeError, nullPointerError)
 
 -- | Join variants supported by the core join MVP.
@@ -131,12 +138,60 @@ data JoinWhereOptions = JoinWhereOptions
     }
     deriving stock (Eq, Show)
 
+-- | Direction used to match nearest asof join keys.
+data AsofStrategy
+    = AsofBackward
+    | AsofForward
+    | AsofNearest
+    deriving stock (Eq, Show)
+
+-- | Asof join tolerance, either in physical key units or as a Polars duration string.
+data AsofTolerance
+    = AsofToleranceInt !Int64
+    | AsofToleranceDuration !Text
+    deriving stock (Eq, Show)
+
+-- | Options for lazy asof joins.
+data AsofJoinOptions = AsofJoinOptions
+    { asofLeftOn :: !Expr
+    , asofRightOn :: !Expr
+    , asofLeftBy :: ![Text]
+    , asofRightBy :: ![Text]
+    , asofStrategy :: !AsofStrategy
+    , asofTolerance :: !(Maybe AsofTolerance)
+    , asofAllowEqual :: !Bool
+    , asofCheckSortedness :: !Bool
+    , asofSuffix :: !(Maybe Text)
+    , asofCoalesce :: !JoinCoalesce
+    , asofAllowParallel :: !Bool
+    , asofForceParallel :: !Bool
+    }
+    deriving stock (Eq, Show)
+
 defaultJoinWhereOptions :: JoinWhereOptions
 defaultJoinWhereOptions =
     JoinWhereOptions
         { joinWhereSuffix = Nothing
         , joinWhereAllowParallel = True
         , joinWhereForceParallel = False
+        }
+
+-- | Build default asof join options from left and right key expressions.
+defaultAsofJoinOptions :: Expr -> Expr -> AsofJoinOptions
+defaultAsofJoinOptions leftKey rightKey =
+    AsofJoinOptions
+        { asofLeftOn = leftKey
+        , asofRightOn = rightKey
+        , asofLeftBy = []
+        , asofRightBy = []
+        , asofStrategy = AsofBackward
+        , asofTolerance = Nothing
+        , asofAllowEqual = True
+        , asofCheckSortedness = True
+        , asofSuffix = Nothing
+        , asofCoalesce = JoinCoalesceDefault
+        , asofAllowParallel = True
+        , asofForceParallel = False
         }
 
 joinWith :: JoinOptions -> LazyFrame -> LazyFrame -> IO (Either PolarsError LazyFrame)
@@ -211,6 +266,43 @@ joinWhere options predicates leftFrame rightFrame =
                             (toCBool (joinWhereForceParallel options))
                         )
 
+-- | Join two lazy frames by nearest sorted key, optionally partitioned by equality columns.
+asofJoin :: AsofJoinOptions -> LazyFrame -> LazyFrame -> IO (Either PolarsError LazyFrame)
+asofJoin options leftFrame rightFrame
+    | length (asofLeftBy options) /= length (asofRightBy options) =
+        pure (Left (invalidArgument "asof by column counts must match"))
+    | otherwise =
+        withLazyFrame leftFrame $ \leftPtr ->
+            withLazyFrame rightFrame $ \rightPtr ->
+                withCompiledExprs [asofLeftOn options, asofRightOn options] $ \onArray _onLen -> do
+                    leftOnPtr <- peekElemOff onArray 0
+                    rightOnPtr <- peekElemOff onArray 1
+                    withCStringList (asofLeftBy options) $ \leftByPtr leftByLen ->
+                        withCStringList (asofRightBy options) $ \rightByPtr rightByLen ->
+                            withAsofTolerance (asofTolerance options) $ \hasToleranceInt toleranceInt toleranceDurationPtr ->
+                                withOptionalTextCString (asofSuffix options) $ \suffixPtr ->
+                                    lazyFrameOut
+                                        ( phs_lazyframe_join_asof
+                                            leftPtr
+                                            rightPtr
+                                            leftOnPtr
+                                            rightOnPtr
+                                            leftByPtr
+                                            leftByLen
+                                            rightByPtr
+                                            rightByLen
+                                            (asofStrategyCode (asofStrategy options))
+                                            hasToleranceInt
+                                            toleranceInt
+                                            toleranceDurationPtr
+                                            (toCBool (asofAllowEqual options))
+                                            (toCBool (asofCheckSortedness options))
+                                            suffixPtr
+                                            (joinCoalesceCode (asofCoalesce options))
+                                            (toCBool (asofAllowParallel options))
+                                            (toCBool (asofForceParallel options))
+                                        )
+
 innerJoin :: [Expr] -> [Expr] -> LazyFrame -> LazyFrame -> IO (Either PolarsError LazyFrame)
 innerJoin = joinUsing JoinInner
 
@@ -267,6 +359,19 @@ withOptionalTextCString :: Maybe Text -> (CString -> IO a) -> IO a
 withOptionalTextCString Nothing action = action nullPtr
 withOptionalTextCString (Just value) action = withTextCString value action
 
+withCStringList :: [Text] -> (Ptr CString -> CSize -> IO a) -> IO a
+withCStringList values action = go values []
+  where
+    go [] acc = withArray (reverse acc) $ \ptr -> action ptr (fromIntegral (length acc))
+    go (value : rest) acc = withTextCString value $ \ptr -> go rest (ptr : acc)
+
+withAsofTolerance :: Maybe AsofTolerance -> (CBool -> CLLong -> CString -> IO a) -> IO a
+withAsofTolerance Nothing action = action (toCBool False) 0 nullPtr
+withAsofTolerance (Just (AsofToleranceInt value)) action =
+    action (toCBool True) (fromIntegral value) nullPtr
+withAsofTolerance (Just (AsofToleranceDuration value)) action =
+    withTextCString value $ \ptr -> action (toCBool False) 0 ptr
+
 joinTypeCode :: JoinType -> CInt
 joinTypeCode JoinInner = 0
 joinTypeCode JoinLeft = 1
@@ -293,6 +398,11 @@ joinMaintainOrderCode JoinMaintainOrderLeft = 1
 joinMaintainOrderCode JoinMaintainOrderRight = 2
 joinMaintainOrderCode JoinMaintainOrderLeftRight = 3
 joinMaintainOrderCode JoinMaintainOrderRightLeft = 4
+
+asofStrategyCode :: AsofStrategy -> CInt
+asofStrategyCode AsofBackward = 0
+asofStrategyCode AsofForward = 1
+asofStrategyCode AsofNearest = 2
 
 toCBool :: Bool -> CBool
 toCBool value = CBool (if value then 1 else 0)

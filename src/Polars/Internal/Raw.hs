@@ -160,6 +160,7 @@ module Polars.Internal.Raw
     , phs_lazyframe_group_by_agg
     , phs_lazyframe_head
     , phs_lazyframe_join
+    , phs_lazyframe_join_asof
     , phs_lazyframe_join_ex
     , phs_lazyframe_join_where
     , phs_lazyframe_last
@@ -975,6 +976,30 @@ foreign import ccall unsafe "phs_lazyframe_join_where"
         Ptr (Ptr RawExpr) ->
         CSize ->
         CString ->
+        CBool ->
+        CBool ->
+        Ptr (Ptr RawLazyFrame) ->
+        Ptr (Ptr RawError) ->
+        IO CInt
+
+foreign import ccall unsafe "phs_lazyframe_join_asof"
+    phs_lazyframe_join_asof ::
+        Ptr RawLazyFrame ->
+        Ptr RawLazyFrame ->
+        Ptr RawExpr ->
+        Ptr RawExpr ->
+        Ptr CString ->
+        CSize ->
+        Ptr CString ->
+        CSize ->
+        CInt ->
+        CBool ->
+        CLLong ->
+        CString ->
+        CBool ->
+        CBool ->
+        CString ->
+        CInt ->
         CBool ->
         CBool ->
         Ptr (Ptr RawLazyFrame) ->

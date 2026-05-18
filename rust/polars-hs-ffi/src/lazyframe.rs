@@ -228,6 +228,17 @@ fn join_maintain_order_from_code(code: c_int) -> PhsResult<MaintainOrderJoin> {
     }
 }
 
+fn asof_strategy_from_code(code: c_int) -> PhsResult<AsofStrategy> {
+    match code {
+        0 => Ok(AsofStrategy::Backward),
+        1 => Ok(AsofStrategy::Forward),
+        2 => Ok(AsofStrategy::Nearest),
+        _ => Err(PhsError::invalid_argument(format!(
+            "unknown asof strategy code {code}"
+        ))),
+    }
+}
+
 fn keep_strategy_from_code(code: c_int) -> PhsResult<UniqueKeepStrategy> {
     match code {
         0 => Ok(UniqueKeepStrategy::First),
@@ -244,6 +255,16 @@ unsafe fn optional_suffix(suffix: *const c_char) -> PhsResult<Option<PlSmallStr>
     } else {
         let suffix = unsafe { c_str_to_str(suffix, "suffix") }?;
         Ok(Some(PlSmallStr::from_str(suffix)))
+    }
+}
+
+unsafe fn optional_small_str(value: *const c_char, label: &str) -> PhsResult<Option<PlSmallStr>> {
+    if value.is_null() {
+        Ok(None)
+    } else {
+        Ok(Some(PlSmallStr::from_str(unsafe {
+            c_str_to_str(value, label)?
+        })))
     }
 }
 
@@ -1563,6 +1584,77 @@ pub unsafe extern "C" fn phs_lazyframe_join_where(
     })
 }
 
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_join_asof(
+    left: *const phs_lazyframe,
+    right: *const phs_lazyframe,
+    left_on: *const phs_expr,
+    right_on: *const phs_expr,
+    left_by: *const *const c_char,
+    left_by_len: usize,
+    right_by: *const *const c_char,
+    right_by_len: usize,
+    strategy: c_int,
+    has_tolerance_int: bool,
+    tolerance_int: i64,
+    tolerance_duration: *const c_char,
+    allow_eq: bool,
+    check_sortedness: bool,
+    suffix: *const c_char,
+    coalesce: c_int,
+    allow_parallel: bool,
+    force_parallel: bool,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        if left_by_len != right_by_len {
+            return Err(PhsError::invalid_argument("asof by column counts must match"));
+        }
+        if has_tolerance_int && !tolerance_duration.is_null() {
+            return Err(PhsError::invalid_argument(
+                "asof tolerance accepts one representation",
+            ));
+        }
+
+        let left_frame = unsafe { lazyframe_ref(left) }?.value.clone();
+        let right_frame = unsafe { lazyframe_ref(right) }?.value.clone();
+        let left_on = unsafe { expr_ref(left_on) }?.value.clone();
+        let right_on = unsafe { expr_ref(right_on) }?.value.clone();
+        let left_by = unsafe { name_vec(left_by, left_by_len) }?;
+        let right_by = unsafe { name_vec(right_by, right_by_len) }?;
+        let tolerance = has_tolerance_int.then_some(Scalar::from(tolerance_int));
+        let tolerance_str = unsafe { optional_small_str(tolerance_duration, "tolerance_duration") }?;
+        let suffix = unsafe { optional_suffix(suffix) }?;
+        let options = AsOfOptions {
+            strategy: asof_strategy_from_code(strategy)?,
+            tolerance,
+            tolerance_str,
+            left_by: (!left_by.is_empty()).then_some(left_by),
+            right_by: (!right_by.is_empty()).then_some(right_by),
+            allow_eq,
+            check_sortedness,
+        };
+
+        let mut builder = left_frame
+            .join_builder()
+            .with(right_frame)
+            .left_on([left_on])
+            .right_on([right_on])
+            .how(JoinType::AsOf(Box::new(options)))
+            .coalesce(join_coalesce_from_code(coalesce)?)
+            .allow_parallel(allow_parallel)
+            .force_parallel(force_parallel);
+        if let Some(suffix) = suffix {
+            builder = builder.suffix(suffix);
+        }
+        *out = lazyframe_into_raw(builder.finish());
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1747,6 +1839,32 @@ mod tests {
         let window_start = Column::new(PlSmallStr::from_static("window_start"), [50_i64, 0, 65]);
         let window_end = Column::new(PlSmallStr::from_static("window_end"), [120_i64, 50, 80]);
         lazyframe_into_raw(DataFrame::new_infer_height(vec![offer, cost, window_start, window_end]).unwrap().lazy())
+    }
+
+    fn asof_trades_lazyframe() -> *mut phs_lazyframe {
+        let trade_ts = Column::new(PlSmallStr::from_static("trade_ts"), [2_i64, 5, 8]);
+        let trade = Column::new(PlSmallStr::from_static("trade"), [20_i64, 50, 80]);
+        lazyframe_into_raw(DataFrame::new_infer_height(vec![trade_ts, trade]).unwrap().lazy())
+    }
+
+    fn asof_quotes_lazyframe() -> *mut phs_lazyframe {
+        let quote_ts = Column::new(PlSmallStr::from_static("quote_ts"), [1_i64, 4, 9]);
+        let quote = Column::new(PlSmallStr::from_static("quote"), [10_i64, 40, 90]);
+        lazyframe_into_raw(DataFrame::new_infer_height(vec![quote_ts, quote]).unwrap().lazy())
+    }
+
+    fn asof_grouped_trades_lazyframe() -> *mut phs_lazyframe {
+        let symbol = Column::new(PlSmallStr::from_static("symbol"), ["a", "a", "b", "b"]);
+        let trade_ts = Column::new(PlSmallStr::from_static("trade_ts"), [2_i64, 5, 2, 6]);
+        let trade = Column::new(PlSmallStr::from_static("trade"), [20_i64, 50, 30, 60]);
+        lazyframe_into_raw(DataFrame::new_infer_height(vec![symbol, trade_ts, trade]).unwrap().lazy())
+    }
+
+    fn asof_grouped_quotes_lazyframe() -> *mut phs_lazyframe {
+        let symbol = Column::new(PlSmallStr::from_static("symbol"), ["a", "a", "b", "b"]);
+        let quote_ts = Column::new(PlSmallStr::from_static("quote_ts"), [1_i64, 4, 3, 5]);
+        let quote = Column::new(PlSmallStr::from_static("quote"), [100_i64, 110, 200, 210]);
+        lazyframe_into_raw(DataFrame::new_infer_height(vec![symbol, quote_ts, quote]).unwrap().lazy())
     }
 
     fn shift_lazyframe() -> *mut phs_lazyframe {
@@ -3128,6 +3246,180 @@ mod tests {
             crate::handles::phs_lazyframe_free(left);
             crate::handles::phs_lazyframe_free(right);
             crate::handles::phs_lazyframe_free(joined);
+        }
+    }
+
+    #[test]
+    fn lazy_join_asof_matches_nearest_sorted_keys() {
+        let trades = asof_trades_lazyframe();
+        let quotes = asof_quotes_lazyframe();
+        let mut err = ptr::null_mut();
+
+        let trade_ts = std::ffi::CString::new("trade_ts").unwrap();
+        let quote_ts = std::ffi::CString::new("quote_ts").unwrap();
+        let mut left_on = ptr::null_mut();
+        let mut right_on = ptr::null_mut();
+        assert_eq!(unsafe { crate::expr::phs_expr_col(trade_ts.as_ptr(), &mut left_on, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::expr::phs_expr_col(quote_ts.as_ptr(), &mut right_on, &mut err) }, PHS_OK);
+
+        let mut joined = ptr::null_mut();
+        assert_eq!(
+            unsafe {
+                phs_lazyframe_join_asof(
+                    trades,
+                    quotes,
+                    left_on,
+                    right_on,
+                    ptr::null(),
+                    0,
+                    ptr::null(),
+                    0,
+                    0,
+                    true,
+                    1,
+                    ptr::null(),
+                    true,
+                    true,
+                    ptr::null(),
+                    0,
+                    true,
+                    false,
+                    &mut joined,
+                    &mut err,
+                )
+            },
+            PHS_OK
+        );
+        let mut df = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_collect(joined, &mut df, &mut err) }, PHS_OK);
+        let quotes_backward: Vec<Option<i64>> = unsafe { crate::handles::dataframe_ref(df) }
+            .unwrap()
+            .value
+            .column("quote")
+            .unwrap()
+            .as_materialized_series()
+            .i64()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(quotes_backward, vec![Some(10), Some(40), None]);
+        unsafe { crate::handles::phs_dataframe_free(df) };
+
+        let grouped_trades = asof_grouped_trades_lazyframe();
+        let grouped_quotes = asof_grouped_quotes_lazyframe();
+        let symbol = std::ffi::CString::new("symbol").unwrap();
+        let left_by = [symbol.as_ptr()];
+        let right_by = [symbol.as_ptr()];
+        let mut grouped = ptr::null_mut();
+        assert_eq!(
+            unsafe {
+                phs_lazyframe_join_asof(
+                    grouped_trades,
+                    grouped_quotes,
+                    left_on,
+                    right_on,
+                    left_by.as_ptr(),
+                    left_by.len(),
+                    right_by.as_ptr(),
+                    right_by.len(),
+                    0,
+                    false,
+                    0,
+                    ptr::null(),
+                    true,
+                    true,
+                    ptr::null(),
+                    0,
+                    true,
+                    false,
+                    &mut grouped,
+                    &mut err,
+                )
+            },
+            PHS_OK
+        );
+        df = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_collect(grouped, &mut df, &mut err) }, PHS_OK);
+        let quotes_grouped: Vec<Option<i64>> = unsafe { crate::handles::dataframe_ref(df) }
+            .unwrap()
+            .value
+            .column("quote")
+            .unwrap()
+            .as_materialized_series()
+            .i64()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(quotes_grouped, vec![Some(100), Some(110), None, Some(210)]);
+        unsafe { crate::handles::phs_dataframe_free(df) };
+
+        let mut invalid = ptr::null_mut();
+        let status = unsafe {
+            phs_lazyframe_join_asof(
+                trades,
+                quotes,
+                left_on,
+                right_on,
+                left_by.as_ptr(),
+                left_by.len(),
+                ptr::null(),
+                0,
+                0,
+                false,
+                0,
+                ptr::null(),
+                true,
+                true,
+                ptr::null(),
+                0,
+                true,
+                false,
+                &mut invalid,
+                &mut err,
+            )
+        };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "asof by column counts must match");
+        err = ptr::null_mut();
+
+        let status = unsafe {
+            phs_lazyframe_join_asof(
+                trades,
+                quotes,
+                left_on,
+                right_on,
+                ptr::null(),
+                0,
+                ptr::null(),
+                0,
+                99,
+                false,
+                0,
+                ptr::null(),
+                true,
+                true,
+                ptr::null(),
+                0,
+                true,
+                false,
+                &mut invalid,
+                &mut err,
+            )
+        };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "unknown asof strategy code 99");
+
+        unsafe {
+            crate::handles::phs_expr_free(left_on);
+            crate::handles::phs_expr_free(right_on);
+            crate::handles::phs_lazyframe_free(trades);
+            crate::handles::phs_lazyframe_free(quotes);
+            crate::handles::phs_lazyframe_free(joined);
+            crate::handles::phs_lazyframe_free(grouped_trades);
+            crate::handles::phs_lazyframe_free(grouped_quotes);
+            crate::handles::phs_lazyframe_free(grouped);
         }
     }
 

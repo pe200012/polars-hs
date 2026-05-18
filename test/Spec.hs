@@ -4994,6 +4994,63 @@ main = hspec $ do
                         (Left err, _) -> expectationFailure (show err)
                         (_, Left err) -> expectationFailure (show err)
 
+        it "joins lazy frames with asof nearest-key semantics" $
+            withTempFileContent "polars-hs-asof-trades.csv" "trade_ts,trade\n2,20\n5,50\n8,80\n" $ \tradePath ->
+                withTempFileContent "polars-hs-asof-quotes.csv" "quote_ts,quote\n1,10\n4,40\n9,90\n" $ \quotePath ->
+                    withTempFileContent "polars-hs-asof-grouped-trades.csv" "symbol,trade_ts,trade\na,2,20\na,5,50\nb,2,30\nb,6,60\n" $ \groupedTradePath ->
+                        withTempFileContent "polars-hs-asof-grouped-quotes.csv" "symbol,quote_ts,quote\na,1,100\na,4,110\nb,3,200\nb,5,210\n" $ \groupedQuotePath -> do
+                            tradeResult <- Pl.scanCsv tradePath
+                            quoteResult <- Pl.scanCsv quotePath
+                            groupedTradeResult <- Pl.scanCsv groupedTradePath
+                            groupedQuoteResult <- Pl.scanCsv groupedQuotePath
+                            case (tradeResult, quoteResult, groupedTradeResult, groupedQuoteResult) of
+                                (Right trades, Right quotes, Right groupedTrades, Right groupedQuotes) -> do
+                                    let base = Pl.defaultAsofJoinOptions (Pl.col "trade_ts") (Pl.col "quote_ts")
+                                        backward = base {Pl.asofTolerance = Just (Pl.AsofToleranceInt 1)}
+                                        forward = base {Pl.asofStrategy = Pl.AsofForward}
+                                        nearest = base {Pl.asofStrategy = Pl.AsofNearest}
+                                        grouped =
+                                            base
+                                                { Pl.asofLeftBy = ["symbol"]
+                                                , Pl.asofRightBy = ["symbol"]
+                                                }
+                                        invalid =
+                                            base
+                                                { Pl.asofLeftBy = ["symbol"]
+                                                , Pl.asofRightBy = []
+                                                }
+                                    backwardResult <- Pl.asofJoin backward trades quotes
+                                    forwardResult <- Pl.asofJoin forward trades quotes
+                                    nearestResult <- Pl.asofJoin nearest trades quotes
+                                    groupedResult <- Pl.asofJoin grouped groupedTrades groupedQuotes
+                                    invalidResult <- Pl.asofJoin invalid groupedTrades groupedQuotes
+                                    case (backwardResult, forwardResult, nearestResult, groupedResult, invalidResult) of
+                                        (Right backwardLf, Right forwardLf, Right nearestLf, Right groupedLf, Left invalidErr) -> do
+                                            backwardDf <- Pl.collect backwardLf
+                                            forwardDf <- Pl.collect forwardLf
+                                            nearestDf <- Pl.collect nearestLf
+                                            groupedDf <- Pl.collect groupedLf
+                                            case (backwardDf, forwardDf, nearestDf, groupedDf) of
+                                                (Right bDf, Right fDf, Right nDf, Right gDf) -> do
+                                                    Pl.column @Int64 bDf "quote" `shouldReturn` Right (V.fromList [Just 10, Just 40, Nothing])
+                                                    Pl.column @Int64 fDf "quote" `shouldReturn` Right (V.fromList [Just 40, Just 90, Just 90])
+                                                    Pl.column @Int64 nDf "quote" `shouldReturn` Right (V.fromList [Just 10, Just 40, Just 90])
+                                                    Pl.column @Int64 gDf "quote" `shouldReturn` Right (V.fromList [Just 100, Just 110, Nothing, Just 210])
+                                                    Pl.polarsErrorCode invalidErr `shouldBe` Pl.InvalidArgument
+                                                (Left err, _, _, _) -> expectationFailure (show err)
+                                                (_, Left err, _, _) -> expectationFailure (show err)
+                                                (_, _, Left err, _) -> expectationFailure (show err)
+                                                (_, _, _, Left err) -> expectationFailure (show err)
+                                        (Left err, _, _, _, _) -> expectationFailure (show err)
+                                        (_, Left err, _, _, _) -> expectationFailure (show err)
+                                        (_, _, Left err, _, _) -> expectationFailure (show err)
+                                        (_, _, _, Left err, _) -> expectationFailure (show err)
+                                        (_, _, _, _, Right _) -> expectationFailure "expected InvalidArgument for mismatched asof by columns"
+                                (Left err, _, _, _) -> expectationFailure (show err)
+                                (_, Left err, _, _) -> expectationFailure (show err)
+                                (_, _, Left err, _) -> expectationFailure (show err)
+                                (_, _, _, Left err) -> expectationFailure (show err)
+
         it "rejects empty left join keys" $ do
             employeesResult <- Pl.scanCsv employeesCsv
             departmentsResult <- Pl.scanCsv departmentsCsv
