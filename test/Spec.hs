@@ -2100,6 +2100,23 @@ main = hspec $ do
                             expectLazyCollectPolarsFailure missingColumn
                             expectLazyCollectPolarsFailure scalarColumn
 
+        it "reverses lazy row order" $ do
+            scanResult <- Pl.scanCsv valuesCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    reversed <- Pl.reverse lf0
+                    case reversed of
+                        Left err -> expectationFailure (show err)
+                        Right reversedLf -> do
+                            collected <- Pl.collect reversedLf
+                            case collected of
+                                Left err -> expectationFailure (show err)
+                                Right df -> do
+                                    Pl.shape df `shouldReturn` Right (3, 4)
+                                    Pl.column @T.Text df "name" `shouldReturn` Right (V.fromList [Just "Carol", Just "Bob", Just "Alice"])
+                                    Pl.column @Int64 df "age" `shouldReturn` Right (V.fromList [Just 29, Nothing, Just 34])
+
         it "validates lazy top and bottom row arguments" $ do
             scanResult <- Pl.scanCsv employeesCsv
             case scanResult of

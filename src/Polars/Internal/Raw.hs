@@ -152,6 +152,7 @@ module Polars.Internal.Raw
     , phs_lazyframe_null_count
     , phs_lazyframe_profile
     , phs_lazyframe_rename
+    , phs_lazyframe_reverse
     , phs_lazyframe_select
     , phs_lazyframe_slice
     , phs_lazyframe_sort
@@ -790,6 +791,9 @@ foreign import ccall safe "phs_lazyframe_explode"
         Ptr (Ptr RawLazyFrame) ->
         Ptr (Ptr RawError) ->
         IO CInt
+
+foreign import ccall unsafe "phs_lazyframe_reverse"
+    phs_lazyframe_reverse :: Ptr RawLazyFrame -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_lazyframe_drop"
     phs_lazyframe_drop :: Ptr RawLazyFrame -> Ptr CString -> CSize -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt

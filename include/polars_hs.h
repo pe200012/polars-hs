@@ -850,6 +850,10 @@ int phs_lazyframe_explode(const struct phs_lazyframe *lazyframe,
                           struct phs_lazyframe **out,
                           struct phs_error **err);
 
+int phs_lazyframe_reverse(const struct phs_lazyframe *lazyframe,
+                          struct phs_lazyframe **out,
+                          struct phs_error **err);
+
 int phs_lazyframe_drop(const struct phs_lazyframe *lazyframe,
                        const char *const *names,
                        uintptr_t len,

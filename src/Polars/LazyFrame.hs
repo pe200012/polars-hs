@@ -38,6 +38,7 @@ module Polars.LazyFrame
     , nullCount
     , profile
     , rename
+    , reverse
     , scanCsv
     , scanCsvWith
     , scanParquet
@@ -51,7 +52,7 @@ module Polars.LazyFrame
     , withColumns
     ) where
 
-import Prelude hiding (filter)
+import Prelude hiding (filter, reverse)
 
 import Data.Text (Text)
 import qualified Data.Text.Encoding as TE
@@ -62,6 +63,7 @@ import Foreign.Marshal.Alloc (alloca)
 import Foreign.Marshal.Array (withArray)
 import Foreign.Ptr (Ptr, nullPtr)
 import Foreign.Storable (peek, poke)
+import qualified Prelude as P
 
 import Polars.Error (PolarsError (..), PolarsErrorCode (InvalidArgument))
 import Polars.Expr (Expr)
@@ -89,6 +91,7 @@ import Polars.Internal.Raw
     , phs_lazyframe_null_count
     , phs_lazyframe_profile
     , phs_lazyframe_rename
+    , phs_lazyframe_reverse
     , phs_lazyframe_select
     , phs_lazyframe_slice
     , phs_lazyframe_sort
@@ -285,6 +288,9 @@ explode options lf
                         (toCBool (lazyFrameExplodeKeepNulls options))
                     )
 
+reverse :: LazyFrame -> IO (Either PolarsError LazyFrame)
+reverse lf = withLazyFrame lf $ \lfPtr -> lazyFrameOut (phs_lazyframe_reverse lfPtr)
+
 slice :: Int -> Int -> LazyFrame -> IO (Either PolarsError LazyFrame)
 slice offset len lf = case nonNegativeWord64 "slice length" len of
     Left err -> pure (Left err)
@@ -413,7 +419,7 @@ profileOut action =
 withCStringList :: [Text] -> (Ptr CString -> CSize -> IO a) -> IO a
 withCStringList values action = go values []
   where
-    go [] acc = withArray (reverse acc) $ \ptr -> action ptr (fromIntegral (length acc))
+    go [] acc = withArray (P.reverse acc) $ \ptr -> action ptr (fromIntegral (length acc))
     go (value : rest) acc = withTextCString value $ \ptr -> go rest (ptr : acc)
 
 withWord8List :: [Word8] -> (Ptr Word8 -> CSize -> IO a) -> IO a
@@ -427,8 +433,8 @@ withRenamePairs :: [(Text, Text)] -> (Ptr CString -> Ptr CString -> CSize -> IO 
 withRenamePairs values action = go values [] []
   where
     go [] existing new =
-        withArray (reverse existing) $ \existingPtr ->
-            withArray (reverse new) $ \newPtr ->
+        withArray (P.reverse existing) $ \existingPtr ->
+            withArray (P.reverse new) $ \newPtr ->
                 action existingPtr newPtr (fromIntegral (length existing))
     go ((existingName, newName) : rest) existing new =
         withTextCString existingName $ \existingPtr ->

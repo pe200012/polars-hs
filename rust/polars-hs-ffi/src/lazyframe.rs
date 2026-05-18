@@ -515,6 +515,21 @@ pub unsafe extern "C" fn phs_lazyframe_explode(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_reverse(
+    lazyframe: *const phs_lazyframe,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        *out = lazyframe_into_raw(lf.reverse());
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_lazyframe_drop(
     lazyframe: *const phs_lazyframe,
     names: *const *const c_char,
@@ -1314,6 +1329,49 @@ mod tests {
             crate::handles::phs_lazyframe_free(missing_lf);
             crate::handles::phs_lazyframe_free(scalar_lf);
             crate::handles::phs_dataframe_free(exploded_df);
+        }
+    }
+
+    #[test]
+    fn lazy_reverse_flips_row_order() {
+        let path = employees_fixture_path();
+        let mut lf0 = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(unsafe { phs_scan_csv(path.as_ptr(), &mut lf0, &mut err) }, PHS_OK);
+
+        let mut out = ptr::null_mut();
+        let status = unsafe { phs_lazyframe_reverse(lf0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let reversed_lf = out;
+        let mut reversed_df = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_collect(reversed_lf, &mut reversed_df, &mut err) }, PHS_OK);
+        let names: Vec<Option<&str>> = unsafe { crate::handles::dataframe_ref(reversed_df) }
+            .unwrap()
+            .value
+            .column("name")
+            .unwrap()
+            .as_materialized_series()
+            .str()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(names, vec![Some("Eve"), Some("Carol"), Some("Bob"), Some("Alice")]);
+
+        let status = unsafe { phs_lazyframe_reverse(ptr::null(), &mut out, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "lazyframe pointer was null");
+        err = ptr::null_mut();
+
+        let status = unsafe { phs_lazyframe_reverse(lf0, ptr::null_mut(), &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "out pointer was null");
+
+        unsafe {
+            crate::handles::phs_lazyframe_free(lf0);
+            crate::handles::phs_lazyframe_free(reversed_lf);
+            crate::handles::phs_dataframe_free(reversed_df);
         }
     }
 
