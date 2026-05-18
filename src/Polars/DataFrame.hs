@@ -31,6 +31,8 @@ module Polars.DataFrame
     , dataFrameClear
     , dataFrameDropColumns
     , dataFrameDropNulls
+    , dataFrameEquals
+    , dataFrameEqualsMissing
     , dataFrameEstimatedSize
     , dataFrameExplode
     , dataFrameFilter
@@ -127,6 +129,7 @@ import Polars.Internal.Raw
     , phs_dataframe_clear
     , phs_dataframe_drop
     , phs_dataframe_drop_nulls
+    , phs_dataframe_equals
     , phs_dataframe_explode
     , phs_dataframe_estimated_size
     , phs_dataframe_filter
@@ -661,6 +664,18 @@ dataFrameMaxNChunks df = withDataFrame df $ \ptr -> word64Out (phs_dataframe_max
 
 dataFrameIsEmpty :: DataFrame -> IO (Either PolarsError Bool)
 dataFrameIsEmpty df = withDataFrame df $ \ptr -> boolOut (phs_dataframe_is_empty ptr)
+
+dataFrameEquals :: DataFrame -> DataFrame -> IO (Either PolarsError Bool)
+dataFrameEquals = dataFrameEqualsWith False
+
+dataFrameEqualsMissing :: DataFrame -> DataFrame -> IO (Either PolarsError Bool)
+dataFrameEqualsMissing = dataFrameEqualsWith True
+
+dataFrameEqualsWith :: Bool -> DataFrame -> DataFrame -> IO (Either PolarsError Bool)
+dataFrameEqualsWith missingEqual left right =
+    withDataFrame left $ \leftPtr ->
+        withDataFrame right $ \rightPtr ->
+            boolOut (phs_dataframe_equals leftPtr rightPtr (toCBool missingEqual))
 
 dataFrameClear :: DataFrame -> IO (Either PolarsError DataFrame)
 dataFrameClear df = withDataFrame df $ \ptr -> dataframeOut (phs_dataframe_clear ptr)

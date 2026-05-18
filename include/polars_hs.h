@@ -352,6 +352,12 @@ int phs_dataframe_is_empty(const struct phs_dataframe *dataframe,
                            bool *out,
                            struct phs_error **err);
 
+int phs_dataframe_equals(const struct phs_dataframe *left,
+                         const struct phs_dataframe *right,
+                         bool missing_equal,
+                         bool *out,
+                         struct phs_error **err);
+
 int phs_dataframe_clear(const struct phs_dataframe *dataframe,
                         struct phs_dataframe **out,
                         struct phs_error **err);

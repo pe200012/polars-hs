@@ -34,6 +34,7 @@ module Polars.Internal.Raw
     , phs_dataframe_column_bool
     , phs_dataframe_drop
     , phs_dataframe_drop_nulls
+    , phs_dataframe_equals
     , phs_dataframe_explode
     , phs_dataframe_filter
     , phs_dataframe_fill_null
@@ -510,6 +511,9 @@ foreign import ccall unsafe "phs_dataframe_max_n_chunks"
 
 foreign import ccall unsafe "phs_dataframe_is_empty"
     phs_dataframe_is_empty :: Ptr RawDataFrame -> Ptr CBool -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_dataframe_equals"
+    phs_dataframe_equals :: Ptr RawDataFrame -> Ptr RawDataFrame -> CBool -> Ptr CBool -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_dataframe_clear"
     phs_dataframe_clear :: Ptr RawDataFrame -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt

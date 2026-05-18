@@ -493,6 +493,36 @@ main = hspec $ do
                         (_, _, _, Left err, _) -> expectationFailure (show err)
                         (_, _, _, _, Left err) -> expectationFailure (show err)
 
+        it "compares eager DataFrames with Polars null semantics" $ do
+            leftResult <- Pl.readCsv valuesCsv
+            rightResult <- Pl.readCsv valuesCsv
+            employeesLeftResult <- Pl.readCsv employeesCsv
+            employeesRightResult <- Pl.readCsv employeesCsv
+            case (leftResult, rightResult, employeesLeftResult, employeesRightResult) of
+                (Right left, Right right, Right employeesLeft, Right employeesRight) -> do
+                    leftHead <- Pl.head 1 left
+                    rightHead <- Pl.head 1 right
+                    leftTail <- Pl.tail 1 left
+                    reordered <- Pl.dataFrameSelect ["active", "score", "age", "name"] right
+                    case (leftHead, rightHead, leftTail, reordered) of
+                        (Right leftHeadDf, Right rightHeadDf, Right leftTailDf, Right reorderedDf) -> do
+                            Pl.dataFrameEqualsMissing left right `shouldReturn` Right True
+                            Pl.dataFrameEquals left right `shouldReturn` Right False
+                            Pl.dataFrameEqualsMissing employeesLeft employeesRight `shouldReturn` Right True
+                            Pl.dataFrameEquals employeesLeft employeesRight `shouldReturn` Right True
+                            Pl.dataFrameEquals leftHeadDf rightHeadDf `shouldReturn` Right True
+                            Pl.dataFrameEqualsMissing leftHeadDf leftTailDf `shouldReturn` Right False
+                            Pl.dataFrameEqualsMissing left leftTailDf `shouldReturn` Right False
+                            Pl.dataFrameEqualsMissing left reorderedDf `shouldReturn` Right False
+                        (Left err, _, _, _) -> expectationFailure (show err)
+                        (_, Left err, _, _) -> expectationFailure (show err)
+                        (_, _, Left err, _) -> expectationFailure (show err)
+                        (_, _, _, Left err) -> expectationFailure (show err)
+                (Left err, _, _, _) -> expectationFailure (show err)
+                (_, Left err, _, _) -> expectationFailure (show err)
+                (_, _, Left err, _) -> expectationFailure (show err)
+                (_, _, _, Left err) -> expectationFailure (show err)
+
         it "inspects clears and splits eager DataFrame views" $ do
             result <- Pl.readCsv valuesCsv
             case result of

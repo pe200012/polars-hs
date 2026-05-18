@@ -1294,6 +1294,28 @@ pub unsafe extern "C" fn phs_dataframe_is_empty(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_equals(
+    left: *const phs_dataframe,
+    right: *const phs_dataframe,
+    missing_equal: bool,
+    out: *mut bool,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = false;
+        let left = unsafe { dataframe_ref(left) }?;
+        let right = unsafe { dataframe_ref(right) }?;
+        *out = if missing_equal {
+            left.value.equals_missing(&right.value)
+        } else {
+            left.value.equals(&right.value)
+        };
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_dataframe_clear(
     dataframe: *const phs_dataframe,
     out: *mut *mut phs_dataframe,
@@ -2000,6 +2022,62 @@ mod tests {
             crate::handles::phs_series_free(city);
             crate::handles::phs_dataframe_free(other);
             crate::handles::phs_dataframe_free(df);
+        }
+    }
+
+    #[test]
+    fn dataframe_equality_uses_polars_null_semantics() {
+        let left = read_values_dataframe();
+        let right = read_values_dataframe();
+        let employees_left = read_fixture_dataframe("employees.csv");
+        let employees_right = read_fixture_dataframe("employees.csv");
+        let mut head = ptr::null_mut();
+        let mut out = false;
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_dataframe_equals(left, right, true, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert!(out);
+
+        let status = unsafe { phs_dataframe_equals(left, right, false, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert!(!out);
+
+        let status = unsafe { phs_dataframe_equals(employees_left, employees_right, false, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert!(out);
+
+        let status = unsafe { phs_dataframe_head(right, 1, &mut head, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let status = unsafe { phs_dataframe_equals(left, head, true, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert!(!out);
+
+        out = true;
+        let status = unsafe { phs_dataframe_equals(ptr::null(), right, true, &mut out, &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        assert!(!out);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "dataframe pointer was null");
+
+        out = true;
+        let status = unsafe { phs_dataframe_equals(left, ptr::null(), true, &mut out, &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        assert!(!out);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "dataframe pointer was null");
+
+        let status = unsafe { phs_dataframe_equals(left, right, true, ptr::null_mut(), &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "out pointer was null");
+
+        unsafe {
+            crate::handles::phs_dataframe_free(head);
+            crate::handles::phs_dataframe_free(employees_right);
+            crate::handles::phs_dataframe_free(employees_left);
+            crate::handles::phs_dataframe_free(right);
+            crate::handles::phs_dataframe_free(left);
         }
     }
 
