@@ -250,6 +250,12 @@ int phs_dataframe_explode(const struct phs_dataframe *dataframe,
                           struct phs_dataframe **out,
                           struct phs_error **err);
 
+int phs_dataframe_gather_every(const struct phs_dataframe *dataframe,
+                               uint64_t step,
+                               uint64_t offset,
+                               struct phs_dataframe **out,
+                               struct phs_error **err);
+
 uintptr_t phs_dataframe_array_len(const struct phs_dataframe_array *array);
 
 int phs_dataframe_array_get(const struct phs_dataframe_array *array,

@@ -919,6 +919,40 @@ pub unsafe extern "C" fn phs_dataframe_explode(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_gather_every(
+    dataframe: *const phs_dataframe,
+    step: u64,
+    offset: u64,
+    out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        let step = usize_from_u64(step, "dataframe gather-every step")?;
+        if step == 0 {
+            return Err(PhsError::invalid_argument(
+                "dataframe gather-every step must be positive",
+            ));
+        }
+        let height = handle.value.height();
+        if offset >= height as u64 {
+            *out = dataframe_into_raw(handle.value.clear());
+            return Ok(());
+        }
+        let offset = usize_from_u64(offset, "dataframe gather-every offset")?;
+        let indexes = (offset..height)
+            .step_by(step)
+            .map(|value| idx_size_from_u64(value as u64, "dataframe gather-every index"))
+            .collect::<PhsResult<Vec<_>>>()?;
+        let indexes = IdxCa::from_vec(PlSmallStr::EMPTY, indexes);
+        *out = dataframe_into_raw(handle.value.take(&indexes)?);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_dataframe_array_len(array: *const phs_dataframe_array) -> usize {
     if array.is_null() {
         0
@@ -2726,6 +2760,71 @@ mod tests {
 
         unsafe {
             crate::handles::phs_dataframe_free(exploded);
+            crate::handles::phs_dataframe_free(df);
+        }
+    }
+
+    #[test]
+    fn dataframe_gather_every_returns_strided_rows() {
+        let df = read_values_dataframe();
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_dataframe_gather_every(df, 2, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let every_two = out;
+        let values: Vec<Option<&str>> = unsafe { dataframe_ref(every_two) }
+            .unwrap()
+            .value
+            .column("name")
+            .unwrap()
+            .as_materialized_series()
+            .str()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(values, vec![Some("Alice"), Some("Carol")]);
+
+        let status = unsafe { phs_dataframe_gather_every(df, 2, 1, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let offset_rows = out;
+        let values: Vec<Option<&str>> = unsafe { dataframe_ref(offset_rows) }
+            .unwrap()
+            .value
+            .column("name")
+            .unwrap()
+            .as_materialized_series()
+            .str()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(values, vec![Some("Bob")]);
+
+        let status = unsafe { phs_dataframe_gather_every(df, 2, 10, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let empty = out;
+        assert_eq!(unsafe { dataframe_ref(empty) }.unwrap().value.shape(), (0, 4));
+
+        let status = unsafe { phs_dataframe_gather_every(df, 2, u64::MAX, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let huge_offset = out;
+        assert_eq!(unsafe { dataframe_ref(huge_offset) }.unwrap().value.shape(), (0, 4));
+
+        let status = unsafe { phs_dataframe_gather_every(df, 0, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "dataframe gather-every step must be positive");
+
+        let status = unsafe { phs_dataframe_gather_every(df, 2, 0, ptr::null_mut(), &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "out pointer was null");
+
+        unsafe {
+            crate::handles::phs_dataframe_free(huge_offset);
+            crate::handles::phs_dataframe_free(empty);
+            crate::handles::phs_dataframe_free(offset_rows);
+            crate::handles::phs_dataframe_free(every_two);
             crate::handles::phs_dataframe_free(df);
         }
     }

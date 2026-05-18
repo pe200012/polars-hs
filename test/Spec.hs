@@ -1391,6 +1391,45 @@ main = hspec $ do
                                     expectPolarsFailure missingColumn
                                     expectPolarsFailure scalarColumn
 
+        it "gathers every nth eager DataFrame row" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    everyTwo <- Pl.dataFrameGatherEvery 2 0 df
+                    offsetRows <- Pl.dataFrameGatherEvery 2 1 df
+                    oversizedStep <- Pl.dataFrameGatherEvery 10 0 df
+                    oversizedOffset <- Pl.dataFrameGatherEvery 2 10 df
+                    zeroStep <- Pl.dataFrameGatherEvery 0 0 df
+                    negativeStep <- Pl.dataFrameGatherEvery (-1) 0 df
+                    negativeOffset <- Pl.dataFrameGatherEvery 2 (-1) df
+                    case everyTwo of
+                        Left err -> expectationFailure (show err)
+                        Right out -> do
+                            Pl.shape out `shouldReturn` Right (2, 4)
+                            Pl.column @T.Text out "name" `shouldReturn` Right (V.fromList [Just "Alice", Just "Carol"])
+                    case offsetRows of
+                        Left err -> expectationFailure (show err)
+                        Right out -> do
+                            Pl.shape out `shouldReturn` Right (1, 4)
+                            Pl.column @T.Text out "name" `shouldReturn` Right (V.singleton (Just "Bob"))
+                            Pl.column @Int64 out "age" `shouldReturn` Right (V.singleton Nothing)
+                            Pl.column @Bool out "active" `shouldReturn` Right (V.singleton (Just False))
+                    case oversizedStep of
+                        Left err -> expectationFailure (show err)
+                        Right out -> do
+                            Pl.shape out `shouldReturn` Right (1, 4)
+                            Pl.column @T.Text out "name" `shouldReturn` Right (V.singleton (Just "Alice"))
+                    case oversizedOffset of
+                        Left err -> expectationFailure (show err)
+                        Right out -> do
+                            Pl.shape out `shouldReturn` Right (0, 4)
+                            schemaResult <- Pl.schema out
+                            fmap (map Pl.fieldName) schemaResult `shouldBe` Right ["name", "age", "score", "active"]
+                    expectInvalidArgumentMessage "dataFrameGatherEvery step must be positive" zeroStep
+                    expectInvalidArgumentMessage "dataFrameGatherEvery step must be non-negative" negativeStep
+                    expectInvalidArgumentMessage "dataFrameGatherEvery offset must be non-negative" negativeOffset
+
         it "broadcasts unit-length eager DataFrame columns" $ do
             dfResult <- Pl.readCsv valuesCsv
             scoreResult <- Pl.series @Double "score" (V.fromList [Just 10.0])

@@ -38,6 +38,7 @@ module Polars.Internal.Raw
     , phs_dataframe_filter
     , phs_dataframe_fill_null
     , phs_dataframe_from_arrow_record_batch
+    , phs_dataframe_gather_every
     , phs_dataframe_hstack
     , phs_dataframe_to_arrow_record_batch
     , phs_dataframe_new
@@ -408,6 +409,9 @@ foreign import ccall unsafe "phs_dataframe_drop"
 
 foreign import ccall safe "phs_dataframe_explode"
     phs_dataframe_explode :: Ptr RawDataFrame -> Ptr CString -> CSize -> CBool -> CBool -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_dataframe_gather_every"
+    phs_dataframe_gather_every :: Ptr RawDataFrame -> Word64 -> Word64 -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_dataframe_rename"
     phs_dataframe_rename :: Ptr RawDataFrame -> Ptr CString -> Ptr CString -> CSize -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt

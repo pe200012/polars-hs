@@ -36,6 +36,7 @@ module Polars.DataFrame
     , dataFrameFilter
     , dataFrameFillNull
     , dataFrameFirstColNChunks
+    , dataFrameGatherEvery
     , dataFrameHStack
     , dataFrameInsertColumn
     , dataFrameIsDuplicated
@@ -132,6 +133,7 @@ import Polars.Internal.Raw
     , phs_dataframe_fill_null
     , phs_dataframe_first_col_n_chunks
     , phs_dataframe_free
+    , phs_dataframe_gather_every
     , phs_dataframe_hstack
     , phs_dataframe_head
     , phs_dataframe_height
@@ -522,6 +524,17 @@ dataFrameExplode options df
                         (toCBool (dataFrameExplodeEmptyAsNull options))
                         (toCBool (dataFrameExplodeKeepNulls options))
                     )
+
+dataFrameGatherEvery :: Int -> Int -> DataFrame -> IO (Either PolarsError DataFrame)
+dataFrameGatherEvery step offset df
+    | step == 0 = pure (Left (invalidArgument "dataFrameGatherEvery step must be positive"))
+    | otherwise =
+        case (nonNegativeWord64 "dataFrameGatherEvery step" step, nonNegativeWord64 "dataFrameGatherEvery offset" offset) of
+            (Left err, _) -> pure (Left err)
+            (_, Left err) -> pure (Left err)
+            (Right stepValue, Right offsetValue) ->
+                withDataFrame df $ \ptr ->
+                    dataframeOut (phs_dataframe_gather_every ptr stepValue offsetValue)
 
 dataFrameRename :: [(Text, Text)] -> DataFrame -> IO (Either PolarsError DataFrame)
 dataFrameRename [] _ = pure (Left (invalidArgument "dataFrameRename requires at least one column pair"))
