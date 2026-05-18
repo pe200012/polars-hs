@@ -822,6 +822,26 @@ int phs_lazyframe_limit(const struct phs_lazyframe *lazyframe,
                         struct phs_lazyframe **out,
                         struct phs_error **err);
 
+int phs_lazyframe_top_k(const struct phs_lazyframe *lazyframe,
+                        uint64_t k,
+                        const struct phs_expr *const *by,
+                        uintptr_t by_len,
+                        const uint8_t *reverse,
+                        uintptr_t reverse_len,
+                        bool maintain_order,
+                        struct phs_lazyframe **out,
+                        struct phs_error **err);
+
+int phs_lazyframe_bottom_k(const struct phs_lazyframe *lazyframe,
+                           uint64_t k,
+                           const struct phs_expr *const *by,
+                           uintptr_t by_len,
+                           const uint8_t *reverse,
+                           uintptr_t reverse_len,
+                           bool maintain_order,
+                           struct phs_lazyframe **out,
+                           struct phs_error **err);
+
 int phs_lazyframe_drop(const struct phs_lazyframe *lazyframe,
                        const char *const *names,
                        uintptr_t len,

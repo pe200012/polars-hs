@@ -147,6 +147,7 @@ module Polars.Internal.Raw
     , phs_lazyframe_head
     , phs_lazyframe_join
     , phs_lazyframe_limit
+    , phs_lazyframe_bottom_k
     , phs_lazyframe_null_count
     , phs_lazyframe_profile
     , phs_lazyframe_rename
@@ -154,6 +155,7 @@ module Polars.Internal.Raw
     , phs_lazyframe_slice
     , phs_lazyframe_sort
     , phs_lazyframe_tail
+    , phs_lazyframe_top_k
     , phs_lazyframe_unique
     , phs_lazyframe_with_columns
     , phs_read_csv
@@ -750,6 +752,32 @@ foreign import ccall unsafe "phs_lazyframe_sort"
 
 foreign import ccall unsafe "phs_lazyframe_limit"
     phs_lazyframe_limit :: Ptr RawLazyFrame -> Word64 -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_lazyframe_top_k"
+    phs_lazyframe_top_k ::
+        Ptr RawLazyFrame ->
+        Word64 ->
+        Ptr (Ptr RawExpr) ->
+        CSize ->
+        Ptr Word8 ->
+        CSize ->
+        CBool ->
+        Ptr (Ptr RawLazyFrame) ->
+        Ptr (Ptr RawError) ->
+        IO CInt
+
+foreign import ccall safe "phs_lazyframe_bottom_k"
+    phs_lazyframe_bottom_k ::
+        Ptr RawLazyFrame ->
+        Word64 ->
+        Ptr (Ptr RawExpr) ->
+        CSize ->
+        Ptr Word8 ->
+        CSize ->
+        CBool ->
+        Ptr (Ptr RawLazyFrame) ->
+        Ptr (Ptr RawError) ->
+        IO CInt
 
 foreign import ccall unsafe "phs_lazyframe_drop"
     phs_lazyframe_drop :: Ptr RawLazyFrame -> Ptr CString -> CSize -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt

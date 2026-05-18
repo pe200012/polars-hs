@@ -1996,6 +1996,55 @@ main = hspec $ do
                         (_, Left err, _) -> expectationFailure (show err)
                         (_, _, Left err) -> expectationFailure (show err)
 
+        it "selects lazy top and bottom rows by expressions" $ do
+            scanResult <- Pl.scanCsv employeesCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf -> do
+                    let bySalary = Pl.defaultLazyFrameTopKOptions {Pl.lazyFrameTopKBy = [Pl.col "salary"]}
+                    topResult <- Pl.topK bySalary 2 lf
+                    bottomResult <- Pl.bottomK bySalary 2 lf
+                    reversedTopResult <- Pl.topK bySalary {Pl.lazyFrameTopKReverse = [True]} 2 lf
+                    maintainedResult <- Pl.topK bySalary {Pl.lazyFrameTopKMaintainOrder = True} 2 lf
+                    headLikeResult <- Pl.topK Pl.defaultLazyFrameTopKOptions 2 lf
+                    case (topResult, bottomResult, reversedTopResult, maintainedResult, headLikeResult) of
+                        (Right topLf, Right bottomLf, Right reversedTopLf, Right maintainedLf, Right headLikeLf) -> do
+                            topDf <- Pl.collect topLf
+                            bottomDf <- Pl.collect bottomLf
+                            reversedTopDf <- Pl.collect reversedTopLf
+                            maintainedDf <- Pl.collect maintainedLf
+                            headLikeDf <- Pl.collect headLikeLf
+                            case (topDf, bottomDf, reversedTopDf, maintainedDf, headLikeDf) of
+                                (Right topDf', Right bottomDf', Right reversedTopDf', Right maintainedDf', Right headLikeDf') -> do
+                                    Pl.column @Int64 topDf' "salary" `shouldReturn` Right (V.fromList [Just 150, Just 100])
+                                    Pl.column @Int64 bottomDf' "salary" `shouldReturn` Right (V.fromList [Just 80, Just 90])
+                                    Pl.column @Int64 reversedTopDf' "salary" `shouldReturn` Right (V.fromList [Just 80, Just 90])
+                                    Pl.column @Int64 maintainedDf' "salary" `shouldReturn` Right (V.fromList [Just 150, Just 100])
+                                    Pl.column @T.Text headLikeDf' "name" `shouldReturn` Right (V.fromList [Just "Alice", Just "Bob"])
+                                (Left err, _, _, _, _) -> expectationFailure (show err)
+                                (_, Left err, _, _, _) -> expectationFailure (show err)
+                                (_, _, Left err, _, _) -> expectationFailure (show err)
+                                (_, _, _, Left err, _) -> expectationFailure (show err)
+                                (_, _, _, _, Left err) -> expectationFailure (show err)
+                        (Left err, _, _, _, _) -> expectationFailure (show err)
+                        (_, Left err, _, _, _) -> expectationFailure (show err)
+                        (_, _, Left err, _, _) -> expectationFailure (show err)
+                        (_, _, _, Left err, _) -> expectationFailure (show err)
+                        (_, _, _, _, Left err) -> expectationFailure (show err)
+
+        it "validates lazy top and bottom row arguments" $ do
+            scanResult <- Pl.scanCsv employeesCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf -> do
+                    let bySalary = Pl.defaultLazyFrameTopKOptions {Pl.lazyFrameTopKBy = [Pl.col "salary"]}
+                    negative <- Pl.topK bySalary (-1) lf
+                    emptyReverse <- Pl.topK bySalary {Pl.lazyFrameTopKReverse = []} 1 lf
+                    mismatchedReverse <- Pl.bottomK bySalary {Pl.lazyFrameTopKReverse = [False, True]} 1 lf
+                    expectInvalidArgumentMessage "topK count must be non-negative" negative
+                    expectInvalidArgumentMessage "topK reverse must contain one value or one value per sort expression" emptyReverse
+                    expectInvalidArgumentMessage "bottomK reverse must contain one value or one value per sort expression" mismatchedReverse
+
         it "drops nulls and fills nulls and NaNs in lazy frames" $ do
             valuesScan <- Pl.scanCsv valuesCsv
             specialsScan <- Pl.scanCsv floatSpecialsCsv

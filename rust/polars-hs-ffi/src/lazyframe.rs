@@ -41,6 +41,38 @@ unsafe fn name_vec(names: *const *const c_char, len: usize) -> PhsResult<Vec<PlS
         .collect()
 }
 
+unsafe fn bool_vec(values: *const u8, len: usize, label: &str) -> PhsResult<Vec<bool>> {
+    if values.is_null() && len > 0 {
+        return Err(PhsError::invalid_argument(format!("{label} pointer was null")));
+    }
+    let slice = if len == 0 {
+        &[]
+    } else {
+        unsafe { std::slice::from_raw_parts(values, len) }
+    };
+    slice
+        .iter()
+        .map(|value| match *value {
+            0 => Ok(false),
+            1 => Ok(true),
+            other => Err(PhsError::invalid_argument(format!(
+                "{label} value must be 0 or 1, received {other}"
+            ))),
+        })
+        .collect()
+}
+
+fn validate_sort_bool_options(label: &str, expr_count: usize, values: &[bool]) -> PhsResult<()> {
+    let option_count = values.len();
+    if option_count == 1 || option_count == expr_count {
+        Ok(())
+    } else {
+        Err(PhsError::invalid_argument(format!(
+            "{label} must contain one value or one value per sort expression"
+        )))
+    }
+}
+
 fn join_type_from_code(code: c_int) -> PhsResult<JoinType> {
     match code {
         0 => Ok(JoinType::Inner),
@@ -400,6 +432,62 @@ pub unsafe extern "C" fn phs_lazyframe_limit(
         let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
         let n = idx_size_from_u64(n, "limit")?;
         *out = lazyframe_into_raw(lf.limit(n));
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_top_k(
+    lazyframe: *const phs_lazyframe,
+    k: u64,
+    by: *const *const phs_expr,
+    by_len: usize,
+    reverse: *const u8,
+    reverse_len: usize,
+    maintain_order: bool,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        let k = idx_size_from_u64(k, "lazyframe top_k count")?;
+        let by = unsafe { expr_vec(by, by_len) }?;
+        let reverse = unsafe { bool_vec(reverse, reverse_len, "reverse") }?;
+        validate_sort_bool_options("reverse", by.len(), &reverse)?;
+        let options = SortMultipleOptions::default()
+            .with_order_descending_multi(reverse)
+            .with_maintain_order(maintain_order);
+        *out = lazyframe_into_raw(lf.top_k(k, by, options));
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_bottom_k(
+    lazyframe: *const phs_lazyframe,
+    k: u64,
+    by: *const *const phs_expr,
+    by_len: usize,
+    reverse: *const u8,
+    reverse_len: usize,
+    maintain_order: bool,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        let k = idx_size_from_u64(k, "lazyframe bottom_k count")?;
+        let by = unsafe { expr_vec(by, by_len) }?;
+        let reverse = unsafe { bool_vec(reverse, reverse_len, "reverse") }?;
+        validate_sort_bool_options("reverse", by.len(), &reverse)?;
+        let options = SortMultipleOptions::default()
+            .with_order_descending_multi(reverse)
+            .with_maintain_order(maintain_order);
+        *out = lazyframe_into_raw(lf.bottom_k(k, by, options));
         Ok(())
     })
 }
@@ -885,6 +973,206 @@ mod tests {
             crate::handles::phs_lazyframe_free(right);
             crate::handles::phs_lazyframe_free(joined);
             crate::handles::phs_dataframe_free(df);
+        }
+    }
+
+    #[test]
+    fn lazy_top_and_bottom_k_select_rows_by_expressions() {
+        let path = employees_fixture_path();
+        let mut lf0 = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(unsafe { phs_scan_csv(path.as_ptr(), &mut lf0, &mut err) }, PHS_OK);
+
+        let salary = std::ffi::CString::new("salary").unwrap();
+        let mut salary_expr = ptr::null_mut();
+        assert_eq!(unsafe { crate::expr::phs_expr_col(salary.as_ptr(), &mut salary_expr, &mut err) }, PHS_OK);
+        let by = [salary_expr as *const phs_expr];
+        let forward = [0_u8];
+        let reverse = [1_u8];
+        let mismatched_reverse = [0_u8, 1_u8];
+        let mut out = ptr::null_mut();
+
+        let status = unsafe {
+            phs_lazyframe_top_k(
+                lf0,
+                2,
+                by.as_ptr(),
+                by.len(),
+                forward.as_ptr(),
+                forward.len(),
+                false,
+                &mut out,
+                &mut err,
+            )
+        };
+        assert_eq!(status, PHS_OK);
+        let top_lf = out;
+        let mut top_df = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_collect(top_lf, &mut top_df, &mut err) }, PHS_OK);
+        let top_salaries: Vec<Option<i64>> = unsafe { crate::handles::dataframe_ref(top_df) }
+            .unwrap()
+            .value
+            .column("salary")
+            .unwrap()
+            .as_materialized_series()
+            .i64()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(top_salaries, vec![Some(150), Some(100)]);
+
+        let status = unsafe {
+            phs_lazyframe_bottom_k(
+                lf0,
+                2,
+                by.as_ptr(),
+                by.len(),
+                forward.as_ptr(),
+                forward.len(),
+                false,
+                &mut out,
+                &mut err,
+            )
+        };
+        assert_eq!(status, PHS_OK);
+        let bottom_lf = out;
+        let mut bottom_df = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_collect(bottom_lf, &mut bottom_df, &mut err) }, PHS_OK);
+        let bottom_salaries: Vec<Option<i64>> = unsafe { crate::handles::dataframe_ref(bottom_df) }
+            .unwrap()
+            .value
+            .column("salary")
+            .unwrap()
+            .as_materialized_series()
+            .i64()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(bottom_salaries, vec![Some(80), Some(90)]);
+
+        let status = unsafe {
+            phs_lazyframe_top_k(
+                lf0,
+                2,
+                by.as_ptr(),
+                by.len(),
+                reverse.as_ptr(),
+                reverse.len(),
+                true,
+                &mut out,
+                &mut err,
+            )
+        };
+        assert_eq!(status, PHS_OK);
+        let reversed_top_lf = out;
+        let mut reversed_top_df = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_collect(reversed_top_lf, &mut reversed_top_df, &mut err) }, PHS_OK);
+        let reversed_top_salaries: Vec<Option<i64>> =
+            unsafe { crate::handles::dataframe_ref(reversed_top_df) }
+                .unwrap()
+                .value
+                .column("salary")
+                .unwrap()
+                .as_materialized_series()
+                .i64()
+                .unwrap()
+                .into_iter()
+                .collect();
+        assert_eq!(reversed_top_salaries, vec![Some(80), Some(90)]);
+
+        let status = unsafe {
+            phs_lazyframe_top_k(
+                lf0,
+                u64::MAX,
+                by.as_ptr(),
+                by.len(),
+                forward.as_ptr(),
+                forward.len(),
+                false,
+                &mut out,
+                &mut err,
+            )
+        };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        unsafe { crate::error::phs_error_free(err) };
+        err = ptr::null_mut();
+
+        let status = unsafe {
+            phs_lazyframe_top_k(
+                lf0,
+                1,
+                ptr::null(),
+                1,
+                forward.as_ptr(),
+                forward.len(),
+                false,
+                &mut out,
+                &mut err,
+            )
+        };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        unsafe { crate::error::phs_error_free(err) };
+        err = ptr::null_mut();
+
+        let status = unsafe {
+            phs_lazyframe_top_k(
+                lf0,
+                1,
+                by.as_ptr(),
+                by.len(),
+                ptr::null(),
+                1,
+                false,
+                &mut out,
+                &mut err,
+            )
+        };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        unsafe { crate::error::phs_error_free(err) };
+        err = ptr::null_mut();
+
+        let status = unsafe {
+            phs_lazyframe_top_k(
+                lf0,
+                1,
+                by.as_ptr(),
+                by.len(),
+                mismatched_reverse.as_ptr(),
+                mismatched_reverse.len(),
+                false,
+                &mut out,
+                &mut err,
+            )
+        };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        unsafe { crate::error::phs_error_free(err) };
+        err = ptr::null_mut();
+
+        let status = unsafe {
+            phs_lazyframe_top_k(
+                lf0,
+                1,
+                by.as_ptr(),
+                by.len(),
+                forward.as_ptr(),
+                forward.len(),
+                false,
+                ptr::null_mut(),
+                &mut err,
+            )
+        };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        unsafe { crate::error::phs_error_free(err) };
+
+        unsafe {
+            crate::handles::phs_expr_free(salary_expr);
+            crate::handles::phs_lazyframe_free(lf0);
+            crate::handles::phs_lazyframe_free(top_lf);
+            crate::handles::phs_lazyframe_free(bottom_lf);
+            crate::handles::phs_lazyframe_free(reversed_top_lf);
+            crate::handles::phs_dataframe_free(top_df);
+            crate::handles::phs_dataframe_free(bottom_df);
+            crate::handles::phs_dataframe_free(reversed_top_df);
         }
     }
 

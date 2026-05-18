@@ -12,10 +12,10 @@ crate-type = ["staticlib"]
 [dependencies]
 either = "1"
 libc = "0.2"
-polars = { version = "0.53.0", default-features = false, features = ["lazy", "csv", "parquet", "ipc", "fmt", "dtype-slim", "strings", "concat_str", "temporal", "semi_anti_join", "cross_join", "dtype-u8", "dtype-u16", "dtype-i8", "dtype-i16", "rank", "cum_agg", "regex", "is_in", "list_count", "is_between", "is_unique", "is_close", "is_first_distinct", "is_last_distinct", "round_series", "unique_counts", "mode", "zip_with", "pct_change", "search_sorted", "random", "partition_by", "rows", "to_dummies"] }
+polars = { version = "0.53.0", default-features = false, features = ["lazy", "csv", "parquet", "ipc", "fmt", "dtype-slim", "strings", "concat_str", "temporal", "semi_anti_join", "cross_join", "dtype-u8", "dtype-u16", "dtype-i8", "dtype-i16", "rank", "cum_agg", "regex", "is_in", "list_count", "is_between", "is_unique", "is_close", "is_first_distinct", "is_last_distinct", "round_series", "unique_counts", "mode", "zip_with", "pct_change", "search_sorted", "random", "partition_by", "rows", "to_dummies", "top_k"] }
 polars-arrow = "0.53.0"
-polars-ops = { version = "0.53.0", default-features = false, features = ["abs", "diff", "interpolate", "is_unique", "is_first_distinct", "is_last_distinct", "round_series", "unique_counts", "mode", "pct_change", "search_sorted", "pivot", "to_dummies"] }
-polars-plan = { version = "0.53.0", default-features = false, features = ["concat_str", "strings"] }
+polars-ops = { version = "0.53.0", default-features = false, features = ["abs", "diff", "interpolate", "is_unique", "is_first_distinct", "is_last_distinct", "round_series", "unique_counts", "mode", "pct_change", "search_sorted", "pivot", "to_dummies", "top_k"] }
+polars-plan = { version = "0.53.0", default-features = false, features = ["concat_str", "strings", "top_k"] }
 
 [build-dependencies]
 cbindgen = "0.29"

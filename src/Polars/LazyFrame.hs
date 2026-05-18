@@ -11,6 +11,7 @@ Expression inputs are compiled from pure Haskell AST nodes at each FFI boundary.
 module Polars.LazyFrame
     ( CsvReadOptions (..)
     , LazyFrame
+    , LazyFrameTopKOptions (..)
     , ParquetParallelStrategy (..)
     , ParquetScanOptions (..)
     , RenameOptions (..)
@@ -18,6 +19,7 @@ module Polars.LazyFrame
     , UniqueOptions (..)
     , collect
     , defaultCsvReadOptions
+    , defaultLazyFrameTopKOptions
     , defaultParquetScanOptions
     , defaultRenameOptions
     , defaultUniqueOptions
@@ -40,6 +42,8 @@ module Polars.LazyFrame
     , select
     , slice
     , sort
+    , topK
+    , bottomK
     , unique
     , withColumns
     ) where
@@ -48,7 +52,7 @@ import Prelude hiding (filter)
 
 import Data.Text (Text)
 import qualified Data.Text.Encoding as TE
-import Data.Word (Word64)
+import Data.Word (Word8, Word64)
 import Foreign.C.String (CString)
 import Foreign.C.Types (CBool (..), CInt, CSize, CUChar (..))
 import Foreign.Marshal.Alloc (alloca)
@@ -77,6 +81,7 @@ import Polars.Internal.Raw
     , phs_lazyframe_filter
     , phs_lazyframe_head
     , phs_lazyframe_limit
+    , phs_lazyframe_bottom_k
     , phs_lazyframe_null_count
     , phs_lazyframe_profile
     , phs_lazyframe_rename
@@ -84,6 +89,7 @@ import Polars.Internal.Raw
     , phs_lazyframe_slice
     , phs_lazyframe_sort
     , phs_lazyframe_tail
+    , phs_lazyframe_top_k
     , phs_lazyframe_unique
     , phs_lazyframe_with_columns
     , phs_scan_csv_options
@@ -126,6 +132,21 @@ defaultUniqueOptions =
         { uniqueSubset = Nothing
         , uniqueKeepStrategy = KeepAny
         , uniqueMaintainOrder = False
+        }
+
+data LazyFrameTopKOptions = LazyFrameTopKOptions
+    { lazyFrameTopKBy :: ![Expr]
+    , lazyFrameTopKReverse :: ![Bool]
+    , lazyFrameTopKMaintainOrder :: !Bool
+    }
+    deriving stock (Eq, Show)
+
+defaultLazyFrameTopKOptions :: LazyFrameTopKOptions
+defaultLazyFrameTopKOptions =
+    LazyFrameTopKOptions
+        { lazyFrameTopKBy = []
+        , lazyFrameTopKReverse = [False]
+        , lazyFrameTopKMaintainOrder = False
         }
 
 scanCsv :: FilePath -> IO (Either PolarsError LazyFrame)
@@ -221,6 +242,12 @@ sort names lf = withLazyFrame lf $ \lfPtr -> withCStringList names $ \nameArray 
 
 limit :: Word -> LazyFrame -> IO (Either PolarsError LazyFrame)
 limit n lf = withLazyFrame lf $ \lfPtr -> lazyFrameOut (phs_lazyframe_limit lfPtr (fromIntegral n))
+
+topK :: LazyFrameTopKOptions -> Int -> LazyFrame -> IO (Either PolarsError LazyFrame)
+topK = topBottomK "topK" phs_lazyframe_top_k
+
+bottomK :: LazyFrameTopKOptions -> Int -> LazyFrame -> IO (Either PolarsError LazyFrame)
+bottomK = topBottomK "bottomK" phs_lazyframe_bottom_k
 
 slice :: Int -> Int -> LazyFrame -> IO (Either PolarsError LazyFrame)
 slice offset len lf = case nonNegativeWord64 "slice length" len of
@@ -353,6 +380,9 @@ withCStringList values action = go values []
     go [] acc = withArray (reverse acc) $ \ptr -> action ptr (fromIntegral (length acc))
     go (value : rest) acc = withTextCString value $ \ptr -> go rest (ptr : acc)
 
+withWord8List :: [Word8] -> (Ptr Word8 -> CSize -> IO a) -> IO a
+withWord8List values action = withArray values $ \ptr -> action ptr (fromIntegral (length values))
+
 withMaybeCStringList :: Maybe [Text] -> (Ptr CString -> CSize -> Bool -> IO a) -> IO a
 withMaybeCStringList Nothing action = action nullPtr 0 False
 withMaybeCStringList (Just values) action = withCStringList values $ \ptr len -> action ptr len True
@@ -373,6 +403,46 @@ nonNegativeWord64 :: Text -> Int -> Either PolarsError Word64
 nonNegativeWord64 label value
     | value < 0 = Left (invalidArgument (label <> " must be non-negative"))
     | otherwise = Right (fromIntegral value)
+
+topBottomK ::
+    Text ->
+    (Ptr RawLazyFrame -> Word64 -> Ptr (Ptr RawExpr) -> CSize -> Ptr Word8 -> CSize -> CBool -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt) ->
+    LazyFrameTopKOptions ->
+    Int ->
+    LazyFrame ->
+    IO (Either PolarsError LazyFrame)
+topBottomK label raw options count lf =
+    case validateLazyFrameTopKOptions label options count of
+        Left err -> pure (Left err)
+        Right (countWord, reverseBytes) ->
+            withLazyFrame lf $ \lfPtr ->
+                withCompiledExprs (lazyFrameTopKBy options) $ \exprArray exprLen ->
+                    withWord8List reverseBytes $ \reversePtr reverseLen ->
+                        lazyFrameOut
+                            ( raw
+                                lfPtr
+                                countWord
+                                exprArray
+                                exprLen
+                                reversePtr
+                                reverseLen
+                                (toCBool (lazyFrameTopKMaintainOrder options))
+                            )
+
+validateLazyFrameTopKOptions :: Text -> LazyFrameTopKOptions -> Int -> Either PolarsError (Word64, [Word8])
+validateLazyFrameTopKOptions label options count = do
+    countWord <- nonNegativeWord64 (label <> " count") count
+    let byCount = length (lazyFrameTopKBy options)
+        reverseValues = lazyFrameTopKReverse options
+        reverseCount = length reverseValues
+    if reverseCount == 1 || reverseCount == byCount
+        then Right ()
+        else Left (invalidArgument (label <> " reverse must contain one value or one value per sort expression"))
+    Right (countWord, map boolToWord8 reverseValues)
+
+boolToWord8 :: Bool -> Word8
+boolToWord8 False = 0
+boolToWord8 True = 1
 
 optionalNonNegativeWord64 :: Text -> Maybe Int -> Either PolarsError (Bool, Word64)
 optionalNonNegativeWord64 _ Nothing = Right (False, 0)
