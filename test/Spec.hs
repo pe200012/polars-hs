@@ -493,6 +493,60 @@ main = hspec $ do
                         (_, _, _, Left err, _) -> expectationFailure (show err)
                         (_, _, _, _, Left err) -> expectationFailure (show err)
 
+        it "inspects clears and splits eager DataFrame views" $ do
+            result <- Pl.readCsv valuesCsv
+            case result of
+                Left err -> expectationFailure (show err)
+                Right df -> do
+                    originalSchema <- Pl.schema df
+                    vstacked <- Pl.dataFrameVStack df df
+                    estimatedSize <- Pl.dataFrameEstimatedSize df
+                    firstChunks <- Pl.dataFrameFirstColNChunks df
+                    maxChunks <- Pl.dataFrameMaxNChunks df
+                    isEmpty <- Pl.dataFrameIsEmpty df
+                    cleared <- Pl.dataFrameClear df
+                    split <- Pl.dataFrameSplitAt 2 df
+                    negativeSplit <- Pl.dataFrameSplitAt (-1) df
+                    oversizedSplit <- Pl.dataFrameSplitAt 99 df
+                    undersizedSplit <- Pl.dataFrameSplitAt (-99) df
+                    case (originalSchema, vstacked, estimatedSize, firstChunks, maxChunks, isEmpty, cleared, split, negativeSplit, oversizedSplit, undersizedSplit) of
+                        (Right originalFields, Right vstackedDf, Right sizeBytes, Right firstChunkCount, Right maxChunkCount, Right emptyFlag, Right clearedDf, Right (left, right), Right (negativeLeft, negativeRight), Right (oversizedLeft, oversizedRight), Right (undersizedLeft, undersizedRight)) -> do
+                            sizeBytes `shouldSatisfy` (> 0)
+                            firstChunkCount `shouldBe` 1
+                            maxChunkCount `shouldBe` 1
+                            Pl.dataFrameFirstColNChunks vstackedDf `shouldReturn` Right 2
+                            Pl.dataFrameMaxNChunks vstackedDf `shouldReturn` Right 2
+                            emptyFlag `shouldBe` False
+                            Pl.dataFrameIsEmpty clearedDf `shouldReturn` Right True
+                            Pl.shape clearedDf `shouldReturn` Right (0, 4)
+                            clearedSchema <- Pl.schema clearedDf
+                            fmap (map Pl.fieldName) clearedSchema `shouldBe` Right ["name", "age", "score", "active"]
+                            clearedSchema `shouldBe` Right originalFields
+                            Pl.shape left `shouldReturn` Right (2, 4)
+                            Pl.shape right `shouldReturn` Right (1, 4)
+                            Pl.column @T.Text left "name" `shouldReturn` Right (V.fromList [Just "Alice", Just "Bob"])
+                            Pl.column @Int64 left "age" `shouldReturn` Right (V.fromList [Just 34, Nothing])
+                            Pl.column @Double right "score" `shouldReturn` Right (V.singleton Nothing)
+                            Pl.column @Bool right "active" `shouldReturn` Right (V.singleton Nothing)
+                            Pl.column @T.Text right "name" `shouldReturn` Right (V.singleton (Just "Carol"))
+                            Pl.column @T.Text negativeLeft "name" `shouldReturn` Right (V.fromList [Just "Alice", Just "Bob"])
+                            Pl.column @T.Text negativeRight "name" `shouldReturn` Right (V.singleton (Just "Carol"))
+                            Pl.shape oversizedLeft `shouldReturn` Right (3, 4)
+                            Pl.shape oversizedRight `shouldReturn` Right (0, 4)
+                            Pl.shape undersizedLeft `shouldReturn` Right (0, 4)
+                            Pl.shape undersizedRight `shouldReturn` Right (3, 4)
+                        (Left err, _, _, _, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                        (_, Left err, _, _, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                        (_, _, Left err, _, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                        (_, _, _, Left err, _, _, _, _, _, _, _) -> expectationFailure (show err)
+                        (_, _, _, _, Left err, _, _, _, _, _, _) -> expectationFailure (show err)
+                        (_, _, _, _, _, Left err, _, _, _, _, _) -> expectationFailure (show err)
+                        (_, _, _, _, _, _, Left err, _, _, _, _) -> expectationFailure (show err)
+                        (_, _, _, _, _, _, _, Left err, _, _, _) -> expectationFailure (show err)
+                        (_, _, _, _, _, _, _, _, Left err, _, _) -> expectationFailure (show err)
+                        (_, _, _, _, _, _, _, _, _, Left err, _) -> expectationFailure (show err)
+                        (_, _, _, _, _, _, _, _, _, _, Left err) -> expectationFailure (show err)
+
         it "takes eager DataFrame rows by explicit indices" $ do
             result <- Pl.readCsv valuesCsv
             case result of

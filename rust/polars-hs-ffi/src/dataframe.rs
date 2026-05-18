@@ -937,6 +937,101 @@ pub unsafe extern "C" fn phs_dataframe_null_count(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_estimated_size(
+    dataframe: *const phs_dataframe,
+    out: *mut u64,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        *out = u64::try_from(handle.value.estimated_size())
+            .map_err(|_| PhsError::invalid_argument("dataframe estimated size exceeded u64"))?;
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_first_col_n_chunks(
+    dataframe: *const phs_dataframe,
+    out: *mut u64,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        *out = u64::try_from(handle.value.first_col_n_chunks())
+            .map_err(|_| PhsError::invalid_argument("dataframe first-column chunk count exceeded u64"))?;
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_max_n_chunks(
+    dataframe: *const phs_dataframe,
+    out: *mut u64,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        *out = u64::try_from(handle.value.max_n_chunks())
+            .map_err(|_| PhsError::invalid_argument("dataframe max chunk count exceeded u64"))?;
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_is_empty(
+    dataframe: *const phs_dataframe,
+    out: *mut bool,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        *out = handle.value.height() == 0;
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_clear(
+    dataframe: *const phs_dataframe,
+    out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        *out = dataframe_into_raw(handle.value.clear());
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_split_at(
+    dataframe: *const phs_dataframe,
+    offset: i64,
+    left_out: *mut *mut phs_dataframe,
+    right_out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let left_out = unsafe { required_mut(left_out, "left_out") }?;
+        let right_out = unsafe { required_mut(right_out, "right_out") }?;
+        *left_out = ptr::null_mut();
+        *right_out = ptr::null_mut();
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        let (left, right) = handle.value.split_at(offset);
+        *left_out = dataframe_into_raw(left);
+        *right_out = dataframe_into_raw(right);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_dataframe_shape(
     dataframe: *const phs_dataframe,
     height_out: *mut u64,
@@ -1499,6 +1594,116 @@ mod tests {
             crate::handles::phs_series_free(rank);
             crate::handles::phs_series_free(city);
             crate::handles::phs_dataframe_free(other);
+            crate::handles::phs_dataframe_free(df);
+        }
+    }
+
+    #[test]
+    fn dataframe_metadata_clear_and_split_at_work() {
+        let df = read_values_dataframe();
+        let mut out = ptr::null_mut();
+        let mut left_out = ptr::null_mut();
+        let mut right_out = ptr::null_mut();
+        let mut word_out = 0_u64;
+        let mut bool_out = false;
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_dataframe_estimated_size(df, &mut word_out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert!(word_out > 0);
+
+        let status = unsafe { phs_dataframe_first_col_n_chunks(df, &mut word_out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(word_out, 1);
+
+        let status = unsafe { phs_dataframe_max_n_chunks(df, &mut word_out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(word_out, 1);
+
+        let status = unsafe { phs_dataframe_is_empty(df, &mut bool_out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert!(!bool_out);
+
+        let status = unsafe { phs_dataframe_clear(df, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let cleared = out;
+        let original_ref = unsafe { dataframe_ref(df) }.unwrap();
+        let cleared_ref = unsafe { dataframe_ref(cleared) }.unwrap();
+        assert_eq!(cleared_ref.value.shape(), (0, 4));
+        assert_eq!(cleared_ref.value.dtypes(), original_ref.value.dtypes());
+        let cleared_names: Vec<_> = cleared_ref
+            .value
+            .get_column_names()
+            .into_iter()
+            .map(|name| name.as_str())
+            .collect();
+        assert_eq!(cleared_names, vec!["name", "age", "score", "active"]);
+
+        let status = unsafe { phs_dataframe_is_empty(cleared, &mut bool_out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert!(bool_out);
+
+        let zero_width = dataframe_into_raw(DataFrame::empty_with_height(3));
+        let status = unsafe { phs_dataframe_is_empty(zero_width, &mut bool_out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert!(!bool_out);
+        unsafe { crate::handles::phs_dataframe_free(zero_width) };
+
+        let status = unsafe { phs_dataframe_split_at(df, 2, &mut left_out, &mut right_out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { dataframe_ref(left_out) }.unwrap().value.shape(), (2, 4));
+        assert_eq!(unsafe { dataframe_ref(right_out) }.unwrap().value.shape(), (1, 4));
+        unsafe {
+            crate::handles::phs_dataframe_free(left_out);
+            crate::handles::phs_dataframe_free(right_out);
+        }
+
+        let status = unsafe { phs_dataframe_split_at(df, -1, &mut left_out, &mut right_out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { dataframe_ref(left_out) }.unwrap().value.shape(), (2, 4));
+        assert_eq!(unsafe { dataframe_ref(right_out) }.unwrap().value.shape(), (1, 4));
+        unsafe {
+            crate::handles::phs_dataframe_free(left_out);
+            crate::handles::phs_dataframe_free(right_out);
+        }
+
+        let status = unsafe { phs_dataframe_split_at(df, 99, &mut left_out, &mut right_out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { dataframe_ref(left_out) }.unwrap().value.shape(), (3, 4));
+        assert_eq!(unsafe { dataframe_ref(right_out) }.unwrap().value.shape(), (0, 4));
+        unsafe {
+            crate::handles::phs_dataframe_free(left_out);
+            crate::handles::phs_dataframe_free(right_out);
+        }
+
+        let status = unsafe { phs_dataframe_split_at(df, -99, &mut left_out, &mut right_out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        assert_eq!(unsafe { dataframe_ref(left_out) }.unwrap().value.shape(), (0, 4));
+        assert_eq!(unsafe { dataframe_ref(right_out) }.unwrap().value.shape(), (3, 4));
+        unsafe {
+            crate::handles::phs_dataframe_free(right_out);
+            crate::handles::phs_dataframe_free(left_out);
+        }
+        right_out = ptr::null_mut();
+
+        let status = unsafe { phs_dataframe_estimated_size(df, ptr::null_mut(), &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "out pointer was null");
+
+        let status = unsafe { phs_dataframe_split_at(df, 0, ptr::null_mut(), &mut right_out, &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        assert!(right_out.is_null());
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "left_out pointer was null");
+
+        let status = unsafe { phs_dataframe_is_empty(ptr::null(), &mut bool_out, &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "dataframe pointer was null");
+
+        unsafe {
+            crate::handles::phs_dataframe_free(cleared);
             crate::handles::phs_dataframe_free(df);
         }
     }

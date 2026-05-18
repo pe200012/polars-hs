@@ -24,17 +24,23 @@ module Polars.DataFrame
     , ParquetStatisticsOptions (..)
     , ParquetWriteOptions (..)
     , dataFrame
+    , dataFrameClear
     , dataFrameDropColumns
     , dataFrameDropNulls
+    , dataFrameEstimatedSize
     , dataFrameFilter
     , dataFrameFillNull
+    , dataFrameFirstColNChunks
     , dataFrameHStack
+    , dataFrameIsEmpty
     , dataFrameJoin
+    , dataFrameMaxNChunks
     , dataFrameNullCount
     , dataFrameRename
     , dataFrameReverse
     , dataFrameSelect
     , dataFrameSlice
+    , dataFrameSplitAt
     , dataFrameSort
     , dataFrameTake
     , dataFrameUnique
@@ -67,6 +73,7 @@ module Polars.DataFrame
 
 import Prelude hiding (head, tail)
 
+import Control.Monad (when)
 import qualified Data.ByteString as BS
 import Data.Bits ((.|.), shiftL)
 import Data.Text (Text)
@@ -90,15 +97,21 @@ import Polars.Internal.Raw
     , RawDataFrame
     , RawError
     , RawSeries
+    , phs_dataframe_clear
     , phs_dataframe_drop
     , phs_dataframe_drop_nulls
+    , phs_dataframe_estimated_size
     , phs_dataframe_filter
     , phs_dataframe_fill_null
+    , phs_dataframe_first_col_n_chunks
+    , phs_dataframe_free
     , phs_dataframe_hstack
     , phs_dataframe_head
-    , phs_dataframe_new
-    , phs_dataframe_join
     , phs_dataframe_height
+    , phs_dataframe_is_empty
+    , phs_dataframe_join
+    , phs_dataframe_max_n_chunks
+    , phs_dataframe_new
     , phs_dataframe_null_count
     , phs_dataframe_rename
     , phs_dataframe_reverse
@@ -106,6 +119,7 @@ import Polars.Internal.Raw
     , phs_dataframe_select
     , phs_dataframe_shape
     , phs_dataframe_slice
+    , phs_dataframe_split_at
     , phs_dataframe_sort
     , phs_dataframe_tail
     , phs_dataframe_take
@@ -451,6 +465,24 @@ dataFrameDropNulls subset df = withDataFrame df $ \ptr -> withMaybeCStringList s
 dataFrameNullCount :: DataFrame -> IO (Either PolarsError DataFrame)
 dataFrameNullCount df = withDataFrame df $ \ptr -> dataframeOut (phs_dataframe_null_count ptr)
 
+dataFrameEstimatedSize :: DataFrame -> IO (Either PolarsError Int)
+dataFrameEstimatedSize df = withDataFrame df $ \ptr -> word64Out (phs_dataframe_estimated_size ptr)
+
+dataFrameFirstColNChunks :: DataFrame -> IO (Either PolarsError Int)
+dataFrameFirstColNChunks df = withDataFrame df $ \ptr -> word64Out (phs_dataframe_first_col_n_chunks ptr)
+
+dataFrameMaxNChunks :: DataFrame -> IO (Either PolarsError Int)
+dataFrameMaxNChunks df = withDataFrame df $ \ptr -> word64Out (phs_dataframe_max_n_chunks ptr)
+
+dataFrameIsEmpty :: DataFrame -> IO (Either PolarsError Bool)
+dataFrameIsEmpty df = withDataFrame df $ \ptr -> boolOut (phs_dataframe_is_empty ptr)
+
+dataFrameClear :: DataFrame -> IO (Either PolarsError DataFrame)
+dataFrameClear df = withDataFrame df $ \ptr -> dataframeOut (phs_dataframe_clear ptr)
+
+dataFrameSplitAt :: Int -> DataFrame -> IO (Either PolarsError (DataFrame, DataFrame))
+dataFrameSplitAt offset df = withDataFrame df $ \ptr -> dataframePairOut (phs_dataframe_split_at ptr (fromIntegral offset))
+
 height :: DataFrame -> IO (Either PolarsError Int)
 height df = withDataFrame df $ \ptr -> word64Out (phs_dataframe_height ptr)
 
@@ -511,6 +543,46 @@ word64Out action =
             if fromIntegralStatus status == 0
                 then word64ToInt <$> peek outPtr
                 else Left <$> (consumeError (fromIntegralStatus status) =<< peek errPtr)
+
+boolOut :: (Ptr CBool -> Ptr (Ptr RawError) -> IO CInt) -> IO (Either PolarsError Bool)
+boolOut action =
+    alloca $ \outPtr ->
+        alloca $ \errPtr -> do
+            poke errPtr nullPtr
+            status <- action outPtr errPtr
+            if fromIntegralStatus status == 0
+                then do
+                    CBool out <- peek outPtr
+                    pure (Right (out /= 0))
+                else Left <$> (consumeError (fromIntegralStatus status) =<< peek errPtr)
+
+dataframePairOut :: (Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt) -> IO (Either PolarsError (DataFrame, DataFrame))
+dataframePairOut action =
+    alloca $ \leftPtr ->
+        alloca $ \rightPtr ->
+            alloca $ \errPtr -> do
+                poke leftPtr nullPtr
+                poke rightPtr nullPtr
+                poke errPtr nullPtr
+                status <- action leftPtr rightPtr errPtr
+                if fromIntegralStatus status == 0
+                    then do
+                        left <- peek leftPtr
+                        right <- peek rightPtr
+                        if left == nullPtr
+                            then do
+                                when (right /= nullPtr) (phs_dataframe_free right)
+                                pure (Left (nullPointerError "dataframe left output"))
+                            else
+                                if right == nullPtr
+                                    then do
+                                        phs_dataframe_free left
+                                        pure (Left (nullPointerError "dataframe right output"))
+                                    else do
+                                        leftDf <- mkDataFrame left
+                                        rightDf <- mkDataFrame right
+                                        pure (Right (leftDf, rightDf))
+                    else Left <$> (consumeError (fromIntegralStatus status) =<< peek errPtr)
 
 unitOut :: (Ptr (Ptr RawError) -> IO CInt) -> IO (Either PolarsError ())
 unitOut action =
