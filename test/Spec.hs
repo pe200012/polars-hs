@@ -2533,6 +2533,7 @@ main = hspec $ do
             case (valuesScan, salesScan) of
                 (Right valuesLf, Right salesLf) -> do
                     counts <- Pl.nullCount valuesLf
+                    nonNullCounts <- Pl.count valuesLf
                     uniqueDepartments <-
                         Pl.unique
                             Pl.defaultUniqueOptions
@@ -2541,20 +2542,27 @@ main = hspec $ do
                                 , Pl.uniqueMaintainOrder = True
                                 }
                             salesLf
-                    case (counts, uniqueDepartments) of
-                        (Right countsLf, Right uniqueLf) -> do
+                    case (counts, nonNullCounts, uniqueDepartments) of
+                        (Right countsLf, Right nonNullCountsLf, Right uniqueLf) -> do
                             countsDf <- Pl.collect countsLf
+                            nonNullCountsDf <- Pl.collect nonNullCountsLf
                             uniqueDf <- Pl.collect uniqueLf
-                            case (countsDf, uniqueDf) of
-                                (Right cDf, Right uDf) -> do
+                            case (countsDf, nonNullCountsDf, uniqueDf) of
+                                (Right cDf, Right ncDf, Right uDf) -> do
                                     Pl.column @Word32 cDf "age" `shouldReturn` Right (V.fromList [Just 1])
                                     Pl.column @Word32 cDf "score" `shouldReturn` Right (V.fromList [Just 1])
                                     Pl.column @Word32 cDf "active" `shouldReturn` Right (V.fromList [Just 1])
+                                    Pl.column @Word32 ncDf "name" `shouldReturn` Right (V.fromList [Just 3])
+                                    Pl.column @Word32 ncDf "age" `shouldReturn` Right (V.fromList [Just 2])
+                                    Pl.column @Word32 ncDf "score" `shouldReturn` Right (V.fromList [Just 2])
+                                    Pl.column @Word32 ncDf "active" `shouldReturn` Right (V.fromList [Just 2])
                                     Pl.column @T.Text uDf "name" `shouldReturn` Right (V.fromList [Just "Alice", Just "Carol"])
-                                (Left err, _) -> expectationFailure (show err)
-                                (_, Left err) -> expectationFailure (show err)
-                        (Left err, _) -> expectationFailure (show err)
-                        (_, Left err) -> expectationFailure (show err)
+                                (Left err, _, _) -> expectationFailure (show err)
+                                (_, Left err, _) -> expectationFailure (show err)
+                                (_, _, Left err) -> expectationFailure (show err)
+                        (Left err, _, _) -> expectationFailure (show err)
+                        (_, Left err, _) -> expectationFailure (show err)
+                        (_, _, Left err) -> expectationFailure (show err)
                 (Left err, _) -> expectationFailure (show err)
                 (_, Left err) -> expectationFailure (show err)
 

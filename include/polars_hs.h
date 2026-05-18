@@ -1003,6 +1003,10 @@ int phs_lazyframe_fill_nan(const struct phs_lazyframe *lazyframe,
                            struct phs_lazyframe **out,
                            struct phs_error **err);
 
+int phs_lazyframe_count(const struct phs_lazyframe *lazyframe,
+                        struct phs_lazyframe **out,
+                        struct phs_error **err);
+
 int phs_lazyframe_null_count(const struct phs_lazyframe *lazyframe,
                              struct phs_lazyframe **out,
                              struct phs_error **err);

@@ -30,6 +30,7 @@ module Polars.LazyFrame
     , collectWithEngine
     , castAllColumns
     , castColumns
+    , count
     , defaultCsvReadOptions
     , defaultLazyFrameExplodeOptions
     , defaultLazyFrameTopKOptions
@@ -121,6 +122,7 @@ import Polars.Internal.Raw
     , phs_lazyframe_collect_all_with_engine
     , phs_lazyframe_collect_schema
     , phs_lazyframe_collect_with_engine
+    , phs_lazyframe_count
     , phs_lazyframe_cache
     , phs_lazyframe_cast
     , phs_lazyframe_cast_all
@@ -581,6 +583,10 @@ fillNulls value lf = lazyFrameExprOut value lf phs_lazyframe_fill_null
 fillNans :: Expr -> LazyFrame -> IO (Either PolarsError LazyFrame)
 fillNans value lf = lazyFrameExprOut value lf phs_lazyframe_fill_nan
 
+-- | Count non-null values for each column.
+count :: LazyFrame -> IO (Either PolarsError LazyFrame)
+count lf = withLazyFrame lf $ \lfPtr -> lazyFrameOut (phs_lazyframe_count lfPtr)
+
 nullCount :: LazyFrame -> IO (Either PolarsError LazyFrame)
 nullCount lf = withLazyFrame lf $ \lfPtr -> lazyFrameOut (phs_lazyframe_null_count lfPtr)
 
@@ -779,8 +785,8 @@ topBottomK ::
     Int ->
     LazyFrame ->
     IO (Either PolarsError LazyFrame)
-topBottomK label raw options count lf =
-    case validateLazyFrameTopKOptions label options count of
+topBottomK label raw options rowCount lf =
+    case validateLazyFrameTopKOptions label options rowCount of
         Left err -> pure (Left err)
         Right (countWord, reverseBytes) ->
             withLazyFrame lf $ \lfPtr ->
@@ -798,8 +804,8 @@ topBottomK label raw options count lf =
                             )
 
 validateLazyFrameTopKOptions :: Text -> LazyFrameTopKOptions -> Int -> Either PolarsError (Word64, [Word8])
-validateLazyFrameTopKOptions label options count = do
-    countWord <- nonNegativeWord64 (label <> " count") count
+validateLazyFrameTopKOptions label options rowCount = do
+    countWord <- nonNegativeWord64 (label <> " count") rowCount
     let byCount = length (lazyFrameTopKBy options)
         reverseValues = lazyFrameTopKReverse options
         reverseCount = length reverseValues

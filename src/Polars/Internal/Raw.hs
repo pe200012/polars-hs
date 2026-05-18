@@ -143,6 +143,7 @@ module Polars.Internal.Raw
     , phs_lazyframe_collect_all_with_engine
     , phs_lazyframe_collect_schema
     , phs_lazyframe_collect_with_engine
+    , phs_lazyframe_count
     , phs_lazyframe_describe_plan
     , phs_lazyframe_drop
     , phs_lazyframe_drop_nans
@@ -901,6 +902,9 @@ foreign import ccall unsafe "phs_lazyframe_fill_null"
 
 foreign import ccall unsafe "phs_lazyframe_fill_nan"
     phs_lazyframe_fill_nan :: Ptr RawLazyFrame -> Ptr RawExpr -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall unsafe "phs_lazyframe_count"
+    phs_lazyframe_count :: Ptr RawLazyFrame -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_lazyframe_null_count"
     phs_lazyframe_null_count :: Ptr RawLazyFrame -> Ptr (Ptr RawLazyFrame) -> Ptr (Ptr RawError) -> IO CInt
