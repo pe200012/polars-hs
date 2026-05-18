@@ -33,7 +33,9 @@ module Polars.DataFrame
     , dataFrameFillNull
     , dataFrameFirstColNChunks
     , dataFrameHStack
+    , dataFrameIsDuplicated
     , dataFrameIsEmpty
+    , dataFrameIsUnique
     , dataFrameJoin
     , dataFrameMaxNChunks
     , dataFrameNewFromIndex
@@ -95,7 +97,7 @@ import Foreign.Storable (peek, poke)
 import Polars.Error (PolarsError (..), PolarsErrorCode (InvalidArgument))
 import Polars.Internal.Bytes (copyAndFreeBytes)
 import Polars.Internal.CString (withFilePathCString, withMaybeTextCString, withTextCString)
-import Polars.Internal.Managed (DataFrame, Series, mkDataFrame, withDataFrame, withSeries)
+import Polars.Internal.Managed (DataFrame, Series, mkDataFrame, mkSeries, withDataFrame, withSeries)
 import Polars.Internal.Raw
     ( RawBytes
     , RawDataFrame
@@ -113,7 +115,9 @@ import Polars.Internal.Raw
     , phs_dataframe_hstack
     , phs_dataframe_head
     , phs_dataframe_height
+    , phs_dataframe_is_duplicated
     , phs_dataframe_is_empty
+    , phs_dataframe_is_unique
     , phs_dataframe_join
     , phs_dataframe_max_n_chunks
     , phs_dataframe_new
@@ -449,6 +453,12 @@ dataFrameUnique options df = case dataFrameUniqueSubset options of
                         (toCBool (dataFrameUniqueMaintainOrder options))
                     )
 
+dataFrameIsUnique :: DataFrame -> IO (Either PolarsError Series)
+dataFrameIsUnique df = withDataFrame df $ \ptr -> seriesOut (phs_dataframe_is_unique ptr)
+
+dataFrameIsDuplicated :: DataFrame -> IO (Either PolarsError Series)
+dataFrameIsDuplicated df = withDataFrame df $ \ptr -> seriesOut (phs_dataframe_is_duplicated ptr)
+
 dataFrameFillNull :: FillNullStrategy -> DataFrame -> IO (Either PolarsError DataFrame)
 dataFrameFillNull strategy df = case fillNullStrategyCode strategy of
     Left err -> pure (Left err)
@@ -558,6 +568,21 @@ dataframeOut action =
                     if ptr == nullPtr
                         then pure (Left (nullPointerError "dataframe output"))
                         else Right <$> mkDataFrame ptr
+                else Left <$> (consumeError (fromIntegralStatus status) =<< peek errPtr)
+
+seriesOut :: (Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt) -> IO (Either PolarsError Series)
+seriesOut action =
+    alloca $ \outPtr ->
+        alloca $ \errPtr -> do
+            poke outPtr nullPtr
+            poke errPtr nullPtr
+            status <- action outPtr errPtr
+            if fromIntegralStatus status == 0
+                then do
+                    ptr <- peek outPtr
+                    if ptr == nullPtr
+                        then pure (Left (nullPointerError "series output"))
+                        else Right <$> mkSeries ptr
                 else Left <$> (consumeError (fromIntegralStatus status) =<< peek errPtr)
 
 word64Out :: (Ptr Word64 -> Ptr (Ptr RawError) -> IO CInt) -> IO (Either PolarsError Int)

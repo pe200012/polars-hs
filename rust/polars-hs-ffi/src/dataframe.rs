@@ -878,6 +878,36 @@ pub unsafe extern "C" fn phs_dataframe_unique(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_is_unique(
+    dataframe: *const phs_dataframe,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        *out = series_into_raw(handle.value.is_unique()?.into_series());
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_is_duplicated(
+    dataframe: *const phs_dataframe,
+    out: *mut *mut phs_series,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        *out = series_into_raw(handle.value.is_duplicated()?.into_series());
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_dataframe_reverse(
     dataframe: *const phs_dataframe,
     out: *mut *mut phs_dataframe,
@@ -1865,6 +1895,54 @@ mod tests {
             crate::handles::phs_dataframe_free(length_mismatch);
             crate::handles::phs_dataframe_free(aligned_multichunk);
             crate::handles::phs_dataframe_free(misaligned);
+            crate::handles::phs_dataframe_free(df);
+        }
+    }
+
+    #[test]
+    fn dataframe_row_distinct_masks_work() {
+        let df = dataframe_into_raw(
+            DataFrame::new_infer_height(vec![
+                Series::new("name".into(), ["a", "b", "a", "c", "b"]).into(),
+                Series::new("age".into(), [1_i64, 2, 1, 3, 2]).into(),
+            ])
+            .unwrap(),
+        );
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_dataframe_is_duplicated(df, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let duplicated = out;
+        let duplicated_values: Vec<Option<bool>> = unsafe { series_ref(duplicated) }
+            .unwrap()
+            .value
+            .bool()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(duplicated_values, vec![Some(true), Some(true), Some(true), Some(false), Some(true)]);
+
+        let status = unsafe { phs_dataframe_is_unique(df, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let unique = out;
+        let unique_values: Vec<Option<bool>> = unsafe { series_ref(unique) }
+            .unwrap()
+            .value
+            .bool()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(unique_values, vec![Some(false), Some(false), Some(false), Some(true), Some(false)]);
+
+        let status = unsafe { phs_dataframe_is_unique(df, ptr::null_mut(), &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "out pointer was null");
+
+        unsafe {
+            crate::handles::phs_series_free(unique);
+            crate::handles::phs_series_free(duplicated);
             crate::handles::phs_dataframe_free(df);
         }
     }

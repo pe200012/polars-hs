@@ -248,6 +248,14 @@ int phs_dataframe_unique(const struct phs_dataframe *dataframe,
                          struct phs_dataframe **out,
                          struct phs_error **err);
 
+int phs_dataframe_is_unique(const struct phs_dataframe *dataframe,
+                            struct phs_series **out,
+                            struct phs_error **err);
+
+int phs_dataframe_is_duplicated(const struct phs_dataframe *dataframe,
+                                struct phs_series **out,
+                                struct phs_error **err);
+
 int phs_dataframe_reverse(const struct phs_dataframe *dataframe,
                           struct phs_dataframe **out,
                           struct phs_error **err);

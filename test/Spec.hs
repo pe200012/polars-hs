@@ -602,6 +602,32 @@ main = hspec $ do
                 (_, _, Left err, _) -> expectationFailure (show err)
                 (_, _, _, Left err) -> expectationFailure (show err)
 
+        it "computes eager DataFrame row distinct masks" $ do
+            nameResult <- Pl.series @T.Text "name" (V.fromList [Just "a", Just "b", Just "a", Just "c", Just "b"])
+            ageResult <- Pl.series @Int64 "age" (V.fromList [Just 1, Just 2, Just 1, Just 3, Just 2])
+            case (nameResult, ageResult) of
+                (Right name, Right age) -> do
+                    dfResult <- Pl.dataFrame [name, age]
+                    case dfResult of
+                        Left err -> expectationFailure (show err)
+                        Right df -> do
+                            duplicated <- Pl.dataFrameIsDuplicated df
+                            unique <- Pl.dataFrameIsUnique df
+                            case (duplicated, unique) of
+                                (Right duplicatedMask, Right uniqueMask) -> do
+                                    Pl.seriesBool duplicatedMask `shouldReturn` Right (V.fromList [Just True, Just True, Just True, Just False, Just True])
+                                    Pl.seriesBool uniqueMask `shouldReturn` Right (V.fromList [Just False, Just False, Just False, Just True, Just False])
+                                    filtered <- Pl.dataFrameFilter duplicatedMask df
+                                    case filtered of
+                                        Left err -> expectationFailure (show err)
+                                        Right dupes -> do
+                                            Pl.shape dupes `shouldReturn` Right (4, 2)
+                                            Pl.column @T.Text dupes "name" `shouldReturn` Right (V.fromList [Just "a", Just "b", Just "a", Just "b"])
+                                (Left err, _) -> expectationFailure (show err)
+                                (_, Left err) -> expectationFailure (show err)
+                (Left err, _) -> expectationFailure (show err)
+                (_, Left err) -> expectationFailure (show err)
+
         it "takes eager DataFrame rows by explicit indices" $ do
             result <- Pl.readCsv valuesCsv
             case result of

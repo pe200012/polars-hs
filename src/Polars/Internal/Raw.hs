@@ -55,7 +55,9 @@ module Polars.Internal.Raw
     , phs_dataframe_from_ipc_bytes
     , phs_dataframe_head
     , phs_dataframe_height
+    , phs_dataframe_is_duplicated
     , phs_dataframe_is_empty
+    , phs_dataframe_is_unique
     , phs_dataframe_join
     , phs_dataframe_max_n_chunks
     , phs_dataframe_new_from_index
@@ -437,6 +439,12 @@ foreign import ccall unsafe "phs_dataframe_sort"
 
 foreign import ccall unsafe "phs_dataframe_unique"
     phs_dataframe_unique :: Ptr RawDataFrame -> Ptr CString -> CSize -> CBool -> CInt -> CBool -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_dataframe_is_unique"
+    phs_dataframe_is_unique :: Ptr RawDataFrame -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_dataframe_is_duplicated"
+    phs_dataframe_is_duplicated :: Ptr RawDataFrame -> Ptr (Ptr RawSeries) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_dataframe_reverse"
     phs_dataframe_reverse :: Ptr RawDataFrame -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
