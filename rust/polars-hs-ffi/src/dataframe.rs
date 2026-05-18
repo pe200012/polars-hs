@@ -775,6 +775,64 @@ pub unsafe extern "C" fn phs_dataframe_with_columns(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_insert_column(
+    dataframe: *const phs_dataframe,
+    index: u64,
+    series: *const phs_series,
+    out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        let series = unsafe { series_ref(series) }?;
+        let index = usize_from_u64(index, "dataframe insert-column index")?;
+        let mut df = handle.value.clone();
+        if index > df.width() {
+            return Err(PhsError::invalid_argument(format!(
+                "dataframe insert-column index {index} exceeds width {}",
+                df.width()
+            )));
+        }
+        df.insert_column(index, series.value.clone().into())?;
+        *out = dataframe_into_raw(df);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_replace_column(
+    dataframe: *const phs_dataframe,
+    index: u64,
+    series: *const phs_series,
+    out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        let series = unsafe { series_ref(series) }?;
+        let index = usize_from_u64(index, "dataframe replace-column index")?;
+        let mut df = handle.value.clone();
+        let column: Column = series.value.clone().into();
+        let name = column.name();
+        if let Some(existing_index) = df.get_column_index(name) {
+            if existing_index != index {
+                return Err(PhsError::invalid_argument(format!(
+                    "dataframe replace-column name {:?} already exists at index {existing_index}",
+                    name
+                )));
+            }
+        }
+        df.replace_column(index, column)?;
+        *out = dataframe_into_raw(df);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_dataframe_fill_null(
     dataframe: *const phs_dataframe,
     strategy: c_int,
@@ -2259,6 +2317,121 @@ mod tests {
             crate::handles::phs_dataframe_free(out);
             crate::handles::phs_series_free(score);
             crate::handles::phs_series_free(age);
+            crate::handles::phs_dataframe_free(df);
+        }
+    }
+
+    #[test]
+    fn dataframe_insert_and_replace_column_work() {
+        let df = read_values_dataframe();
+        let active = series_into_raw(Series::new("active_inserted".into(), [Some(true), Some(false), None]));
+        let city = series_into_raw(Series::new("city".into(), ["Tokyo", "Paris", "Oslo"]));
+        let score = series_into_raw(Series::new("score_replaced".into(), [9.5_f64, 8.0, 7.25]));
+        let duplicate_age = series_into_raw(Series::new("age".into(), [40_i64, 41, 42]));
+        let short = series_into_raw(Series::new("short".into(), [1_i64, 2]));
+        let unit = series_into_raw(Series::new("unit".into(), [1.0_f64]));
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_dataframe_insert_column(df, 1, active, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let inserted = out;
+        let names: Vec<&str> = unsafe { dataframe_ref(inserted) }
+            .unwrap()
+            .value
+            .get_column_names()
+            .into_iter()
+            .map(|name| name.as_str())
+            .collect();
+        assert_eq!(names, vec!["name", "active_inserted", "age", "score", "active"]);
+
+        let status = unsafe { phs_dataframe_insert_column(df, 4, city, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let appended = out;
+        let names: Vec<&str> = unsafe { dataframe_ref(appended) }
+            .unwrap()
+            .value
+            .get_column_names()
+            .into_iter()
+            .map(|name| name.as_str())
+            .collect();
+        assert_eq!(names, vec!["name", "age", "score", "active", "city"]);
+
+        out = ptr::null_mut();
+        let status = unsafe { phs_dataframe_insert_column(df, 1, duplicate_age, &mut out, &mut err) };
+        assert_ne!(status, PHS_OK);
+        assert!(out.is_null());
+        unsafe { take_error_message(err) };
+
+        let status = unsafe { phs_dataframe_insert_column(df, 5, city, &mut out, &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        assert!(out.is_null());
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "dataframe insert-column index 5 exceeds width 4");
+
+        let status = unsafe { phs_dataframe_insert_column(df, 1, short, &mut out, &mut err) };
+        assert_ne!(status, PHS_OK);
+        assert!(out.is_null());
+        unsafe { take_error_message(err) };
+
+        let status = unsafe { phs_dataframe_insert_column(df, 1, unit, &mut out, &mut err) };
+        assert_ne!(status, PHS_OK);
+        assert!(out.is_null());
+        unsafe { take_error_message(err) };
+
+        let status = unsafe { phs_dataframe_insert_column(df, 0, active, ptr::null_mut(), &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "out pointer was null");
+
+        let status = unsafe { phs_dataframe_replace_column(df, 1, score, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let replaced = out;
+        let names: Vec<&str> = unsafe { dataframe_ref(replaced) }
+            .unwrap()
+            .value
+            .get_column_names()
+            .into_iter()
+            .map(|name| name.as_str())
+            .collect();
+        assert_eq!(names, vec!["name", "score_replaced", "score", "active"]);
+
+        let status = unsafe { phs_dataframe_replace_column(df, 0, duplicate_age, &mut out, &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "dataframe replace-column name \"age\" already exists at index 1");
+
+        out = ptr::null_mut();
+        let status = unsafe { phs_dataframe_replace_column(df, 4, score, &mut out, &mut err) };
+        assert_ne!(status, PHS_OK);
+        assert!(out.is_null());
+        unsafe { take_error_message(err) };
+
+        let status = unsafe { phs_dataframe_replace_column(df, 0, short, &mut out, &mut err) };
+        assert_ne!(status, PHS_OK);
+        assert!(out.is_null());
+        unsafe { take_error_message(err) };
+
+        let status = unsafe { phs_dataframe_replace_column(df, 0, unit, &mut out, &mut err) };
+        assert_ne!(status, PHS_OK);
+        assert!(out.is_null());
+        unsafe { take_error_message(err) };
+
+        let status = unsafe { phs_dataframe_replace_column(df, 0, score, ptr::null_mut(), &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "out pointer was null");
+
+        unsafe {
+            crate::handles::phs_dataframe_free(replaced);
+            crate::handles::phs_dataframe_free(appended);
+            crate::handles::phs_dataframe_free(inserted);
+            crate::handles::phs_series_free(unit);
+            crate::handles::phs_series_free(short);
+            crate::handles::phs_series_free(duplicate_age);
+            crate::handles::phs_series_free(score);
+            crate::handles::phs_series_free(city);
+            crate::handles::phs_series_free(active);
             crate::handles::phs_dataframe_free(df);
         }
     }

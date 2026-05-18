@@ -218,6 +218,18 @@ int phs_dataframe_with_columns(const struct phs_dataframe *dataframe,
                                struct phs_dataframe **out,
                                struct phs_error **err);
 
+int phs_dataframe_insert_column(const struct phs_dataframe *dataframe,
+                                uint64_t index,
+                                const struct phs_series *series,
+                                struct phs_dataframe **out,
+                                struct phs_error **err);
+
+int phs_dataframe_replace_column(const struct phs_dataframe *dataframe,
+                                 uint64_t index,
+                                 const struct phs_series *series,
+                                 struct phs_dataframe **out,
+                                 struct phs_error **err);
+
 int phs_dataframe_fill_null(const struct phs_dataframe *dataframe,
                             int strategy,
                             bool has_limit,

@@ -64,6 +64,8 @@ module Polars.Internal.Raw
     , phs_dataframe_null_count
     , phs_dataframe_rechunk
     , phs_dataframe_rename
+    , phs_dataframe_insert_column
+    , phs_dataframe_replace_column
     , phs_dataframe_reverse
     , phs_dataframe_sample_frac
     , phs_dataframe_sample_n
@@ -423,6 +425,12 @@ foreign import ccall safe "phs_dataframe_hstack"
 
 foreign import ccall safe "phs_dataframe_with_columns"
     phs_dataframe_with_columns :: Ptr RawDataFrame -> Ptr (Ptr RawSeries) -> CSize -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_dataframe_insert_column"
+    phs_dataframe_insert_column :: Ptr RawDataFrame -> Word64 -> Ptr RawSeries -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_dataframe_replace_column"
+    phs_dataframe_replace_column :: Ptr RawDataFrame -> Word64 -> Ptr RawSeries -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall unsafe "phs_dataframe_sort"
     phs_dataframe_sort ::

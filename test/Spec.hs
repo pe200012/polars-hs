@@ -1230,6 +1230,65 @@ main = hspec $ do
                 (_, Left err, _) -> expectationFailure (show err)
                 (_, _, Left err) -> expectationFailure (show err)
 
+        it "inserts and replaces eager DataFrame columns by index" $ do
+            dfResult <- Pl.readCsv valuesCsv
+            activeResult <- Pl.series @Bool "active_inserted" (V.fromList [Just True, Just False, Nothing])
+            cityResult <- Pl.series @T.Text "city" (V.fromList [Just "Tokyo", Just "Paris", Just "Oslo"])
+            scoreResult <- Pl.series @Double "score_replaced" (V.fromList [Just 9.5, Just 8.0, Just 7.25])
+            duplicateResult <- Pl.series @Int64 "age" (V.fromList [Just 40, Just 41, Just 42])
+            shortResult <- Pl.series @Int64 "short" (V.fromList [Just 1, Just 2])
+            unitResult <- Pl.series @Double "unit" (V.singleton (Just 1.0))
+            case (dfResult, activeResult, cityResult, scoreResult, duplicateResult, shortResult, unitResult) of
+                (Right df, Right active, Right city, Right score, Right duplicateAge, Right short, Right unit) -> do
+                    inserted <- Pl.dataFrameInsertColumn 1 active df
+                    appended <- Pl.dataFrameInsertColumn 4 city df
+                    insertTooFar <- Pl.dataFrameInsertColumn 5 city df
+                    duplicate <- Pl.dataFrameInsertColumn 1 duplicateAge df
+                    negativeInsert <- Pl.dataFrameInsertColumn (-1) active df
+                    shortInsert <- Pl.dataFrameInsertColumn 1 short df
+                    unitInsert <- Pl.dataFrameInsertColumn 1 unit df
+                    replaced <- Pl.dataFrameReplaceColumn 1 score df
+                    replaceDuplicate <- Pl.dataFrameReplaceColumn 0 duplicateAge df
+                    replaceMissing <- Pl.dataFrameReplaceColumn 4 score df
+                    negativeReplace <- Pl.dataFrameReplaceColumn (-1) score df
+                    shortReplace <- Pl.dataFrameReplaceColumn 0 short df
+                    unitReplace <- Pl.dataFrameReplaceColumn 0 unit df
+                    case inserted of
+                        Left err -> expectationFailure (show err)
+                        Right insertedDf -> do
+                            schemaResult <- Pl.schema insertedDf
+                            fmap (map Pl.fieldName) schemaResult `shouldBe` Right ["name", "active_inserted", "age", "score", "active"]
+                            Pl.column @Bool insertedDf "active_inserted" `shouldReturn` Right (V.fromList [Just True, Just False, Nothing])
+                    case appended of
+                        Left err -> expectationFailure (show err)
+                        Right appendedDf -> do
+                            schemaResult <- Pl.schema appendedDf
+                            fmap (map Pl.fieldName) schemaResult `shouldBe` Right ["name", "age", "score", "active", "city"]
+                            Pl.column @T.Text appendedDf "city" `shouldReturn` Right (V.fromList [Just "Tokyo", Just "Paris", Just "Oslo"])
+                    expectInvalidArgumentMessage "dataframe insert-column index 5 exceeds width 4" insertTooFar
+                    expectPolarsFailure duplicate
+                    expectInvalidArgumentMessage "dataFrameInsertColumn index must be non-negative" negativeInsert
+                    expectPolarsFailure shortInsert
+                    expectPolarsFailure unitInsert
+                    case replaced of
+                        Left err -> expectationFailure (show err)
+                        Right replacedDf -> do
+                            schemaResult <- Pl.schema replacedDf
+                            fmap (map Pl.fieldName) schemaResult `shouldBe` Right ["name", "score_replaced", "score", "active"]
+                            Pl.column @Double replacedDf "score_replaced" `shouldReturn` Right (V.fromList [Just 9.5, Just 8.0, Just 7.25])
+                    expectInvalidArgumentMessage "dataframe replace-column name \"age\" already exists at index 1" replaceDuplicate
+                    expectPolarsFailure replaceMissing
+                    expectInvalidArgumentMessage "dataFrameReplaceColumn index must be non-negative" negativeReplace
+                    expectPolarsFailure shortReplace
+                    expectPolarsFailure unitReplace
+                (Left err, _, _, _, _, _, _) -> expectationFailure (show err)
+                (_, Left err, _, _, _, _, _) -> expectationFailure (show err)
+                (_, _, Left err, _, _, _, _) -> expectationFailure (show err)
+                (_, _, _, Left err, _, _, _) -> expectationFailure (show err)
+                (_, _, _, _, Left err, _, _) -> expectationFailure (show err)
+                (_, _, _, _, _, Left err, _) -> expectationFailure (show err)
+                (_, _, _, _, _, _, Left err) -> expectationFailure (show err)
+
         it "broadcasts unit-length eager DataFrame columns" $ do
             dfResult <- Pl.readCsv valuesCsv
             scoreResult <- Pl.series @Double "score" (V.fromList [Just 10.0])

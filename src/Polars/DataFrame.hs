@@ -34,6 +34,7 @@ module Polars.DataFrame
     , dataFrameFillNull
     , dataFrameFirstColNChunks
     , dataFrameHStack
+    , dataFrameInsertColumn
     , dataFrameIsDuplicated
     , dataFrameIsEmpty
     , dataFrameIsUnique
@@ -42,6 +43,7 @@ module Polars.DataFrame
     , dataFrameNewFromIndex
     , dataFrameNullCount
     , dataFrameRechunk
+    , dataFrameReplaceColumn
     , dataFrameRename
     , dataFrameReverse
     , dataFrameSampleFrac
@@ -124,12 +126,14 @@ import Polars.Internal.Raw
     , phs_dataframe_is_duplicated
     , phs_dataframe_is_empty
     , phs_dataframe_is_unique
+    , phs_dataframe_insert_column
     , phs_dataframe_join
     , phs_dataframe_max_n_chunks
     , phs_dataframe_new
     , phs_dataframe_new_from_index
     , phs_dataframe_null_count
     , phs_dataframe_rechunk
+    , phs_dataframe_replace_column
     , phs_dataframe_rename
     , phs_dataframe_reverse
     , phs_dataframe_sample_frac
@@ -427,6 +431,22 @@ dataFrameWithColumns columns df =
     withDataFrame df $ \dfPtr ->
         withSeriesArray columns $ \seriesPtr len ->
             dataframeOut (phs_dataframe_with_columns dfPtr seriesPtr len)
+
+dataFrameInsertColumn :: Int -> Series -> DataFrame -> IO (Either PolarsError DataFrame)
+dataFrameInsertColumn index column df = case nonNegativeWord64 "dataFrameInsertColumn index" index of
+    Left err -> pure (Left err)
+    Right indexValue ->
+        withDataFrame df $ \dfPtr ->
+            withSeries column $ \seriesPtr ->
+                dataframeOut (phs_dataframe_insert_column dfPtr indexValue seriesPtr)
+
+dataFrameReplaceColumn :: Int -> Series -> DataFrame -> IO (Either PolarsError DataFrame)
+dataFrameReplaceColumn index column df = case nonNegativeWord64 "dataFrameReplaceColumn index" index of
+    Left err -> pure (Left err)
+    Right indexValue ->
+        withDataFrame df $ \dfPtr ->
+            withSeries column $ \seriesPtr ->
+                dataframeOut (phs_dataframe_replace_column dfPtr indexValue seriesPtr)
 
 dataFrameRename :: [(Text, Text)] -> DataFrame -> IO (Either PolarsError DataFrame)
 dataFrameRename [] _ = pure (Left (invalidArgument "dataFrameRename requires at least one column pair"))
