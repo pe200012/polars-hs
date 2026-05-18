@@ -64,8 +64,18 @@ module Polars.LazyFrame
     , bottomK
     , unique
     , unpivot
+    , withCheckOrder
+    , withClusterWithColumns
     , withColumns
+    , withPredicatePushdown
+    , withProjectionPushdown
+    , withRowEstimate
     , withRowIndex
+    , withSimplifyExpr
+    , withSlicePushdown
+    , withTypeCheck
+    , withTypeCoercion
+    , withoutOptimizations
     ) where
 
 import Prelude hiding (filter, reverse)
@@ -123,8 +133,10 @@ import Polars.Internal.Raw
     , phs_lazyframe_top_k
     , phs_lazyframe_unique
     , phs_lazyframe_unpivot
+    , phs_lazyframe_with_optimization
     , phs_lazyframe_with_columns
     , phs_lazyframe_with_row_index
+    , phs_lazyframe_without_optimizations
     , phs_scan_csv_options
     , phs_scan_parquet_options
     )
@@ -306,6 +318,51 @@ describePlanWith optimized tree lf = withLazyFrame lf $ \ptr ->
 
 profile :: LazyFrame -> IO (Either PolarsError (DataFrame, DataFrame))
 profile lf = withLazyFrame lf $ \ptr -> profileOut (phs_lazyframe_profile ptr)
+
+-- | Disable lazy optimizer flags for subsequent plan execution.
+withoutOptimizations :: LazyFrame -> IO (Either PolarsError LazyFrame)
+withoutOptimizations lf = withLazyFrame lf $ \ptr ->
+    lazyFrameOut (phs_lazyframe_without_optimizations ptr)
+
+-- | Toggle projection pushdown for a lazy query.
+withProjectionPushdown :: Bool -> LazyFrame -> IO (Either PolarsError LazyFrame)
+withProjectionPushdown = optimizerToggle 0
+
+-- | Toggle predicate pushdown for a lazy query.
+withPredicatePushdown :: Bool -> LazyFrame -> IO (Either PolarsError LazyFrame)
+withPredicatePushdown = optimizerToggle 1
+
+-- | Toggle type coercion during lazy IR conversion.
+withTypeCoercion :: Bool -> LazyFrame -> IO (Either PolarsError LazyFrame)
+withTypeCoercion = optimizerToggle 2
+
+-- | Toggle type checking during lazy IR conversion.
+withTypeCheck :: Bool -> LazyFrame -> IO (Either PolarsError LazyFrame)
+withTypeCheck = optimizerToggle 3
+
+-- | Toggle expression simplification for a lazy query.
+withSimplifyExpr :: Bool -> LazyFrame -> IO (Either PolarsError LazyFrame)
+withSimplifyExpr = optimizerToggle 4
+
+-- | Toggle slice and limit pushdown for a lazy query.
+withSlicePushdown :: Bool -> LazyFrame -> IO (Either PolarsError LazyFrame)
+withSlicePushdown = optimizerToggle 5
+
+-- | Toggle clustering of independent consecutive with-columns nodes.
+withClusterWithColumns :: Bool -> LazyFrame -> IO (Either PolarsError LazyFrame)
+withClusterWithColumns = optimizerToggle 6
+
+-- | Toggle order-dependency checks in lazy optimization.
+withCheckOrder :: Bool -> LazyFrame -> IO (Either PolarsError LazyFrame)
+withCheckOrder = optimizerToggle 7
+
+-- | Toggle row-count estimation used by lazy joins.
+withRowEstimate :: Bool -> LazyFrame -> IO (Either PolarsError LazyFrame)
+withRowEstimate = optimizerToggle 8
+
+optimizerToggle :: CInt -> Bool -> LazyFrame -> IO (Either PolarsError LazyFrame)
+optimizerToggle code enabled lf = withLazyFrame lf $ \ptr ->
+    lazyFrameOut (phs_lazyframe_with_optimization ptr code (toCBool enabled))
 
 filter :: Expr -> LazyFrame -> IO (Either PolarsError LazyFrame)
 filter predicate lf = do

@@ -6,7 +6,7 @@ module Main (main) where
 import Prelude hiding (filter, head)
 
 import Control.Exception (bracket)
-import Control.Monad (when)
+import Control.Monad (foldM, when)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 import Data.Foldable (forM_)
@@ -1960,6 +1960,52 @@ main = hspec $ do
                         Right missingLf -> do
                             missingPlan <- Pl.describeOptimizedPlan missingLf
                             expectPolarsFailure missingPlan
+
+        it "controls lazy optimizer toggles" $ do
+            scanResult <- Pl.scanCsv fixtureCsv
+            case scanResult of
+                Left err -> expectationFailure (show err)
+                Right lf0 -> do
+                    filtered <- Pl.filter (Pl.col "age" Pl..> Pl.litInt 35) lf0
+                    case filtered of
+                        Left err -> expectationFailure (show err)
+                        Right lf1 -> do
+                            optimized <- Pl.describeOptimizedPlan lf1
+                            noPredicate <- Pl.withPredicatePushdown False lf1
+                            without <- Pl.withoutOptimizations lf1
+                            case (noPredicate, without) of
+                                (Right noPredicateLf, Right withoutLf) -> do
+                                    noPredicatePlan <- Pl.describeOptimizedPlan noPredicateLf
+                                    withoutPlan <- Pl.describeOptimizedPlan withoutLf
+                                    fmap (T.isInfixOf "SELECTION") optimized `shouldBe` Right True
+                                    fmap (T.isInfixOf "FILTER") noPredicatePlan `shouldBe` Right True
+                                    fmap (T.isInfixOf "FILTER") withoutPlan `shouldBe` Right True
+                                (Left err, _) -> expectationFailure (show err)
+                                (_, Left err) -> expectationFailure (show err)
+                    toggled <-
+                        foldM
+                            ( \result action ->
+                                case result of
+                                    Left err -> pure (Left err)
+                                    Right lf -> action lf
+                            )
+                            (Right lf0)
+                            [ Pl.withProjectionPushdown False
+                            , Pl.withTypeCoercion True
+                            , Pl.withTypeCheck True
+                            , Pl.withSimplifyExpr False
+                            , Pl.withSlicePushdown False
+                            , Pl.withClusterWithColumns False
+                            , Pl.withCheckOrder True
+                            , Pl.withRowEstimate True
+                            ]
+                    case toggled of
+                        Left err -> expectationFailure (show err)
+                        Right toggledLf -> do
+                            collected <- Pl.collect toggledLf
+                            case collected of
+                                Left err -> expectationFailure (show err)
+                                Right df -> Pl.shape df `shouldReturn` Right (3, 2)
 
         it "profiles lazy execution and returns result and timing frames" $ do
             scanResult <- Pl.scanCsv salesCsv

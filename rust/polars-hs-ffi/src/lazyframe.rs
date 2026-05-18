@@ -74,6 +74,23 @@ fn validate_sort_bool_options(label: &str, expr_count: usize, values: &[bool]) -
     }
 }
 
+fn apply_optimizer_toggle(lf: LazyFrame, optimization: c_int, toggle: bool) -> PhsResult<LazyFrame> {
+    match optimization {
+        0 => Ok(lf.with_projection_pushdown(toggle)),
+        1 => Ok(lf.with_predicate_pushdown(toggle)),
+        2 => Ok(lf.with_type_coercion(toggle)),
+        3 => Ok(lf.with_type_check(toggle)),
+        4 => Ok(lf.with_simplify_expr(toggle)),
+        5 => Ok(lf.with_slice_pushdown(toggle)),
+        6 => Ok(lf.with_cluster_with_columns(toggle)),
+        7 => Ok(lf.with_check_order(toggle)),
+        8 => Ok(lf.with_row_estimate(toggle)),
+        other => Err(PhsError::invalid_argument(format!(
+            "unknown lazyframe optimization code {other}"
+        ))),
+    }
+}
+
 fn join_type_from_code(code: c_int) -> PhsResult<JoinType> {
     match code {
         0 => Ok(JoinType::Inner),
@@ -408,6 +425,38 @@ pub unsafe extern "C" fn phs_lazyframe_profile(
         };
         *result_out = dataframe_into_raw(result);
         *profile_out = dataframe_into_raw(profile);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_without_optimizations(
+    lazyframe: *const phs_lazyframe,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        *out = lazyframe_into_raw(lf.without_optimizations());
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_lazyframe_with_optimization(
+    lazyframe: *const phs_lazyframe,
+    optimization: c_int,
+    toggle: bool,
+    out: *mut *mut phs_lazyframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let lf = unsafe { lazyframe_ref(lazyframe) }?.value.clone();
+        *out = lazyframe_into_raw(apply_optimizer_toggle(lf, optimization, toggle)?);
         Ok(())
     })
 }
@@ -1225,6 +1274,96 @@ mod tests {
             crate::handles::phs_lazyframe_free(lf0);
             crate::handles::phs_lazyframe_free(filtered);
             crate::handles::phs_lazyframe_free(missing_lf);
+        }
+    }
+
+    #[test]
+    fn lazy_optimizer_toggles_update_plans_and_preserve_results() {
+        let path = fixture_path();
+        let mut lf0 = ptr::null_mut();
+        let mut err = ptr::null_mut();
+        assert_eq!(unsafe { phs_scan_csv(path.as_ptr(), &mut lf0, &mut err) }, PHS_OK);
+
+        let age = std::ffi::CString::new("age").unwrap();
+        let mut age_expr = ptr::null_mut();
+        let mut lit_expr = ptr::null_mut();
+        let mut pred_expr = ptr::null_mut();
+        assert_eq!(unsafe { crate::expr::phs_expr_col(age.as_ptr(), &mut age_expr, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::expr::phs_expr_lit_int(35, &mut lit_expr, &mut err) }, PHS_OK);
+        assert_eq!(unsafe { crate::expr::phs_expr_binary(2, age_expr, lit_expr, &mut pred_expr, &mut err) }, PHS_OK);
+
+        let mut filtered = ptr::null_mut();
+        assert_eq!(unsafe { phs_lazyframe_filter(lf0, pred_expr, &mut filtered, &mut err) }, PHS_OK);
+
+        let mut bytes_out = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_lazyframe_describe_plan(filtered, true, false, &mut bytes_out, &mut err) },
+            PHS_OK
+        );
+        let optimized = unsafe { take_text(bytes_out) };
+        assert!(optimized.contains("SELECTION"));
+
+        let mut no_predicate = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_lazyframe_with_optimization(filtered, 1, false, &mut no_predicate, &mut err) },
+            PHS_OK
+        );
+        assert_eq!(
+            unsafe { phs_lazyframe_describe_plan(no_predicate, true, false, &mut bytes_out, &mut err) },
+            PHS_OK
+        );
+        let no_predicate_plan = unsafe { take_text(bytes_out) };
+        assert!(no_predicate_plan.contains("FILTER"));
+
+        let mut without = ptr::null_mut();
+        assert_eq!(
+            unsafe { phs_lazyframe_without_optimizations(filtered, &mut without, &mut err) },
+            PHS_OK
+        );
+        assert_eq!(
+            unsafe { phs_lazyframe_describe_plan(without, true, false, &mut bytes_out, &mut err) },
+            PHS_OK
+        );
+        let without_plan = unsafe { take_text(bytes_out) };
+        assert!(without_plan.contains("FILTER"));
+
+        let mut toggled = ptr::null_mut();
+        for code in 0..=8 {
+            let status = unsafe { phs_lazyframe_with_optimization(lf0, code, false, &mut toggled, &mut err) };
+            assert_eq!(status, PHS_OK);
+            let mut df = ptr::null_mut();
+            assert_eq!(unsafe { phs_lazyframe_collect(toggled, &mut df, &mut err) }, PHS_OK);
+            assert_eq!(unsafe { crate::handles::dataframe_ref(df) }.unwrap().value.shape(), (3, 2));
+            unsafe { crate::handles::phs_dataframe_free(df) };
+            unsafe { crate::handles::phs_lazyframe_free(toggled) };
+            toggled = ptr::null_mut();
+        }
+
+        let status = unsafe { phs_lazyframe_with_optimization(lf0, 99, true, &mut toggled, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "unknown lazyframe optimization code 99");
+        err = ptr::null_mut();
+
+        let status = unsafe { phs_lazyframe_without_optimizations(ptr::null(), &mut toggled, &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "lazyframe pointer was null");
+        err = ptr::null_mut();
+
+        let status = unsafe { phs_lazyframe_with_optimization(lf0, 0, false, ptr::null_mut(), &mut err) };
+        assert_eq!(status, crate::error::PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "out pointer was null");
+
+        unsafe {
+            crate::handles::phs_expr_free(age_expr);
+            crate::handles::phs_expr_free(lit_expr);
+            crate::handles::phs_expr_free(pred_expr);
+            crate::handles::phs_lazyframe_free(lf0);
+            crate::handles::phs_lazyframe_free(filtered);
+            crate::handles::phs_lazyframe_free(no_predicate);
+            crate::handles::phs_lazyframe_free(without);
         }
     }
 
