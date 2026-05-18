@@ -71,6 +71,7 @@ module Polars.Internal.Raw
     , phs_dataframe_select
     , phs_dataframe_shape
     , phs_dataframe_should_rechunk
+    , phs_dataframe_shift
     , phs_dataframe_slice
     , phs_dataframe_split_at
     , phs_dataframe_sort
@@ -81,6 +82,7 @@ module Polars.Internal.Raw
     , phs_dataframe_unique
     , phs_dataframe_vstack
     , phs_dataframe_with_columns
+    , phs_dataframe_with_row_index
     , phs_dataframe_width
     , phs_error_code
     , phs_error_free
@@ -484,6 +486,9 @@ foreign import ccall unsafe "phs_dataframe_split_at"
 foreign import ccall safe "phs_dataframe_new_from_index"
     phs_dataframe_new_from_index :: Ptr RawDataFrame -> Word64 -> Word64 -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
 
+foreign import ccall safe "phs_dataframe_with_row_index"
+    phs_dataframe_with_row_index :: Ptr RawDataFrame -> CString -> CBool -> Word64 -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
+
 foreign import ccall safe "phs_dataframe_rechunk"
     phs_dataframe_rechunk :: Ptr RawDataFrame -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
 
@@ -492,6 +497,9 @@ foreign import ccall safe "phs_dataframe_align_chunks"
 
 foreign import ccall unsafe "phs_dataframe_should_rechunk"
     phs_dataframe_should_rechunk :: Ptr RawDataFrame -> Ptr CBool -> Ptr (Ptr RawError) -> IO CInt
+
+foreign import ccall safe "phs_dataframe_shift"
+    phs_dataframe_shift :: Ptr RawDataFrame -> CLLong -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt
 
 foreign import ccall safe "phs_dataframe_from_arrow_record_batch"
     phs_dataframe_from_arrow_record_batch :: Ptr () -> Ptr () -> Ptr (Ptr RawDataFrame) -> Ptr (Ptr RawError) -> IO CInt

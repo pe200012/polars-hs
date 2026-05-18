@@ -686,6 +686,53 @@ main = hspec $ do
                 (Left err, _) -> expectationFailure (show err)
                 (_, Left err) -> expectationFailure (show err)
 
+        it "adds row indexes and shifts eager DataFrames" $ do
+            valueResult <- Pl.series @Int64 "value" (V.fromList (Just <$> [10, 20, 30]))
+            labelResult <- Pl.series @T.Text "label" (V.fromList [Just "a", Nothing, Just "c"])
+            case (valueResult, labelResult) of
+                (Right value, Right label) -> do
+                    dfResult <- Pl.dataFrame [value, label]
+                    case dfResult of
+                        Left err -> expectationFailure (show err)
+                        Right df -> do
+                            indexed <- Pl.dataFrameWithRowIndex "row_nr" (Just 5) df
+                            defaultIndexed <- Pl.dataFrameWithRowIndex "row_nr" Nothing df
+                            duplicate <- Pl.dataFrameWithRowIndex "value" Nothing df
+                            negative <- Pl.dataFrameWithRowIndex "row_nr" (Just (-1)) df
+                            shiftedDown <- Pl.dataFrameShift 1 df
+                            shiftedUp <- Pl.dataFrameShift (-1) df
+                            shiftedZero <- Pl.dataFrameShift 0 df
+                            case indexed of
+                                Left err -> expectationFailure (show err)
+                                Right indexedDf -> do
+                                    Pl.shape indexedDf `shouldReturn` Right (3, 3)
+                                    schemaResult <- Pl.schema indexedDf
+                                    fmap (map Pl.fieldName) schemaResult `shouldBe` Right ["row_nr", "value", "label"]
+                                    Pl.column @Word32 indexedDf "row_nr" `shouldReturn` Right (V.fromList [Just 5, Just 6, Just 7])
+                                    Pl.column @Int64 indexedDf "value" `shouldReturn` Right (V.fromList [Just 10, Just 20, Just 30])
+                            case defaultIndexed of
+                                Left err -> expectationFailure (show err)
+                                Right defaultIndexedDf ->
+                                    Pl.column @Word32 defaultIndexedDf "row_nr" `shouldReturn` Right (V.fromList [Just 0, Just 1, Just 2])
+                            expectPolarsFailure duplicate
+                            expectInvalidArgumentMessage "dataFrameWithRowIndex offset must be non-negative" negative
+                            case shiftedDown of
+                                Left err -> expectationFailure (show err)
+                                Right shiftedDf -> do
+                                    Pl.column @Int64 shiftedDf "value" `shouldReturn` Right (V.fromList [Nothing, Just 10, Just 20])
+                                    Pl.column @T.Text shiftedDf "label" `shouldReturn` Right (V.fromList [Nothing, Just "a", Nothing])
+                            case shiftedUp of
+                                Left err -> expectationFailure (show err)
+                                Right shiftedDf -> do
+                                    Pl.column @Int64 shiftedDf "value" `shouldReturn` Right (V.fromList [Just 20, Just 30, Nothing])
+                                    Pl.column @T.Text shiftedDf "label" `shouldReturn` Right (V.fromList [Nothing, Just "c", Nothing])
+                            case shiftedZero of
+                                Left err -> expectationFailure (show err)
+                                Right shiftedDf ->
+                                    Pl.column @Int64 shiftedDf "value" `shouldReturn` Right (V.fromList [Just 10, Just 20, Just 30])
+                (Left err, _) -> expectationFailure (show err)
+                (_, Left err) -> expectationFailure (show err)
+
         it "takes eager DataFrame rows by explicit indices" $ do
             result <- Pl.readCsv valuesCsv
             case result of

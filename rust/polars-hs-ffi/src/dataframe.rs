@@ -1134,6 +1134,30 @@ pub unsafe extern "C" fn phs_dataframe_new_from_index(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_with_row_index(
+    dataframe: *const phs_dataframe,
+    name: *const c_char,
+    has_offset: bool,
+    offset: u64,
+    out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        let name = unsafe { c_str_to_str(name, "name") }?;
+        let offset = if has_offset {
+            Some(idx_size_from_u64(offset, "dataframe row-index offset")?)
+        } else {
+            None
+        };
+        *out = dataframe_into_raw(handle.value.with_row_index(PlSmallStr::from_str(name), offset)?);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn phs_dataframe_rechunk(
     dataframe: *const phs_dataframe,
     out: *mut *mut phs_dataframe,
@@ -1177,6 +1201,22 @@ pub unsafe extern "C" fn phs_dataframe_should_rechunk(
         let out = unsafe { required_mut(out, "out") }?;
         let handle = unsafe { dataframe_ref(dataframe) }?;
         *out = handle.value.should_rechunk();
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn phs_dataframe_shift(
+    dataframe: *const phs_dataframe,
+    periods: i64,
+    out: *mut *mut phs_dataframe,
+    err: *mut *mut phs_error,
+) -> c_int {
+    ffi_boundary(err, || {
+        let out = unsafe { required_mut(out, "out") }?;
+        *out = ptr::null_mut();
+        let handle = unsafe { dataframe_ref(dataframe) }?;
+        *out = dataframe_into_raw(handle.value.shift(periods));
         Ok(())
     })
 }
@@ -2063,6 +2103,115 @@ mod tests {
             crate::handles::phs_dataframe_free(replacement);
             crate::handles::phs_dataframe_free(frac_sampled);
             crate::handles::phs_dataframe_free(sampled);
+            crate::handles::phs_dataframe_free(df);
+        }
+    }
+
+    #[test]
+    fn dataframe_row_index_and_shift_work() {
+        let df = dataframe_into_raw(
+            DataFrame::new_infer_height(vec![
+                Series::new("value".into(), [10_i64, 20, 30]).into(),
+                Series::new("label".into(), [Some("a"), None, Some("c")]).into(),
+            ])
+            .unwrap(),
+        );
+        let name = std::ffi::CString::new("row_nr").unwrap();
+        let duplicate_name = std::ffi::CString::new("value").unwrap();
+        let mut out = ptr::null_mut();
+        let mut err = ptr::null_mut();
+
+        let status = unsafe { phs_dataframe_with_row_index(df, name.as_ptr(), true, 5, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let indexed = out;
+        let row_index: Vec<Option<IdxSize>> = unsafe { dataframe_ref(indexed) }
+            .unwrap()
+            .value
+            .column("row_nr")
+            .unwrap()
+            .as_materialized_series()
+            .idx()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(row_index, vec![Some(5 as IdxSize), Some(6 as IdxSize), Some(7 as IdxSize)]);
+
+        let status = unsafe { phs_dataframe_shift(df, 1, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let shifted_down = out;
+        let values: Vec<Option<i64>> = unsafe { dataframe_ref(shifted_down) }
+            .unwrap()
+            .value
+            .column("value")
+            .unwrap()
+            .as_materialized_series()
+            .i64()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(values, vec![None, Some(10), Some(20)]);
+
+        let status = unsafe { phs_dataframe_shift(df, -1, &mut out, &mut err) };
+        assert_eq!(status, PHS_OK);
+        let shifted_up = out;
+        let values: Vec<Option<i64>> = unsafe { dataframe_ref(shifted_up) }
+            .unwrap()
+            .value
+            .column("value")
+            .unwrap()
+            .as_materialized_series()
+            .i64()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(values, vec![Some(20), Some(30), None]);
+
+        out = ptr::null_mut();
+        let status = unsafe { phs_dataframe_with_row_index(df, duplicate_name.as_ptr(), false, 0, &mut out, &mut err) };
+        assert_ne!(status, PHS_OK);
+        assert!(out.is_null());
+        unsafe { take_error_message(err) };
+
+        let status = unsafe { phs_dataframe_with_row_index(df, name.as_ptr(), true, u64::MAX, &mut out, &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        assert!(out.is_null());
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "dataframe row-index offset exceeds Polars index size");
+
+        let status = unsafe {
+            phs_dataframe_with_row_index(
+                df,
+                name.as_ptr(),
+                true,
+                IdxSize::MAX as u64,
+                &mut out,
+                &mut err,
+            )
+        };
+        assert_ne!(status, PHS_OK);
+        assert!(out.is_null());
+        unsafe { take_error_message(err) };
+
+        let status = unsafe { phs_dataframe_with_row_index(df, ptr::null(), false, 0, &mut out, &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        assert!(out.is_null());
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "name pointer was null");
+
+        let status = unsafe { phs_dataframe_with_row_index(df, name.as_ptr(), false, 0, ptr::null_mut(), &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "out pointer was null");
+
+        let status = unsafe { phs_dataframe_shift(df, 0, ptr::null_mut(), &mut err) };
+        assert_eq!(status, PHS_INVALID_ARGUMENT);
+        let message = unsafe { take_error_message(err) };
+        assert_eq!(message, "out pointer was null");
+
+        unsafe {
+            crate::handles::phs_dataframe_free(shifted_up);
+            crate::handles::phs_dataframe_free(shifted_down);
+            crate::handles::phs_dataframe_free(indexed);
             crate::handles::phs_dataframe_free(df);
         }
     }

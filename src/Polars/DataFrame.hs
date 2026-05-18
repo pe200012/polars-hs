@@ -47,6 +47,7 @@ module Polars.DataFrame
     , dataFrameSampleFrac
     , dataFrameSampleN
     , dataFrameSelect
+    , dataFrameShift
     , dataFrameShouldRechunk
     , dataFrameSlice
     , dataFrameSplitAt
@@ -55,6 +56,7 @@ module Polars.DataFrame
     , dataFrameUnique
     , dataFrameVStack
     , dataFrameWithColumns
+    , dataFrameWithRowIndex
     , head
     , height
     , defaultCsvReadOptions
@@ -136,6 +138,7 @@ import Polars.Internal.Raw
     , phs_dataframe_select
     , phs_dataframe_shape
     , phs_dataframe_should_rechunk
+    , phs_dataframe_shift
     , phs_dataframe_slice
     , phs_dataframe_split_at
     , phs_dataframe_sort
@@ -145,6 +148,7 @@ import Polars.Internal.Raw
     , phs_dataframe_unique
     , phs_dataframe_vstack
     , phs_dataframe_with_columns
+    , phs_dataframe_with_row_index
     , phs_dataframe_width
     , phs_read_csv_options
     , phs_read_parquet_options
@@ -565,6 +569,14 @@ dataFrameNewFromIndex index len df =
             withDataFrame df $ \ptr ->
                 dataframeOut (phs_dataframe_new_from_index ptr indexValue lenValue)
 
+dataFrameWithRowIndex :: Text -> Maybe Int -> DataFrame -> IO (Either PolarsError DataFrame)
+dataFrameWithRowIndex name offset df = case optionalNonNegativeWord64 "dataFrameWithRowIndex offset" offset of
+    Left err -> pure (Left err)
+    Right (hasOffset, offsetValue) ->
+        withTextCString name $ \cName ->
+            withDataFrame df $ \ptr ->
+                dataframeOut (phs_dataframe_with_row_index ptr cName (toCBool hasOffset) offsetValue)
+
 dataFrameRechunk :: DataFrame -> IO (Either PolarsError DataFrame)
 dataFrameRechunk df = withDataFrame df $ \ptr -> dataframeOut (phs_dataframe_rechunk ptr)
 
@@ -573,6 +585,9 @@ dataFrameAlignChunks df = withDataFrame df $ \ptr -> dataframeOut (phs_dataframe
 
 dataFrameShouldRechunk :: DataFrame -> IO (Either PolarsError Bool)
 dataFrameShouldRechunk df = withDataFrame df $ \ptr -> boolOut (phs_dataframe_should_rechunk ptr)
+
+dataFrameShift :: Int -> DataFrame -> IO (Either PolarsError DataFrame)
+dataFrameShift periods df = withDataFrame df $ \ptr -> dataframeOut (phs_dataframe_shift ptr (fromIntegral periods))
 
 height :: DataFrame -> IO (Either PolarsError Int)
 height df = withDataFrame df $ \ptr -> word64Out (phs_dataframe_height ptr)

@@ -321,6 +321,13 @@ int phs_dataframe_new_from_index(const struct phs_dataframe *dataframe,
                                  struct phs_dataframe **out,
                                  struct phs_error **err);
 
+int phs_dataframe_with_row_index(const struct phs_dataframe *dataframe,
+                                 const char *name,
+                                 bool has_offset,
+                                 uint64_t offset,
+                                 struct phs_dataframe **out,
+                                 struct phs_error **err);
+
 int phs_dataframe_rechunk(const struct phs_dataframe *dataframe,
                           struct phs_dataframe **out,
                           struct phs_error **err);
@@ -332,6 +339,11 @@ int phs_dataframe_align_chunks(const struct phs_dataframe *dataframe,
 int phs_dataframe_should_rechunk(const struct phs_dataframe *dataframe,
                                  bool *out,
                                  struct phs_error **err);
+
+int phs_dataframe_shift(const struct phs_dataframe *dataframe,
+                        int64_t periods,
+                        struct phs_dataframe **out,
+                        struct phs_error **err);
 
 int phs_dataframe_shape(const struct phs_dataframe *dataframe,
                         uint64_t *height_out,
